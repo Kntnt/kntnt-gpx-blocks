@@ -40,6 +40,12 @@ interface MapAttributes {
 	showScale: boolean;
 	showFullscreen: boolean;
 	showDownload: boolean;
+	enableDrag: boolean;
+	enableScrollWheelZoom: boolean;
+	enablePinchZoom: boolean;
+	enableDoubleClickZoom: boolean;
+	enableBoxZoom: boolean;
+	enableKeyboard: boolean;
 	[ key: string ]: unknown;
 }
 
@@ -88,6 +94,12 @@ export const MapEdit = ( {
 		showScale,
 		showFullscreen,
 		showDownload,
+		enableDrag,
+		enableScrollWheelZoom,
+		enablePinchZoom,
+		enableDoubleClickZoom,
+		enableBoxZoom,
+		enableKeyboard,
 	} = attributes;
 
 	// Show the media picker until the user selects a .gpx attachment.
@@ -150,6 +162,53 @@ export const MapEdit = ( {
 						}
 					/>
 				</PanelBody>
+				<PanelBody title={ __( 'Interactions', 'kntnt-gpx-blocks' ) }>
+					<ToggleControl
+						label={ __( 'Drag to pan', 'kntnt-gpx-blocks' ) }
+						checked={ enableDrag }
+						onChange={ ( value ) =>
+							setAttributes( { enableDrag: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Scroll wheel zoom', 'kntnt-gpx-blocks' ) }
+						checked={ enableScrollWheelZoom }
+						onChange={ ( value ) =>
+							setAttributes( { enableScrollWheelZoom: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Pinch zoom', 'kntnt-gpx-blocks' ) }
+						checked={ enablePinchZoom }
+						onChange={ ( value ) =>
+							setAttributes( { enablePinchZoom: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Double-click zoom', 'kntnt-gpx-blocks' ) }
+						checked={ enableDoubleClickZoom }
+						onChange={ ( value ) =>
+							setAttributes( { enableDoubleClickZoom: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Box zoom', 'kntnt-gpx-blocks' ) }
+						checked={ enableBoxZoom }
+						onChange={ ( value ) =>
+							setAttributes( { enableBoxZoom: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __(
+							'Keyboard navigation',
+							'kntnt-gpx-blocks'
+						) }
+						checked={ enableKeyboard }
+						onChange={ ( value ) =>
+							setAttributes( { enableKeyboard: value } )
+						}
+					/>
+				</PanelBody>
 			</InspectorControls>
 			<div { ...blockProps }>
 				<ServerSideRender
@@ -164,6 +223,12 @@ export const MapEdit = ( {
 						showScale,
 						showFullscreen,
 						showDownload,
+						enableDrag,
+						enableScrollWheelZoom,
+						enablePinchZoom,
+						enableDoubleClickZoom,
+						enableBoxZoom,
+						enableKeyboard,
 					} }
 				/>
 			</div>
