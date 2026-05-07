@@ -83,6 +83,17 @@ final class Plugin {
 	private static ?array $plugin_data = null;
 
 	/**
+	 * The Updater instance bound to the update-transient filter.
+	 *
+	 * Held as a property so the array callable passed to add_filter() keeps a
+	 * strong reference to the object for the lifetime of the request.
+	 *
+	 * @since 1.0.0
+	 * @var Updater|null
+	 */
+	private ?Updater $updater = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -302,8 +313,8 @@ final class Plugin {
 		}
 
 		// Wire the update checker to the WordPress update transient.
-		$updater = new Updater();
-		add_filter( 'pre_set_site_transient_update_plugins', [ $updater, 'check_for_updates' ] );
+		$this->updater = new Updater();
+		add_filter( 'pre_set_site_transient_update_plugins', [ $this->updater, 'check_for_updates' ] );
 
 	}
 
