@@ -27,123 +27,155 @@ final class Updater {
 	/**
 	 * Checks for new plugin releases on GitHub.
 	 *
-	 * This is the callback function for the 'pre_set_site_transient_update_plugins'
-	 * filter. It compares the installed version with the latest release tag on GitHub.
+	 * This is the callback for 'pre_set_site_transient_update_plugins'. It
+	 * compares the installed version with the latest release tag on GitHub.
 	 *
-	 * @param object $transient The update transient object passed by the filter.
-	 *
-	 * @return object The (potentially modified) transient object.
 	 * @since 1.0.0
+	 *
+	 * @param \stdClass $transient The update transient object passed by the filter.
+	 * @return \stdClass The (potentially modified) transient object.
 	 */
-	public function check_for_updates( object $transient ): object {
+	public function check_for_updates( \stdClass $transient ): \stdClass {
 
 		// If WordPress hasn't checked recently, don't check again.
 		if ( empty( $transient->checked ) ) {
 			return $transient;
 		}
 
-		// Get data from the plugin's main file header.
+		// Read the plugin header and extract the GitHub repository slug.
 		$plugin_data = Plugin::get_plugin_data();
-		$github_uri = $plugin_data['PluginURI'] ?? '';
-
-		// Extract the repository slug (e.g., "Kntnt/kntnt-gpx-blocks") from the URI.
+		$github_uri  = $this->str_field( $plugin_data, 'PluginURI' );
 		$github_repo = $this->get_github_repo_from_uri( $github_uri );
-		if ( ! $github_repo ) {
+		if ( $github_repo === null ) {
 			return $transient;
 		}
 
 		// Fetch the latest release information from the GitHub API.
 		$latest_release = $this->get_latest_github_release( $github_repo );
-		if ( ! $latest_release ) {
+		if ( $latest_release === null ) {
 			return $transient;
 		}
 
-		// Compare the currently installed version with the latest version from GitHub.
-		$current_version = $plugin_data['Version'];
-		$latest_version = ltrim( $latest_release->tag_name, 'v' );
-
-		if ( version_compare( $current_version, $latest_version, '<' ) ) {
-			$plugin_slug_path = plugin_basename( Plugin::get_plugin_file() );
-
-			// Initialize package URL as null. It must be found.
-			$package_url = null;
-
-			// Look for a manually uploaded .zip asset.
-			if ( ! empty( $latest_release->assets ) ) {
-				foreach ( $latest_release->assets as $asset ) {
-					if ( $asset->content_type === 'application/zip' ) {
-						$package_url = $asset->browser_download_url;
-						break; // Use the first .zip asset found.
-					}
-				}
-			}
-
-			// If no suitable package URL was found in the assets, do not proceed.
-			if ( ! $package_url ) {
-				return $transient;
-			}
-
-			// Create an object with the update information WordPress needs.
-			$update_info = new \stdClass;
-			$update_info->slug = dirname( $plugin_slug_path );
-			$update_info->plugin = $plugin_slug_path;
-			$update_info->new_version = $latest_version;
-			$update_info->url = $latest_release->html_url;
-			$update_info->package = $package_url;
-			$update_info->tested = $plugin_data['Requires at least'] ?? get_bloginfo( 'version' );
-
-			// Add the update information to the WordPress transient.
-			$transient->response[ $plugin_slug_path ] = $update_info;
+		// Bail when the installed version is already current or newer.
+		$current_version = $this->str_field( $plugin_data, 'Version' );
+		$latest_version  = ltrim( $this->str_field( $latest_release, 'tag_name' ), 'v' );
+		if ( ! version_compare( $current_version, $latest_version, '<' ) ) {
+			return $transient;
 		}
 
+		// Bail when no ZIP asset is attached to the release.
+		$package_url = $this->find_zip_asset_url( $latest_release );
+		if ( $package_url === null ) {
+			return $transient;
+		}
+
+		// Build the update record and inject it into the transient.
+		$plugin_slug_path = plugin_basename( Plugin::get_plugin_file() );
+		$req_wp      = $this->str_field( $plugin_data, 'RequiresWP' );
+		$requires_wp = $req_wp !== '' ? $req_wp : get_bloginfo( 'version' );
+		$update_info              = new \stdClass();
+		$update_info->slug        = dirname( $plugin_slug_path );
+		$update_info->plugin      = $plugin_slug_path;
+		$update_info->new_version = $latest_version;
+		$update_info->url         = $this->str_field( $latest_release, 'html_url' );
+		$update_info->package     = $package_url;
+		$update_info->tested      = $requires_wp;
+
+		// Inject the update record into the transient's response array.
+		if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
+			$transient->response = [];
+		}
+		$transient->response[ $plugin_slug_path ] = $update_info;
+
 		return $transient;
+
 	}
 
 	/**
 	 * Fetches the latest release data from the GitHub API.
 	 *
-	 * Performs a remote GET request to the GitHub API's 'latest release' endpoint.
+	 * Returns an associative array on success so callers can access fields
+	 * without triggering PHPStan's property-not-found errors on stdClass.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param string $repo The repository name in 'user/repo' format.
-	 *
-	 * @return object|null The release data object on success, or null on failure.
-	 * @since 1.0.0
+	 * @return array<mixed>|null Release data on success, null on failure.
 	 */
-	private function get_latest_github_release( string $repo ): ?object {
+	private function get_latest_github_release( string $repo ): ?array {
+
+		// Fetch the latest release from the GitHub REST API.
 		$request_uri = "https://api.github.com/repos/{$repo}/releases/latest";
-		$response = wp_remote_get( $request_uri );
+		$response    = wp_remote_get( $request_uri );
 
 		if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
 			return null;
 		}
 
-		$release_data = json_decode( wp_remote_retrieve_body( $response ) );
+		// Decode as an associative array so static analysis can reason about it.
+		$decoded = json_decode( wp_remote_retrieve_body( $response ), true );
 
-		if ( empty( $release_data ) || ! isset( $release_data->tag_name, $release_data->zipball_url ) ) {
+		if ( ! is_array( $decoded ) || ! isset( $decoded['tag_name'], $decoded['zipball_url'] ) ) {
 			return null;
 		}
 
-		return $release_data;
+		return $decoded;
+
+	}
+
+	/**
+	 * Locates the first ZIP asset URL in a release's asset list.
+	 *
+	 * Returns null when no ZIP asset is attached — the Updater will then skip
+	 * advertising the update rather than offering a broken package URL.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<mixed> $release Decoded GitHub release data.
+	 * @return string|null The download URL of the first ZIP asset, or null.
+	 */
+	private function find_zip_asset_url( array $release ): ?string {
+
+		// Walk the assets array looking for the first application/zip entry.
+		if ( empty( $release['assets'] ) || ! is_array( $release['assets'] ) ) {
+			return null;
+		}
+
+		foreach ( $release['assets'] as $asset ) {
+			if ( ! is_array( $asset ) ) {
+				continue;
+			}
+			$is_zip = isset( $asset['content_type'] ) && $asset['content_type'] === 'application/zip';
+			if ( $is_zip ) {
+				return is_string( $asset['browser_download_url'] ) ? $asset['browser_download_url'] : null;
+			}
+		}
+
+		return null;
+
 	}
 
 	/**
 	 * Parses the GitHub repository slug from a URI.
 	 *
-	 * Extracts the 'user/repo' part from a full GitHub URL, such as
+	 * Extracts the 'user/repo' part from a full GitHub URL such as
 	 * 'https://github.com/user/repo'.
 	 *
-	 * @param string $uri The full GitHub Plugin URI from the plugin header.
-	 *
-	 * @return string|null The 'user/repo' slug on success, or null if the URI is invalid.
 	 * @since 1.0.0
+	 *
+	 * @param string $uri The full GitHub Plugin URI from the plugin header.
+	 * @return string|null The 'user/repo' slug on success, or null if invalid.
 	 */
 	private function get_github_repo_from_uri( string $uri ): ?string {
-		if ( empty( $uri ) || ! str_contains( $uri, 'github.com' ) ) {
+
+		// Reject non-GitHub URIs quickly.
+		if ( $uri === '' || ! str_contains( $uri, 'github.com' ) ) {
 			return null;
 		}
 
-		$path = parse_url( $uri, PHP_URL_PATH );
-		if ( ! $path ) {
+		// Extract the path component and split it into owner/repo segments.
+		$path = wp_parse_url( $uri, PHP_URL_PATH );
+		if ( ! is_string( $path ) || $path === '' ) {
 			return null;
 		}
 
@@ -153,6 +185,23 @@ final class Updater {
 		}
 
 		return null;
+
+	}
+
+	/**
+	 * Safely reads a string field from a mixed-typed array.
+	 *
+	 * Returns an empty string when the field is absent or not a string,
+	 * so callers can inline the call without a ternary ladder.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<mixed> $data  The source array.
+	 * @param string       $key   The key to look up.
+	 * @return string The string value, or '' if missing or non-string.
+	 */
+	private function str_field( array $data, string $key ): string {
+		return isset( $data[ $key ] ) && is_string( $data[ $key ] ) ? $data[ $key ] : '';
 	}
 
 }
