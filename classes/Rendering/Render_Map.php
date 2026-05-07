@@ -156,6 +156,7 @@ final class Render_Map {
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%s\''
 				. ' data-wp-init="callbacks.initMap"'
+				. ' data-wp-watch="callbacks.onCursorChange"'
 				. ' style="%s">'
 				. '</div>',
 			esc_attr( (string) $context ),

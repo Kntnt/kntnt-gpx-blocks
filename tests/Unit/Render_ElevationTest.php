@@ -452,3 +452,62 @@ test( 'x-axis labels use m when total distance is less than 2 km', function (): 
 	expect( $svg_only )->not->toMatch( '/\d+(\.\d+)?\s+km<\/text>/' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Cursor-sync directives: data-wp-watch must be present on the wrapper
+// ---------------------------------------------------------------------------
+
+test( 'wrapper div carries the data-wp-watch cursor-change directive', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 60, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 10 );
+	elev_stub_parse_blocks( [ elev_map_block( 60, 'map-watch' ) ] );
+	elev_stub_attached_file( 60, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 10 );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 10 ) );
+
+	expect( $html )->toContain( 'data-wp-watch="callbacks.onCursorChange"' );
+
+} );
+
+test( 'svg contains the server-rendered cursor group with plot data attributes', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 61, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 11 );
+	elev_stub_parse_blocks( [ elev_map_block( 61, 'map-cursor-grp' ) ] );
+	elev_stub_attached_file( 61, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 11 );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 11 ) );
+
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation-cursor' )
+		->toContain( 'data-plot-left=' )
+		->toContain( 'data-plot-right=' )
+		->toContain( 'kntnt-gpx-blocks-elevation-cursor-line' )
+		->toContain( 'kntnt-gpx-blocks-elevation-cursor-dot' )
+		->toContain( 'kntnt-gpx-blocks-elevation-cursor-tooltip-bg' )
+		->toContain( 'kntnt-gpx-blocks-elevation-cursor-tooltip-text' );
+
+} );
