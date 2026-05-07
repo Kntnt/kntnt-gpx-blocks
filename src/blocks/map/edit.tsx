@@ -15,9 +15,11 @@
 
 import {
 	useBlockProps,
+	InspectorControls,
 	MediaPlaceholder,
 	ServerSideRender,
 } from '@wordpress/block-editor';
+import { PanelBody, ToggleControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
@@ -34,6 +36,10 @@ interface MapAttributes {
 	aspectRatio: string;
 	minHeight: string;
 	maxHeight: string;
+	showZoomButtons: boolean;
+	showScale: boolean;
+	showFullscreen: boolean;
+	showDownload: boolean;
 	[ key: string ]: unknown;
 }
 
@@ -53,6 +59,8 @@ interface MediaObject {
  *
  * Shows a MediaPlaceholder when no attachment is selected; otherwise
  * delegates to ServerSideRender so the editor preview matches the frontend.
+ * InspectorControls always render regardless of attachment state so the
+ * Controls panel is accessible from the moment the block is inserted.
  *
  * @since 1.0.0
  *
@@ -70,8 +78,17 @@ export const MapEdit = ( {
 	useEnsureUniqueMapId( clientId, attributes, setAttributes );
 
 	const blockProps = useBlockProps();
-	const { attachmentId, mapId, aspectRatio, minHeight, maxHeight } =
-		attributes;
+	const {
+		attachmentId,
+		mapId,
+		aspectRatio,
+		minHeight,
+		maxHeight,
+		showZoomButtons,
+		showScale,
+		showFullscreen,
+		showDownload,
+	} = attributes;
 
 	// Show the media picker until the user selects a .gpx attachment.
 	if ( attachmentId === 0 ) {
@@ -96,19 +113,60 @@ export const MapEdit = ( {
 		);
 	}
 
-	// Delegate to server-side render once a GPX file is attached.
+	// Render the inspector controls and server-side preview once a GPX file is attached.
 	return (
-		<div { ...blockProps }>
-			<ServerSideRender
-				block="kntnt-gpx-blocks/map"
-				attributes={ {
-					attachmentId,
-					mapId,
-					aspectRatio,
-					minHeight,
-					maxHeight,
-				} }
-			/>
-		</div>
+		<>
+			<InspectorControls>
+				<PanelBody title={ __( 'Controls', 'kntnt-gpx-blocks' ) }>
+					<ToggleControl
+						label={ __( 'Zoom buttons', 'kntnt-gpx-blocks' ) }
+						checked={ showZoomButtons }
+						onChange={ ( value ) =>
+							setAttributes( { showZoomButtons: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Scale', 'kntnt-gpx-blocks' ) }
+						checked={ showScale }
+						onChange={ ( value ) =>
+							setAttributes( { showScale: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Fullscreen button', 'kntnt-gpx-blocks' ) }
+						checked={ showFullscreen }
+						onChange={ ( value ) =>
+							setAttributes( { showFullscreen: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __(
+							'Download GPX button',
+							'kntnt-gpx-blocks'
+						) }
+						checked={ showDownload }
+						onChange={ ( value ) =>
+							setAttributes( { showDownload: value } )
+						}
+					/>
+				</PanelBody>
+			</InspectorControls>
+			<div { ...blockProps }>
+				<ServerSideRender
+					block="kntnt-gpx-blocks/map"
+					attributes={ {
+						attachmentId,
+						mapId,
+						aspectRatio,
+						minHeight,
+						maxHeight,
+						showZoomButtons,
+						showScale,
+						showFullscreen,
+						showDownload,
+					} }
+				/>
+			</div>
+		</>
 	);
 };

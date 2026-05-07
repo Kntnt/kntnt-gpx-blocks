@@ -25,8 +25,29 @@
 import { getContext, getElement, store } from '@wordpress/interactivity';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.fullscreen';
+import 'leaflet.fullscreen/Control.FullScreen.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+/**
+ * The map control settings hydrated from PHP block attributes.
+ *
+ * Each flag corresponds to an `InspectorControls` toggle in `edit.tsx` and a
+ * Leaflet control added (or omitted) during `initMap`.
+ *
+ * @since 1.0.0
+ */
+interface MapSettings {
+	/** Show Leaflet's built-in zoom-in/zoom-out buttons. */
+	readonly showZoomButtons: boolean;
+	/** Show the Leaflet scale bar. */
+	readonly showScale: boolean;
+	/** Show the leaflet.fullscreen button. */
+	readonly showFullscreen: boolean;
+	/** Show the custom download-GPX control button. */
+	readonly showDownload: boolean;
+}
 
 /**
  * Shape of the per-map state slice hydrated from PHP via wp_interactivity_state.
@@ -37,7 +58,9 @@ interface MapState {
 	attachmentId: number;
 	geojson: GeoJSON.GeoJsonObject;
 	waypoints: GeoJSON.GeoJsonObject;
-	settings: Record< string, unknown >;
+	/** URL to the original .gpx attachment; null when unavailable. */
+	gpxFileUrl: string | null;
+	settings: MapSettings;
 	fraction: number | null;
 	consent: 'unknown' | 'granted' | 'denied';
 }
@@ -243,6 +266,69 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 					const bounds = layer.getBounds();
 					if ( bounds.isValid() ) {
 						map.fitBounds( bounds, { padding: [ 16, 16 ] } );
+					}
+
+					// Add the configured control overlays based on the hydrated settings.
+					const settings = mapState.settings;
+					if ( settings.showZoomButtons ) {
+						L.control.zoom( { position: 'topleft' } ).addTo( map );
+					}
+					if ( settings.showScale ) {
+						L.control
+							.scale( {
+								position: 'bottomleft',
+								metric: true,
+								imperial: false,
+							} )
+							.addTo( map );
+					}
+					if ( settings.showFullscreen ) {
+						// leaflet.fullscreen registers L.control.fullscreen as a
+						// side effect of the import at the top of this module.
+						(
+							L.control as Record<
+								string,
+								( opts: Record< string, unknown > ) => L.Control
+							>
+						 )
+							.fullscreen( { position: 'topleft' } )
+							.addTo( map );
+					}
+					if ( settings.showDownload && mapState.gpxFileUrl ) {
+						const gpxUrl = mapState.gpxFileUrl;
+
+						// Derive a download filename from the URL's last path segment.
+						const filename =
+							gpxUrl.split( '/' ).pop() ?? 'track.gpx';
+
+						// Build a custom Leaflet control with a download anchor.
+						const DownloadControl = L.Control.extend( {
+							onAdd() {
+								const container = L.DomUtil.create(
+									'div',
+									'leaflet-bar leaflet-control kntnt-gpx-blocks-map-download-control'
+								);
+								const anchor = L.DomUtil.create(
+									'a',
+									'',
+									container
+								) as HTMLAnchorElement;
+								anchor.href = gpxUrl;
+								anchor.download = filename;
+								anchor.title = 'Download GPX';
+								anchor.setAttribute(
+									'aria-label',
+									'Download GPX'
+								);
+								anchor.innerHTML =
+									'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 16l-5-5 1.4-1.4 2.6 2.6V4h2v8.2l2.6-2.6L17 11l-5 5zm-7 2h14v2H5v-2z"/></svg>';
+								L.DomEvent.disableClickPropagation( container );
+								return container;
+							},
+						} );
+						new DownloadControl( { position: 'topleft' } ).addTo(
+							map
+						);
 					}
 
 					// Pre-compute the flat [lat, lng] coordinate array for
