@@ -1,1 +1,1 @@
-.wp-block-kntnt-gpx-blocks-statistics{display:block}
+.wp-block-kntnt-gpx-blocks-statistics{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(12em,1fr))}.wp-block-kntnt-gpx-blocks-statistics .kntnt-gpx-blocks-statistics-item{margin:0}.wp-block-kntnt-gpx-blocks-statistics dt{font-weight:600}.wp-block-kntnt-gpx-blocks-statistics dd{margin:0}
