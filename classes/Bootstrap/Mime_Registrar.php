@@ -70,23 +70,35 @@ final class Mime_Registrar {
 	 * method forces the correct result for .gpx files while leaving every
 	 * other extension unchanged.
 	 *
+	 * The middle three parameters are nullable to match WordPress core's
+	 * actual filter contract: $file and $filename are null when the filter
+	 * fires from a context that has not resolved them yet (e.g. some sideload
+	 * paths), and $mimes is null when the caller did not pass an explicit
+	 * mimes allowlist. The previous non-nullable signature caused a fatal
+	 * TypeError on every call from such contexts.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<string,string|bool> $data      Result from wp_check_filetype_and_ext().
 	 *                                              Keys: 'ext', 'type', 'proper_filename'.
-	 * @param string                    $file       Temporary file path on disk.
-	 * @param string                    $filename   Original client-supplied filename.
-	 * @param array<string,string>      $mimes      Allowed MIME map (passed by WordPress).
+	 * @param string|null               $file       Temporary file path on disk, or null.
+	 * @param string|null               $filename   Original client-supplied filename, or null.
+	 * @param array<string,string>|null $mimes      Allowed MIME map, or null.
 	 * @param string|false              $real_mime  MIME string returned by finfo, or false.
 	 * @return array<string,string|bool> The (possibly overridden) check result.
 	 */
 	public function override_check(
 		array $data,
-		string $file,
-		string $filename,
-		array $mimes,
-		string|false $real_mime
+		?string $file,
+		?string $filename,
+		?array $mimes,
+		string|false $real_mime = false
 	): array {
+
+		// Cannot decide without a filename — pass through unchanged.
+		if ( $filename === null ) {
+			return $data;
+		}
 
 		// Only override when the original filename says this is a GPX file.
 		if ( ! str_ends_with( strtolower( $filename ), '.gpx' ) ) {
