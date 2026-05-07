@@ -396,6 +396,90 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 					} );
 					cursor.addTo( map );
 
+					// Read the waypoint marker colour from the CSS custom property
+					// set by the PHP render callback (or the SCSS default). This
+					// is done once here because circleMarker is canvas-rendered
+					// and receives its colour through JS options, not CSS.
+					const waypointColor =
+						getComputedStyle( ref )
+							.getPropertyValue(
+								'--kntnt-gpx-blocks-waypoint-color'
+							)
+							.trim() || '#d63638';
+
+					// Add a circleMarker for each waypoint from the hydrated GeoJSON.
+					const waypointsData =
+						mapState.waypoints as GeoJSON.GeoJsonObject;
+					if ( waypointsData?.type === 'FeatureCollection' ) {
+						const wfc = waypointsData as GeoJSON.FeatureCollection;
+						for ( const feature of wfc.features ) {
+							if ( feature.geometry?.type !== 'Point' ) {
+								continue;
+							}
+
+							// GeoJSON stores Point coordinates as [lon, lat, ele?].
+							const pt = feature.geometry as GeoJSON.Point;
+							const lon = pt.coordinates[ 0 ];
+							const lat = pt.coordinates[ 1 ];
+							if ( lon === undefined || lat === undefined ) {
+								continue;
+							}
+
+							const marker = L.circleMarker( [ lat, lon ], {
+								radius: 6,
+								color: waypointColor,
+								fillColor: waypointColor,
+								fillOpacity: 1,
+								weight: 2,
+								interactive: true,
+							} );
+
+							// Build the tooltip label from name and optional desc.
+							const props = feature.properties ?? {};
+							const name =
+								typeof props.name === 'string'
+									? props.name
+									: '';
+							const desc =
+								typeof props.desc === 'string'
+									? props.desc
+									: '';
+
+							if ( name || desc ) {
+								// Build the tooltip DOM element using text nodes so
+								// that no GPX content can inject HTML.
+								const tooltipEl =
+									document.createElement( 'div' );
+								const labelLines: string[] = [];
+								if ( name ) {
+									labelLines.push( name );
+								}
+								if ( desc ) {
+									labelLines.push( desc );
+								}
+								labelLines.forEach( ( line, i ) => {
+									if ( i > 0 ) {
+										tooltipEl.appendChild(
+											document.createElement( 'br' )
+										);
+									}
+									tooltipEl.appendChild(
+										document.createTextNode( line )
+									);
+								} );
+
+								marker.bindTooltip( tooltipEl, {
+									direction: 'top',
+									permanent: false,
+									sticky: false,
+									opacity: 1,
+								} );
+							}
+
+							marker.addTo( map );
+						}
+					}
+
 					// Record the instance so subsequent init calls are no-ops
 					// and onCursorChange can access the cursor and coords.
 					mountedMaps.set( ref, { map, cursor, coords } );

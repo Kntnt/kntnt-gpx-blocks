@@ -5,10 +5,35 @@
 // bundles it into the view-side CSS asset rather than the editor stylesheet.
 
 .kntnt-gpx-blocks-map {
+	// Layout driven by PHP-supplied CSS custom properties.
 	display: block;
 	width: 100%;
 	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
 	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
+
+	// Waypoint marker and label defaults — overridden per-block via inline style
+	// when the editor sets non-empty attribute values.
+	--kntnt-gpx-blocks-waypoint-color: #d63638;
+	--kntnt-gpx-blocks-waypoint-label-bg: rgba(255, 255, 255, 0.95);
+	--kntnt-gpx-blocks-waypoint-label-color: #1e1e1e;
+	--kntnt-gpx-blocks-waypoint-label-font-family: inherit;
+	--kntnt-gpx-blocks-waypoint-label-font-size: inherit;
+	--kntnt-gpx-blocks-waypoint-label-font-weight: 500;
+	--kntnt-gpx-blocks-waypoint-label-font-style: normal;
+
+	// Style Leaflet tooltips that appear over waypoint markers. The Leaflet
+	// tooltip element is positioned outside the block element by default, but
+	// scoped via CSS custom-property inheritance which flows from the block root.
+	.leaflet-tooltip {
+		background-color: var(--kntnt-gpx-blocks-waypoint-label-bg);
+		color: var(--kntnt-gpx-blocks-waypoint-label-color);
+		font-family: var(--kntnt-gpx-blocks-waypoint-label-font-family);
+		font-size: var(--kntnt-gpx-blocks-waypoint-label-font-size);
+		font-weight: var(--kntnt-gpx-blocks-waypoint-label-font-weight);
+		font-style: var(--kntnt-gpx-blocks-waypoint-label-font-style);
+		border: 1px solid color-mix(in srgb, var(--kntnt-gpx-blocks-waypoint-label-color) 20%, transparent);
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+	}
 }
 
 // Custom download-GPX Leaflet control button — styled to match the standard

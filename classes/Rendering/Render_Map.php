@@ -103,6 +103,15 @@ final class Render_Map {
 		$enable_box_zoom    = isset( $attributes['enableBoxZoom'] ) ? (bool) $attributes['enableBoxZoom'] : false;
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
 
+		// Read and sanitize the seven waypoint styling attributes.
+		$waypoint_color          = self::sanitize_color( $attributes['waypointColor'] ?? '' );
+		$waypoint_label_bg       = self::sanitize_color( $attributes['waypointLabelBackground'] ?? '' );
+		$waypoint_label_color    = self::sanitize_color( $attributes['waypointLabelColor'] ?? '' );
+		$waypoint_label_family   = self::sanitize_font_family( $attributes['waypointLabelFontFamily'] ?? '' );
+		$waypoint_label_size     = self::sanitize_font_size( $attributes['waypointLabelFontSize'] ?? '' );
+		$waypoint_label_weight   = self::sanitize_font_weight( $attributes['waypointLabelFontWeight'] ?? '' );
+		$waypoint_label_style    = self::sanitize_font_style( $attributes['waypointLabelFontStyle'] ?? '' );
+
 		// Validate the aspect-ratio string against the whitelist pattern from
 		// docs/security.md; fall back to the default on any mismatch.
 		$aspect_ratio_input = is_string( $raw_ratio ) ? $raw_ratio : '';
@@ -181,6 +190,31 @@ final class Render_Map {
 		if ( '' !== $max_height ) {
 			$style_parts[] = 'max-height: ' . esc_attr( $max_height );
 		}
+
+		// Append a CSS custom property for each non-empty, validated waypoint
+		// styling attribute. Empty strings fall back to the SCSS-defined defaults.
+		if ( '' !== $waypoint_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-color: ' . esc_attr( $waypoint_color );
+		}
+		if ( '' !== $waypoint_label_bg ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-bg: ' . esc_attr( $waypoint_label_bg );
+		}
+		if ( '' !== $waypoint_label_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-color: ' . esc_attr( $waypoint_label_color );
+		}
+		if ( '' !== $waypoint_label_family ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-family: ' . esc_attr( $waypoint_label_family );
+		}
+		if ( '' !== $waypoint_label_size ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-size: ' . esc_attr( $waypoint_label_size );
+		}
+		if ( '' !== $waypoint_label_weight ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-weight: ' . esc_attr( $waypoint_label_weight );
+		}
+		if ( '' !== $waypoint_label_style ) {
+			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-style: ' . esc_attr( $waypoint_label_style );
+		}
+
 		$style = implode( '; ', $style_parts );
 
 		// Encode the data-wp-context payload as a JSON string.
@@ -371,6 +405,143 @@ final class Render_Map {
 				],
 			],
 		];
+
+	}
+
+	/**
+	 * Validates and returns a hex colour string, or empty string on invalid input.
+	 *
+	 * Accepts hex colours (#rgb, #rrggbb, #rrggbbaa) via sanitize_hex_color.
+	 * Returns empty string for blank input so the CSS falls back to the
+	 * hardcoded default in style.scss rather than emitting a broken value.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated hex colour or empty string.
+	 */
+	private static function sanitize_color( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// sanitize_hex_color returns null on failure; coerce to empty string.
+		$clean = sanitize_hex_color( $raw );
+		return is_string( $clean ) ? $clean : '';
+
+	}
+
+	/**
+	 * Validates a CSS font-family value against a strict whitelist.
+	 *
+	 * Accepts common font name strings and theme-preset CSS variable references.
+	 * Returns empty string on anything that could inject CSS or HTML.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-family string or empty string.
+	 */
+	private static function sanitize_font_family( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// Accept a CSS theme-preset font-family reference.
+		if ( preg_match( '/^var\(--wp--preset--font-family--[a-z0-9-]+\)$/', $raw ) ) {
+			return $raw;
+		}
+
+		// Accept font family names composed of letters, digits, spaces, commas,
+		// hyphens, quotes, and parentheses — the characters that appear in valid
+		// CSS font-family stacks.
+		if ( preg_match( "/^[A-Za-z0-9\\s,\\-'\"()]+$/", $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS font-size value against a strict whitelist.
+	 *
+	 * Accepts numeric CSS length values (px, em, rem, %) and theme-preset
+	 * font-size references. Returns empty string on anything unsafe.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-size string or empty string.
+	 */
+	private static function sanitize_font_size( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// Accept a CSS theme-preset font-size reference.
+		if ( preg_match( '/^var\(--wp--preset--font-size--[a-z0-9-]+\)$/', $raw ) ) {
+			return $raw;
+		}
+
+		// Accept numeric lengths: optional decimal followed by a CSS length unit.
+		if ( preg_match( '/^(\d+(\.\d+)?)(px|em|rem|%)?$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS font-weight value against the accepted keyword/numeric whitelist.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-weight string or empty string.
+	 */
+	private static function sanitize_font_weight( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(normal|bold|lighter|bolder|[1-9]00)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS font-style value against the accepted keyword whitelist.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-style string or empty string.
+	 */
+	private static function sanitize_font_style( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(normal|italic|oblique)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
 
 	}
 
