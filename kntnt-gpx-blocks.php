@@ -3,7 +3,7 @@
  * Plugin Name:       Kntnt GPX Blocks
  * Plugin URI:        https://github.com/Kntnt/kntnt-gpx-blocks
  * Description:       Gutenberg blocks for visualising GPX tracks: map, elevation profile, and statistics.
- * Version:           1.0.0
+ * Version:           0.1.0
  * Requires at least: 6.5
  * Requires PHP:      8.4
  * Author:            Kntnt
