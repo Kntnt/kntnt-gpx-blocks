@@ -110,6 +110,35 @@
 
 	</rule>
 
+	<!--
+		The WordPress snake_case property rule does not apply to third-party
+		PHP API surfaces. XMLReader's documented public properties use
+		camelCase and are non-negotiable; treating them as project-style
+		violations is wrong. Whitelist the ones the plugin reads.
+	-->
+	<rule ref="WordPress.NamingConventions.ValidVariableName">
+		<properties>
+			<property name="allowed_custom_properties" type="array">
+				<element value="nodeType"/>
+				<element value="localName"/>
+				<element value="isEmptyElement"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!--
+		Tests legitimately use the plain PHP filesystem API and the silence
+		operator on best-effort fixture cleanup. The WordPress alternatives
+		(WP_Filesystem, wp_delete_file) require WordPress to be loaded, which
+		is not the case in a Brain Monkey unit-test environment.
+	-->
+	<rule ref="WordPress.WP.AlternativeFunctions">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.PHP.NoSilencedErrors">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+
 	<!-- Require short array syntax ([ ]) — never array(). -->
 	<rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
 
