@@ -12,6 +12,7 @@
 		"packages-update": "wp-scripts packages-update"
 	},
 	"dependencies": {
+		"@wordpress/element": "^6.45.0",
 		"leaflet": "^1.9.4",
 		"leaflet.fullscreen": "^3.0.2"
 	},
