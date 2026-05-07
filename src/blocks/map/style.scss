@@ -41,6 +41,55 @@
 	}
 }
 
+// Consent placeholder — shown before the visitor grants consent. Matches the
+// block's aspect-ratio and min-height so the layout does not jump when consent
+// is granted and the map replaces the placeholder.
+.kntnt-gpx-blocks-map-placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background-color: var(--kntnt-gpx-blocks-placeholder-background, #f0f0f0);
+	width: 100%;
+	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
+	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
+	text-align: center;
+	box-sizing: border-box;
+}
+
+.kntnt-gpx-blocks-map-placeholder-text {
+	margin: 0 0 1rem;
+	color: inherit;
+}
+
+// "Activate map" button — minimal styling that degrades gracefully in
+// any theme.
+.kntnt-gpx-blocks-map-placeholder-button {
+	display: inline-block;
+	padding: 0.5rem 1.25rem;
+	border: 1px solid currentcolor;
+	border-radius: 3px;
+	background-color: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	line-height: 1.5;
+
+	&:hover,
+	&:focus {
+		background-color: rgb(0 0 0 / 6%);
+		outline-offset: 2px;
+	}
+}
+
+// Canvas child — takes the same dimensions as the block wrapper when visible.
+// When hidden by PHP (display:none inline style), this rule has no effect.
+.kntnt-gpx-blocks-map-canvas {
+	width: 100%;
+	height: 100%;
+}
+
 // Custom download-GPX Leaflet control button — styled to match the standard
 // leaflet-bar appearance so it integrates naturally with the zoom and
 // fullscreen controls.

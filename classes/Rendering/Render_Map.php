@@ -15,6 +15,7 @@ declare( strict_types = 1 );
 namespace Kntnt\Gpx_Blocks\Rendering;
 
 use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
+use Kntnt\Gpx_Blocks\Consent\Consent_Resolver;
 
 /**
  * Produces the frontend HTML for the GPX Map block.
@@ -158,14 +159,23 @@ final class Render_Map {
 		$gpx_file_url = wp_get_attachment_url( $attachment_id );
 		$gpx_file_url = $gpx_file_url !== false ? $gpx_file_url : null;
 
+		// Resolve the consent configuration from filters; bypass the gate in the editor.
+		$resolver          = new Consent_Resolver();
+		$consent_required  = $resolver->is_required();
+		$consent_category  = $resolver->get_category();
+		$consent_service   = $resolver->get_service();
+		$default_placeholder = __( 'Map is disabled until you accept cookies from OpenStreetMap.', 'kntnt-gpx-blocks' );
+		$filtered_placeholder = apply_filters( 'kntnt_gpx_blocks_placeholder_text', $default_placeholder );
+		$placeholder_text     = is_string( $filtered_placeholder ) ? $filtered_placeholder : $default_placeholder;
+
 		// Register the per-map state slice with the Interactivity API.
 		wp_interactivity_state( 'kntnt-gpx-blocks', [
 			$map_id => [
-				'attachmentId' => $attachment_id,
-				'geojson'      => $simplified_geo,
-				'waypoints'    => $waypoints,
-				'gpxFileUrl'   => $gpx_file_url,
-				'settings'     => [
+				'attachmentId'    => $attachment_id,
+				'geojson'         => $simplified_geo,
+				'waypoints'       => $waypoints,
+				'gpxFileUrl'      => $gpx_file_url,
+				'settings'        => [
 					'showZoomButtons'       => $show_zoom_buttons,
 					'showScale'             => $show_scale,
 					'showFullscreen'        => $show_fullscreen,
@@ -177,8 +187,11 @@ final class Render_Map {
 					'enableBoxZoom'         => $enable_box_zoom,
 					'enableKeyboard'        => $enable_keyboard,
 				],
-				'fraction'     => null,
-				'consent'      => 'unknown',
+				'fraction'        => null,
+				'consent'         => $consent_required ? 'unknown' : 'granted',
+				'consentCategory' => $consent_category,
+				'consentService'  => $consent_service,
+				'placeholderText' => $placeholder_text,
 			],
 		] );
 
@@ -233,17 +246,40 @@ final class Render_Map {
 		// Encode the data-wp-context payload as a JSON string.
 		$context = wp_json_encode( [ 'mapId' => $map_id ] );
 
-		// Return the Interactivity-API-annotated container element.
+		// Set initial visibility for the canvas and placeholder based on consent state.
+		// When consent is already granted (gate bypassed), the placeholder is hidden.
+		// When consent is unknown, the canvas is hidden until view.ts grants consent.
+		$canvas_style      = $consent_required ? ' style="display:none"' : '';
+		$placeholder_style = $consent_required ? '' : ' style="display:none"';
+
+		// Translate the "Activate map" button label.
+		$activate_label = esc_html__( 'Activate map', 'kntnt-gpx-blocks' );
+
+		// Return the Interactivity-API-annotated container element with both the
+		// canvas wrapper (Leaflet mounts here) and the consent placeholder.
+		// data-wp-watch on the outer wrapper drives consent transitions.
+		// data-wp-watch on the canvas child drives cursor-marker updates.
 		return sprintf(
 			'<div class="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"'
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
-				. ' data-wp-context=\'%s\''
+				. ' data-wp-context=\'%1$s\''
 				. ' data-wp-init="callbacks.initMap"'
-				. ' data-wp-watch="callbacks.onCursorChange"'
-				. ' style="%s">'
+				. ' data-wp-watch="callbacks.onConsentChange"'
+				. ' style="%2$s">'
+				. '<div class="kntnt-gpx-blocks-map-canvas"'
+				. ' data-wp-watch="callbacks.onCursorChange"%3$s></div>'
+				. '<div class="kntnt-gpx-blocks-map-placeholder"%4$s>'
+				. '<p class="kntnt-gpx-blocks-map-placeholder-text">%5$s</p>'
+				. '<button type="button" class="kntnt-gpx-blocks-map-placeholder-button"'
+				. ' data-wp-on--click="actions.grantConsent">%6$s</button>'
+				. '</div>'
 				. '</div>',
 			esc_attr( (string) $context ),
 			esc_attr( $style ),
+			$canvas_style,
+			$placeholder_style,
+			esc_html( $placeholder_text ),
+			$activate_label,
 		);
 
 	}

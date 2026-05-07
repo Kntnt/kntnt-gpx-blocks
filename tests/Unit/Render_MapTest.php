@@ -187,10 +187,14 @@ beforeEach( function (): void {
 	Functions\when( 'esc_html' )->returnArg( 1 );
 	Functions\when( 'esc_attr' )->returnArg( 1 );
 	Functions\when( '__' )->returnArg( 1 );
+	Functions\when( 'esc_html__' )->alias(
+		static fn ( string $text, string $domain ): string => $text
+	);
 	Functions\when( 'wp_json_encode' )->alias(
 		static fn ( mixed $v ): string|false => json_encode( $v )
 	);
 	Functions\when( 'current_user_can' )->justReturn( false );
+	Functions\when( 'is_admin' )->justReturn( false );
 
 } );
 
@@ -219,6 +223,7 @@ test( 'renders the wrapper element with data-wp-init and data-wp-watch directive
 
 	expect( $html )
 		->toContain( 'data-wp-init="callbacks.initMap"' )
+		->toContain( 'data-wp-watch="callbacks.onConsentChange"' )
 		->toContain( 'data-wp-watch="callbacks.onCursorChange"' )
 		->toContain( 'kntnt-gpx-blocks-map' );
 
@@ -719,5 +724,184 @@ test( 'render output omits waypoint-label-font-weight CSS variable when weight i
 	);
 
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-waypoint-label-font-weight' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Consent — when is_required false, state has consent=granted and placeholder hidden
+// ---------------------------------------------------------------------------
+
+test( 'consent=granted in state and placeholder hidden when consent not required', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 80, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 80, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'is_admin' )->justReturn( true );
+	Functions\when( 'current_user_can' )->justReturn( true );
+	Functions\when( 'esc_html__' )->alias(
+		static fn ( string $text, string $domain ): string => $text
+	);
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 80,
+			'mapId'        => 'map-consent-off',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	// State must show consent already granted.
+	expect( $captured_state['map-consent-off']['consent'] ?? null )->toBe( 'granted' );
+
+	// Placeholder must be initially hidden; canvas must be visible.
+	expect( $html )->toContain( 'kntnt-gpx-blocks-map-placeholder' );
+	expect( $html )->toContain( 'class="kntnt-gpx-blocks-map-placeholder" style="display:none"' );
+	// Canvas wrapper must not be hidden when the consent gate is bypassed.
+	expect( $html )->toContain( 'kntnt-gpx-blocks-map-canvas' );
+	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-canvas" data-wp-watch="callbacks.onCursorChange"'
+		. ' style="display:none"' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Consent — when is_required true, state has consent=unknown and canvas hidden
+// ---------------------------------------------------------------------------
+
+test( 'consent=unknown in state and canvas hidden when consent required', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 81, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 81, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'is_admin' )->justReturn( false );
+	Functions\when( 'current_user_can' )->justReturn( false );
+	Functions\when( 'esc_html__' )->alias(
+		static fn ( string $text, string $domain ): string => $text
+	);
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 81,
+			'mapId'        => 'map-consent-on',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	// State must show consent unknown.
+	expect( $captured_state['map-consent-on']['consent'] ?? null )->toBe( 'unknown' );
+
+	// Canvas must be initially hidden; placeholder must be visible.
+	expect( $html )->toContain( 'style="display:none"' );
+	expect( $html )->toContain( 'kntnt-gpx-blocks-map-canvas' );
+	expect( $html )->toContain( 'kntnt-gpx-blocks-map-placeholder' );
+	// Placeholder has no display:none when consent is required.
+	expect( $html )->not->toContain( 'class="kntnt-gpx-blocks-map-placeholder" style="display:none"' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Consent — placeholder text comes from the filter
+// ---------------------------------------------------------------------------
+
+test( 'placeholder text uses the kntnt_gpx_blocks_placeholder_text filter value', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 82, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 82, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'is_admin' )->justReturn( false );
+	Functions\when( 'current_user_can' )->justReturn( false );
+	Functions\when( 'esc_html__' )->alias(
+		static fn ( string $text, string $domain ): string => $text
+	);
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+
+	// Override apply_filters to intercept the placeholder_text filter.
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $hook, mixed $fallback ): mixed {
+			if ( $hook === 'kntnt_gpx_blocks_placeholder_text' ) {
+				return 'Custom consent text for testing.';
+			}
+			return $fallback;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 82,
+			'mapId'        => 'map-placeholder-text',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( 'Custom consent text for testing.' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Consent — state includes consentCategory, consentService, and placeholderText
+// ---------------------------------------------------------------------------
+
+test( 'state slice includes consentCategory, consentService, and placeholderText', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 83, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 83, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'is_admin' )->justReturn( false );
+	Functions\when( 'current_user_can' )->justReturn( false );
+	Functions\when( 'esc_html__' )->alias(
+		static fn ( string $text, string $domain ): string => $text
+	);
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 83,
+			'mapId'        => 'map-consent-fields',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-consent-fields'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['consentCategory'] )->toBe( 'marketing' );
+	expect( $slice['consentService'] )->toBe( 'openstreetmap' );
+	expect( $slice['placeholderText'] )->toBeString();
+	expect( strlen( $slice['placeholderText'] ) )->toBeGreaterThan( 0 );
 
 } );
