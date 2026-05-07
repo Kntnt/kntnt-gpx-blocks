@@ -1,17 +1,28 @@
 /**
  * GPX Statistics edit component.
  *
- * Renders a data-source picker in the inspector sidebar and a live
- * ServerSideRender preview in the block canvas. The picker lists "Auto" plus
- * every GPX Map block on the page so the editor can pin the statistics to a
- * specific map when the post has more than one.
+ * Renders a data-source picker, a Headers panel, and a Values panel in the
+ * inspector sidebar, and a live ServerSideRender preview in the block canvas.
+ * Colour and typography changes are injected as inline CSS variables on the
+ * wrapper div so the editor preview updates instantly without a round-trip to
+ * ServerSideRender.
  *
  * @since 1.0.0
  */
 
-import { InspectorControls, useBlockProps } from '@wordpress/block-editor';
+import {
+	InspectorControls,
+	PanelColorSettings,
+	useBlockProps,
+} from '@wordpress/block-editor';
 import type { BlockEditProps } from '@wordpress/blocks';
-import { PanelBody, SelectControl } from '@wordpress/components';
+import {
+	FontSizePicker,
+	PanelBody,
+	SelectControl,
+	ToggleGroupControl,
+	ToggleGroupControlOption,
+} from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
 import { useSelect } from '@wordpress/data';
 import { store as coreStore } from '@wordpress/core-data';
@@ -24,6 +35,18 @@ import { __ } from '@wordpress/i18n';
  */
 interface StatisticsAttributes {
 	mapId: string;
+	headerBackground: string;
+	headerColor: string;
+	headerFontFamily: string;
+	headerFontSize: string;
+	headerFontWeight: string;
+	headerFontStyle: string;
+	valueBackground: string;
+	valueColor: string;
+	valueFontFamily: string;
+	valueFontSize: string;
+	valueFontWeight: string;
+	valueFontStyle: string;
 	[ key: string ]: unknown;
 }
 
@@ -43,6 +66,30 @@ interface EditorBlock {
 	};
 	innerBlocks: EditorBlock[];
 }
+
+/**
+ * Font family options for header and value typography controls.
+ *
+ * Covers the most common system stacks. The editor can store a theme preset
+ * reference (var(--wp--preset--font-family--…)) by typing it into the field,
+ * but the SelectControl covers the common case without needing an experimental
+ * API.
+ *
+ * @since 1.0.0
+ */
+const FONT_FAMILY_OPTIONS = [
+	{ label: __( 'Default (inherit)', 'kntnt-gpx-blocks' ), value: '' },
+	{ label: 'Sans-serif', value: 'sans-serif' },
+	{ label: 'Serif', value: 'serif' },
+	{ label: 'Monospace', value: 'monospace' },
+	{ label: 'Arial', value: 'Arial, sans-serif' },
+	{ label: 'Georgia', value: 'Georgia, serif' },
+	{
+		label: 'Helvetica Neue',
+		value: "'Helvetica Neue', Helvetica, sans-serif",
+	},
+	{ label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
+];
 
 /**
  * Recursively collects all GPX Map blocks from a block tree.
@@ -75,9 +122,10 @@ function collectMapBlocks( blocks: EditorBlock[] ): EditorBlock[] {
 /**
  * Editor preview for the GPX Statistics block.
  *
- * Shows an InspectorControls panel "Datakälla" with a SelectControl listing
- * "Auto (single map on page)" plus one entry per GPX Map block found on the
- * page. The body is a ServerSideRender preview that mirrors the frontend output.
+ * Shows an InspectorControls sidebar with panels for data source, header
+ * theming, and value theming. Colour and typography changes are applied
+ * immediately via inline CSS variables on the wrapper div — no
+ * ServerSideRender round-trip for cosmetic edits.
  *
  * @since 1.0.0
  *
@@ -89,8 +137,68 @@ export const StatisticsEdit = ( {
 	attributes,
 	setAttributes,
 }: BlockEditProps< StatisticsAttributes > ): JSX.Element => {
-	const blockProps = useBlockProps();
-	const { mapId } = attributes;
+	const {
+		mapId,
+		headerBackground,
+		headerColor,
+		headerFontFamily,
+		headerFontSize,
+		headerFontWeight,
+		headerFontStyle,
+		valueBackground,
+		valueColor,
+		valueFontFamily,
+		valueFontSize,
+		valueFontWeight,
+		valueFontStyle,
+	} = attributes;
+
+	// Build a style object carrying every non-empty theming attribute as a CSS
+	// custom property so the editor preview updates instantly.
+	const inlineStyle: Record< string, string > = {};
+	if ( headerBackground ) {
+		inlineStyle[ '--kntnt-gpx-blocks-header-background' ] =
+			headerBackground;
+	}
+	if ( headerColor ) {
+		inlineStyle[ '--kntnt-gpx-blocks-header-color' ] = headerColor;
+	}
+	if ( headerFontFamily ) {
+		inlineStyle[ '--kntnt-gpx-blocks-header-font-family' ] =
+			headerFontFamily;
+	}
+	if ( headerFontSize ) {
+		inlineStyle[ '--kntnt-gpx-blocks-header-font-size' ] = headerFontSize;
+	}
+	if ( headerFontWeight ) {
+		inlineStyle[ '--kntnt-gpx-blocks-header-font-weight' ] =
+			headerFontWeight;
+	}
+	if ( headerFontStyle ) {
+		inlineStyle[ '--kntnt-gpx-blocks-header-font-style' ] = headerFontStyle;
+	}
+	if ( valueBackground ) {
+		inlineStyle[ '--kntnt-gpx-blocks-value-background' ] = valueBackground;
+	}
+	if ( valueColor ) {
+		inlineStyle[ '--kntnt-gpx-blocks-value-color' ] = valueColor;
+	}
+	if ( valueFontFamily ) {
+		inlineStyle[ '--kntnt-gpx-blocks-value-font-family' ] = valueFontFamily;
+	}
+	if ( valueFontSize ) {
+		inlineStyle[ '--kntnt-gpx-blocks-value-font-size' ] = valueFontSize;
+	}
+	if ( valueFontWeight ) {
+		inlineStyle[ '--kntnt-gpx-blocks-value-font-weight' ] = valueFontWeight;
+	}
+	if ( valueFontStyle ) {
+		inlineStyle[ '--kntnt-gpx-blocks-value-font-style' ] = valueFontStyle;
+	}
+
+	const blockProps = useBlockProps( {
+		style: inlineStyle as React.CSSProperties,
+	} );
 
 	// Collect every GPX Map block from the page's block tree.
 	const allBlocks = useSelect( ( select ) => {
@@ -153,12 +261,186 @@ export const StatisticsEdit = ( {
 						}
 					/>
 				</PanelBody>
+
+				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
+				<PanelColorSettings
+					title={ __( 'Headers', 'kntnt-gpx-blocks' ) }
+					colorSettings={ [
+						{
+							value: headerBackground,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									headerBackground: value ?? '',
+								} ),
+							label: __( 'Background', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: headerColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( { headerColor: value ?? '' } ),
+							label: __( 'Text colour', 'kntnt-gpx-blocks' ),
+						},
+					] }
+				>
+					<SelectControl
+						label={ __( 'Font family', 'kntnt-gpx-blocks' ) }
+						value={ headerFontFamily }
+						options={ FONT_FAMILY_OPTIONS }
+						onChange={ ( value ) =>
+							setAttributes( { headerFontFamily: value } )
+						}
+					/>
+					<FontSizePicker
+						value={ headerFontSize || undefined }
+						onChange={ ( value ) =>
+							setAttributes( {
+								headerFontSize:
+									value !== undefined ? String( value ) : '',
+							} )
+						}
+						withReset={ true }
+					/>
+					<ToggleGroupControl
+						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
+						value={ headerFontWeight || 'normal' }
+						onChange={ ( value ) =>
+							setAttributes( {
+								headerFontWeight:
+									value === 'normal' ? '' : String( value ),
+							} )
+						}
+						isBlock
+					>
+						<ToggleGroupControlOption
+							value="normal"
+							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
+						/>
+						<ToggleGroupControlOption
+							value="bold"
+							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
+						/>
+					</ToggleGroupControl>
+					<ToggleGroupControl
+						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
+						value={ headerFontStyle || 'normal' }
+						onChange={ ( value ) =>
+							setAttributes( {
+								headerFontStyle:
+									value === 'normal' ? '' : String( value ),
+							} )
+						}
+						isBlock
+					>
+						<ToggleGroupControlOption
+							value="normal"
+							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
+						/>
+						<ToggleGroupControlOption
+							value="italic"
+							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
+						/>
+					</ToggleGroupControl>
+				</PanelColorSettings>
+
+				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
+				<PanelColorSettings
+					title={ __( 'Values', 'kntnt-gpx-blocks' ) }
+					colorSettings={ [
+						{
+							value: valueBackground,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									valueBackground: value ?? '',
+								} ),
+							label: __( 'Background', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: valueColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( { valueColor: value ?? '' } ),
+							label: __( 'Text colour', 'kntnt-gpx-blocks' ),
+						},
+					] }
+				>
+					<SelectControl
+						label={ __( 'Font family', 'kntnt-gpx-blocks' ) }
+						value={ valueFontFamily }
+						options={ FONT_FAMILY_OPTIONS }
+						onChange={ ( value ) =>
+							setAttributes( { valueFontFamily: value } )
+						}
+					/>
+					<FontSizePicker
+						value={ valueFontSize || undefined }
+						onChange={ ( value ) =>
+							setAttributes( {
+								valueFontSize:
+									value !== undefined ? String( value ) : '',
+							} )
+						}
+						withReset={ true }
+					/>
+					<ToggleGroupControl
+						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
+						value={ valueFontWeight || 'normal' }
+						onChange={ ( value ) =>
+							setAttributes( {
+								valueFontWeight:
+									value === 'normal' ? '' : String( value ),
+							} )
+						}
+						isBlock
+					>
+						<ToggleGroupControlOption
+							value="normal"
+							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
+						/>
+						<ToggleGroupControlOption
+							value="bold"
+							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
+						/>
+					</ToggleGroupControl>
+					<ToggleGroupControl
+						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
+						value={ valueFontStyle || 'normal' }
+						onChange={ ( value ) =>
+							setAttributes( {
+								valueFontStyle:
+									value === 'normal' ? '' : String( value ),
+							} )
+						}
+						isBlock
+					>
+						<ToggleGroupControlOption
+							value="normal"
+							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
+						/>
+						<ToggleGroupControlOption
+							value="italic"
+							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
+						/>
+					</ToggleGroupControl>
+				</PanelColorSettings>
 			</InspectorControls>
 
 			<div { ...blockProps }>
 				<ServerSideRender
 					block="kntnt-gpx-blocks/statistics"
-					attributes={ { mapId } }
+					attributes={ {
+						mapId,
+						headerBackground,
+						headerColor,
+						headerFontFamily,
+						headerFontSize,
+						headerFontWeight,
+						headerFontStyle,
+						valueBackground,
+						valueColor,
+						valueFontFamily,
+						valueFontSize,
+						valueFontWeight,
+						valueFontStyle,
+					} }
 				/>
 			</div>
 		</>

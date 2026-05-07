@@ -368,6 +368,142 @@ test( 'returns multiple-maps error notice for editor when page has two maps', fu
 } );
 
 // ---------------------------------------------------------------------------
+// Theming: CSS custom properties emitted when attributes are set
+// ---------------------------------------------------------------------------
+
+test( 'emits header-color CSS variable when headerColor is a valid hex', function (): void {
+
+	$stats = [
+		'distance'      => 1000.0,
+		'min_elevation' => null,
+		'max_elevation' => null,
+		'ascent'        => null,
+		'descent'       => null,
+	];
+
+	$store = seeded_meta_store( 50, $stats );
+	bind_meta_render( $store );
+	stub_get_post_render( 10 );
+	stub_parse_blocks_render( [ stat_map_block( 50, 'map-theme-1' ) ] );
+	stub_attached_file_render( 50, stat_fixture_path( 'happy-path.gpx' ) );
+	stub_format_render();
+	stub_escape_render();
+	Functions\when( 'get_the_ID' )->justReturn( 10 );
+	Functions\when( 'wp_json_encode' )->alias( static fn ( mixed $v ): string|false => json_encode( $v ) );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})$/', $color ) ? $color : null;
+		}
+	);
+	Functions\when( 'esc_attr' )->returnArg( 1 );
+
+	$html = Render_Statistics::render(
+		[
+			'mapId'       => 'auto',
+			'headerColor' => '#1e1e1e',
+		],
+		'',
+		fake_block( 10 ),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-header-color: #1e1e1e' );
+
+} );
+
+test( 'drops header-color CSS variable when headerColor is invalid', function (): void {
+
+	$stats = [
+		'distance'      => 1000.0,
+		'min_elevation' => null,
+		'max_elevation' => null,
+		'ascent'        => null,
+		'descent'       => null,
+	];
+
+	$store = seeded_meta_store( 51, $stats );
+	bind_meta_render( $store );
+	stub_get_post_render( 11 );
+	stub_parse_blocks_render( [ stat_map_block( 51, 'map-theme-2' ) ] );
+	stub_attached_file_render( 51, stat_fixture_path( 'happy-path.gpx' ) );
+	stub_format_render();
+	stub_escape_render();
+	Functions\when( 'get_the_ID' )->justReturn( 11 );
+	Functions\when( 'wp_json_encode' )->alias( static fn ( mixed $v ): string|false => json_encode( $v ) );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})$/', $color ) ? $color : null;
+		}
+	);
+	Functions\when( 'esc_attr' )->returnArg( 1 );
+
+	$html = Render_Statistics::render(
+		[
+			'mapId'       => 'auto',
+			'headerColor' => 'not-a-color',
+		],
+		'',
+		fake_block( 11 ),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-header-color' );
+
+} );
+
+test( 'emits value-font-weight CSS variable when valid; drops when invalid', function (): void {
+
+	$stats = [
+		'distance'      => 2000.0,
+		'min_elevation' => null,
+		'max_elevation' => null,
+		'ascent'        => null,
+		'descent'       => null,
+	];
+
+	// Valid weight: 'bold' → custom property present.
+	$store = seeded_meta_store( 52, $stats );
+	bind_meta_render( $store );
+	stub_get_post_render( 12 );
+	stub_parse_blocks_render( [ stat_map_block( 52, 'map-theme-3' ) ] );
+	stub_attached_file_render( 52, stat_fixture_path( 'happy-path.gpx' ) );
+	stub_format_render();
+	stub_escape_render();
+	Functions\when( 'get_the_ID' )->justReturn( 12 );
+	Functions\when( 'wp_json_encode' )->alias( static fn ( mixed $v ): string|false => json_encode( $v ) );
+	Functions\when( 'esc_attr' )->returnArg( 1 );
+
+	$html_valid = Render_Statistics::render(
+		[
+			'mapId'           => 'auto',
+			'valueFontWeight' => 'bold',
+		],
+		'',
+		fake_block( 12 ),
+	);
+
+	expect( $html_valid )->toContain( '--kntnt-gpx-blocks-value-font-weight: bold' );
+
+	// Invalid weight: 'heavy' → custom property absent.
+	$store2 = seeded_meta_store( 53, $stats );
+	bind_meta_render( $store2 );
+	stub_get_post_render( 13 );
+	stub_parse_blocks_render( [ stat_map_block( 53, 'map-theme-4' ) ] );
+	stub_attached_file_render( 53, stat_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 13 );
+
+	$html_invalid = Render_Statistics::render(
+		[
+			'mapId'           => 'auto',
+			'valueFontWeight' => 'heavy',
+		],
+		'',
+		fake_block( 13 ),
+	);
+
+	expect( $html_invalid )->not->toContain( '--kntnt-gpx-blocks-value-font-weight' );
+
+} );
+
+// ---------------------------------------------------------------------------
 // Attachment_Cache error surfaces correctly
 // ---------------------------------------------------------------------------
 
