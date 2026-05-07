@@ -16,3 +16,8 @@ declare( strict_types = 1 );
  * as mocks without a full WordPress install.
  */
 uses( Tests\Unit\TestCase::class )->in( 'Unit' );
+
+// Pull in unit-test-only fixtures (e.g. minimal WP_Error stand-in) that must
+// exist for tests to type-hint against, but that PHPStan must not see — its
+// WordPress stubs already declare the real classes.
+require_once __DIR__ . '/Unit/fixtures/Wp_Error_Stub.php';
