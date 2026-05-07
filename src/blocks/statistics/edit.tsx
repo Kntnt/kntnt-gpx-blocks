@@ -10,6 +10,7 @@
  * @since 1.0.0
  */
 
+import { useRef, useState, useEffect } from '@wordpress/element';
 import {
 	InspectorControls,
 	PanelColorSettings,
@@ -18,6 +19,7 @@ import {
 import type { BlockEditProps } from '@wordpress/blocks';
 import {
 	FontSizePicker,
+	Notice,
 	PanelBody,
 	SelectControl,
 	ToggleGroupControl,
@@ -200,6 +202,32 @@ export const StatisticsEdit = ( {
 		style: inlineStyle as React.CSSProperties,
 	} );
 
+	// Track any error message surfaced by the server-rendered output so the
+	// InspectorControls Notice can repeat it for discoverability.
+	const [ errorMessage, setErrorMessage ] = useState< string >( '' );
+	const ssrWrapperRef = useRef< HTMLDivElement >( null );
+	const prevErrorRef = useRef< string >( '' );
+
+	// Inspect the SSR output after each render; look for the error notice.
+	// No dependency array: we want to re-read the DOM whenever React renders,
+	// because ServerSideRender may have swapped in new HTML. prevErrorRef guards
+	// the setErrorMessage call so it only fires when the DOM actually changes,
+	// which prevents the infinite update loop the linter is guarding against.
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	useEffect( () => {
+		if ( ! ssrWrapperRef.current ) {
+			return;
+		}
+		const errorEl = ssrWrapperRef.current.querySelector< HTMLElement >(
+			'.kntnt-gpx-blocks-error'
+		);
+		const next = errorEl ? errorEl.textContent ?? '' : '';
+		if ( next !== prevErrorRef.current ) {
+			prevErrorRef.current = next;
+			setErrorMessage( next );
+		}
+	} );
+
 	// Collect every GPX Map block from the page's block tree.
 	const allBlocks = useSelect( ( select ) => {
 		const { getBlocks } = select( 'core/block-editor' ) as {
@@ -248,6 +276,11 @@ export const StatisticsEdit = ( {
 	return (
 		<>
 			<InspectorControls>
+				{ errorMessage && (
+					<Notice status="error" isDismissible={ false }>
+						{ errorMessage }
+					</Notice>
+				) }
 				<PanelBody
 					title={ __( 'Datakälla', 'kntnt-gpx-blocks' ) }
 					initialOpen={ true }
@@ -424,24 +457,27 @@ export const StatisticsEdit = ( {
 			</InspectorControls>
 
 			<div { ...blockProps }>
-				<ServerSideRender
-					block="kntnt-gpx-blocks/statistics"
-					attributes={ {
-						mapId,
-						headerBackground,
-						headerColor,
-						headerFontFamily,
-						headerFontSize,
-						headerFontWeight,
-						headerFontStyle,
-						valueBackground,
-						valueColor,
-						valueFontFamily,
-						valueFontSize,
-						valueFontWeight,
-						valueFontStyle,
-					} }
-				/>
+				{ /* ref wrapper so useEffect can inspect the rendered SSR output */ }
+				<div ref={ ssrWrapperRef }>
+					<ServerSideRender
+						block="kntnt-gpx-blocks/statistics"
+						attributes={ {
+							mapId,
+							headerBackground,
+							headerColor,
+							headerFontFamily,
+							headerFontSize,
+							headerFontWeight,
+							headerFontStyle,
+							valueBackground,
+							valueColor,
+							valueFontFamily,
+							valueFontSize,
+							valueFontWeight,
+							valueFontStyle,
+						} }
+					/>
+				</div>
 			</div>
 		</>
 	);

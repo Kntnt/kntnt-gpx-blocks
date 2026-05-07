@@ -20,6 +20,7 @@ namespace Kntnt\Gpx_Blocks\Rendering;
 
 use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
 use Kntnt\Gpx_Blocks\Format\Value_Formatter;
+use Kntnt\Gpx_Blocks\Plugin;
 
 /**
  * Produces the frontend HTML for the GPX Elevation block.
@@ -194,14 +195,22 @@ final class Render_Elevation {
 		$resolver = new Resolve_Map_Id();
 		$resolved = $resolver->resolve( $map_id, $post_id );
 		if ( $resolved instanceof Render_Error ) {
-			return self::render_error( $resolved );
+			Plugin::error(
+				sprintf( 'Render_Elevation: error resolving map (post %d), code=%s', $post_id, $resolved->code )
+			);
+			return ( new Error_Renderer() )->render( $resolved );
 		}
 
 		// Fetch the cached payload for the resolved attachment.
 		$cache   = new Attachment_Cache();
 		$payload = $cache->get( $resolved['attachment_id'] );
 		if ( $payload instanceof Render_Error ) {
-			return self::render_error( $payload );
+			Plugin::error( sprintf(
+				'Render_Elevation: error rendering for attachment %d, code=%s',
+				$resolved['attachment_id'],
+				$payload->code,
+			) );
+			return ( new Error_Renderer() )->render( $payload );
 		}
 
 		// Extract the (distance, elevation) series from the GeoJSON LineString;
@@ -725,32 +734,6 @@ final class Render_Elevation {
 				. ' kntnt-gpx-blocks-elevation--empty" style="%s">%s</div>',
 			esc_attr( $style ),
 			esc_html__( 'No elevation data in this GPX file.', 'kntnt-gpx-blocks' ),
-		);
-
-	}
-
-	/**
-	 * Renders an error notice visible only to users with edit_posts.
-	 *
-	 * Visitors without the capability receive an empty string; editors see a
-	 * .kntnt-gpx-blocks-error notice containing the error code and message.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param Render_Error $error The error to surface.
-	 *
-	 * @return string
-	 */
-	private static function render_error( Render_Error $error ): string {
-
-		if ( ! current_user_can( 'edit_posts' ) ) {
-			return '';
-		}
-
-		return sprintf(
-			'<div class="kntnt-gpx-blocks-error"><strong>%s</strong>: %s</div>',
-			esc_html( $error->code ),
-			esc_html( $error->message ),
 		);
 
 	}
