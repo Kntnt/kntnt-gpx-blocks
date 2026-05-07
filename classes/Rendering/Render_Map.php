@@ -256,30 +256,41 @@ final class Render_Map {
 		$canvas_style      = $consent_required ? ' style="display:none"' : '';
 		$placeholder_style = $consent_required ? '' : ' style="display:none"';
 
-		// Translate the "Activate map" button label.
+		// Translate the "Activate map" button label and the ARIA / noscript strings.
 		$activate_label = esc_html__( 'Activate map', 'kntnt-gpx-blocks' );
+		$aria_label     = esc_attr__( 'Map of GPX track', 'kntnt-gpx-blocks' );
+		// phpcs:ignore Generic.Files.LineLength.TooLong -- Translator strings must be a single literal per WordPress.WP.I18n; splitting is not permitted.
+		$noscript_text  = esc_html__( 'This map requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
 
 		// Return the Interactivity-API-annotated container element with both the
 		// canvas wrapper (Leaflet mounts here) and the consent placeholder.
+		// role="application" and aria-label make the interactive map discoverable
+		// by assistive technology. The <noscript> child is shown only when JS is
+		// disabled — browsers natively hide it when JS runs.
 		// data-wp-watch on the outer wrapper drives consent transitions.
 		// data-wp-watch on the canvas child drives cursor-marker updates.
 		return sprintf(
 			'<div class="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"'
+				. ' role="application"'
+				. ' aria-label="%1$s"'
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
-				. ' data-wp-context=\'%1$s\''
+				. ' data-wp-context=\'%2$s\''
 				. ' data-wp-init="callbacks.initMap"'
 				. ' data-wp-watch="callbacks.onConsentChange"'
-				. ' style="%2$s">'
+				. ' style="%3$s">'
+				. '<noscript><p class="kntnt-gpx-blocks-map-noscript">%4$s</p></noscript>'
 				. '<div class="kntnt-gpx-blocks-map-canvas"'
-				. ' data-wp-watch="callbacks.onCursorChange"%3$s></div>'
-				. '<div class="kntnt-gpx-blocks-map-placeholder"%4$s>'
-				. '<p class="kntnt-gpx-blocks-map-placeholder-text">%5$s</p>'
+				. ' data-wp-watch="callbacks.onCursorChange"%5$s></div>'
+				. '<div class="kntnt-gpx-blocks-map-placeholder"%6$s>'
+				. '<p class="kntnt-gpx-blocks-map-placeholder-text">%7$s</p>'
 				. '<button type="button" class="kntnt-gpx-blocks-map-placeholder-button"'
-				. ' data-wp-on--click="actions.grantConsent">%6$s</button>'
+				. ' data-wp-on--click="actions.grantConsent">%8$s</button>'
 				. '</div>'
 				. '</div>',
+			$aria_label,
 			esc_attr( (string) $context ),
 			esc_attr( $style ),
+			$noscript_text,
 			$canvas_style,
 			$placeholder_style,
 			esc_html( $placeholder_text ),

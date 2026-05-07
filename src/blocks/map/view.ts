@@ -564,7 +564,11 @@ function bootMount(
 				state[ mapId ].fraction = null;
 			} );
 		},
-		{ threshold: 0 }
+		// rootMargin pre-triggers the observer 200 px before the canvas enters
+		// the viewport, giving Leaflet time to initialise tiles before the block
+		// scrolls into view. threshold: 0 fires as soon as any pixel is visible
+		// (or pre-visible via rootMargin).
+		{ rootMargin: '200px 0px', threshold: 0 }
 	);
 
 	observer.observe( canvas );
