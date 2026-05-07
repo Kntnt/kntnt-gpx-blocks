@@ -1,0 +1,13 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: max
+    paths:
+        - classes/
+    bootstrapFiles:
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+    scanFiles:
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+    phpVersion: 80400
+    treatPhpDocTypesAsCertain: false
