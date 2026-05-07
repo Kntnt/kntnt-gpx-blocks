@@ -13,6 +13,7 @@
  * @since 1.0.0
  */
 
+import { useRef, useState, useEffect } from '@wordpress/element';
 import {
 	useBlockProps,
 	InspectorControls,
@@ -21,6 +22,7 @@ import {
 	ServerSideRender,
 } from '@wordpress/block-editor';
 import {
+	Notice,
 	PanelBody,
 	TextControl,
 	ToggleControl,
@@ -159,6 +161,32 @@ export const MapEdit = ( {
 	// Ensure this block's mapId is non-empty and unique across the post.
 	useEnsureUniqueMapId( clientId, attributes, setAttributes );
 
+	// Track any error message surfaced by the server-rendered output so the
+	// InspectorControls Notice can repeat it for discoverability.
+	const [ errorMessage, setErrorMessage ] = useState< string >( '' );
+	const ssrWrapperRef = useRef< HTMLDivElement >( null );
+	const prevErrorRef = useRef< string >( '' );
+
+	// Inspect the SSR output after each render; look for the error notice.
+	// No dependency array: we want to re-read the DOM whenever React renders,
+	// because ServerSideRender may have swapped in new HTML. prevErrorRef guards
+	// the setErrorMessage call so it only fires when the DOM actually changes,
+	// which prevents the infinite update loop the linter is guarding against.
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	useEffect( () => {
+		if ( ! ssrWrapperRef.current ) {
+			return;
+		}
+		const errorEl = ssrWrapperRef.current.querySelector< HTMLElement >(
+			'.kntnt-gpx-blocks-error'
+		);
+		const next = errorEl ? errorEl.textContent ?? '' : '';
+		if ( next !== prevErrorRef.current ) {
+			prevErrorRef.current = next;
+			setErrorMessage( next );
+		}
+	} );
+
 	// Destructure all attributes before use so useBlockProps can read colour
 	// values when it injects the instant-preview CSS variables.
 	const {
@@ -237,6 +265,11 @@ export const MapEdit = ( {
 	return (
 		<>
 			<InspectorControls>
+				{ errorMessage && (
+					<Notice status="error" isDismissible={ false }>
+						{ errorMessage }
+					</Notice>
+				) }
 				<PanelBody title={ __( 'Layout', 'kntnt-gpx-blocks' ) }>
 					<SelectControl
 						label={ __( 'Aspect ratio', 'kntnt-gpx-blocks' ) }
@@ -480,35 +513,38 @@ export const MapEdit = ( {
 				</PanelColorSettings>
 			</InspectorControls>
 			<div { ...blockProps }>
-				<ServerSideRender
-					block="kntnt-gpx-blocks/map"
-					attributes={ {
-						attachmentId,
-						mapId,
-						aspectRatio,
-						minHeight,
-						maxHeight,
-						showZoomButtons,
-						showScale,
-						showFullscreen,
-						showDownload,
-						enableDrag,
-						enableScrollWheelZoom,
-						enablePinchZoom,
-						enableDoubleClickZoom,
-						enableBoxZoom,
-						enableKeyboard,
-						trackColor,
-						trackCursorColor,
-						waypointColor,
-						waypointLabelBackground,
-						waypointLabelColor,
-						waypointLabelFontFamily,
-						waypointLabelFontSize,
-						waypointLabelFontWeight,
-						waypointLabelFontStyle,
-					} }
-				/>
+				{ /* ref wrapper so useEffect can inspect the rendered SSR output */ }
+				<div ref={ ssrWrapperRef }>
+					<ServerSideRender
+						block="kntnt-gpx-blocks/map"
+						attributes={ {
+							attachmentId,
+							mapId,
+							aspectRatio,
+							minHeight,
+							maxHeight,
+							showZoomButtons,
+							showScale,
+							showFullscreen,
+							showDownload,
+							enableDrag,
+							enableScrollWheelZoom,
+							enablePinchZoom,
+							enableDoubleClickZoom,
+							enableBoxZoom,
+							enableKeyboard,
+							trackColor,
+							trackCursorColor,
+							waypointColor,
+							waypointLabelBackground,
+							waypointLabelColor,
+							waypointLabelFontFamily,
+							waypointLabelFontSize,
+							waypointLabelFontWeight,
+							waypointLabelFontStyle,
+						} }
+					/>
+				</div>
 			</div>
 		</>
 	);

@@ -47,3 +47,25 @@
 		font-style: var(--kntnt-gpx-blocks-value-font-style);
 	}
 }
+
+// Error notice — shown only to editors when the render layer surfaces an error.
+.kntnt-gpx-blocks-error {
+	padding: 1rem;
+	border-left: 4px solid #d63638;
+	background: #fcf0f1;
+	color: #1e1e1e;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+	code {
+		font-size: 0.875em;
+		opacity: 0.7;
+	}
+
+	strong {
+		font-weight: 600;
+	}
+
+	p {
+		margin: 0;
+	}
+}
