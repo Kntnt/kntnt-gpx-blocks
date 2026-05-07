@@ -12,6 +12,9 @@
  *   showFullscreen, showDownload) and gpxFileUrl.
  * - The defaults match the spec: zoom + scale ON, fullscreen + download OFF.
  * - Explicit attribute values override the defaults.
+ * - The six interaction flags appear in the state with correct defaults
+ *   (drag, pinch, dblclick, keyboard ON; scroll-wheel, boxzoom OFF).
+ * - Explicit interaction flag values override the defaults.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -365,6 +368,94 @@ test( 'gpxFileUrl is null when wp_get_attachment_url returns false', function ()
 
 	expect( array_key_exists( 'gpxFileUrl', $captured_state['map-no-url'] ?? [] ) )->toBeTrue();
 	expect( $captured_state['map-no-url']['gpxFileUrl'] )->toBeNull();
+
+} );
+
+// ---------------------------------------------------------------------------
+// Interaction flags — defaults (drag, pinch, dblclick, keyboard ON; scroll, box OFF)
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state receives correct default interaction flags', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 50, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 50, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 50,
+			'mapId'        => 'map-interaction-defaults',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured_state['map-interaction-defaults']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['enableDrag'] )->toBeTrue();
+	expect( $settings['enableScrollWheelZoom'] )->toBeFalse();
+	expect( $settings['enablePinchZoom'] )->toBeTrue();
+	expect( $settings['enableDoubleClickZoom'] )->toBeTrue();
+	expect( $settings['enableBoxZoom'] )->toBeFalse();
+	expect( $settings['enableKeyboard'] )->toBeTrue();
+
+} );
+
+// ---------------------------------------------------------------------------
+// Interaction flags — explicit overrides are passed through
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state reflects explicit interaction flag overrides', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 51, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 51, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId'          => 51,
+			'mapId'                 => 'map-interaction-overrides',
+			'enableDrag'            => false,
+			'enableScrollWheelZoom' => true,
+			'enablePinchZoom'       => false,
+			'enableDoubleClickZoom' => false,
+			'enableBoxZoom'         => true,
+			'enableKeyboard'        => false,
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured_state['map-interaction-overrides']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['enableDrag'] )->toBeFalse();
+	expect( $settings['enableScrollWheelZoom'] )->toBeTrue();
+	expect( $settings['enablePinchZoom'] )->toBeFalse();
+	expect( $settings['enableDoubleClickZoom'] )->toBeFalse();
+	expect( $settings['enableBoxZoom'] )->toBeTrue();
+	expect( $settings['enableKeyboard'] )->toBeFalse();
 
 } );
 

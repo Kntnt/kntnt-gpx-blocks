@@ -47,6 +47,18 @@ interface MapSettings {
 	readonly showFullscreen: boolean;
 	/** Show the custom download-GPX control button. */
 	readonly showDownload: boolean;
+	/** Enable drag-to-pan. */
+	readonly enableDrag: boolean;
+	/** Enable scroll-wheel zoom. Disabled by default to prevent scroll hijacking. */
+	readonly enableScrollWheelZoom: boolean;
+	/** Enable pinch-to-zoom on touch devices. */
+	readonly enablePinchZoom: boolean;
+	/** Enable double-click zoom. */
+	readonly enableDoubleClickZoom: boolean;
+	/** Enable shift+drag box zoom. */
+	readonly enableBoxZoom: boolean;
+	/** Enable keyboard navigation. Required for accessibility. */
+	readonly enableKeyboard: boolean;
 }
 
 /**
@@ -242,15 +254,14 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 					obs.disconnect();
 
 					// Build the Leaflet map with canvas renderer for performance.
+					// Suppress the default zoomControl here because the settings-driven
+					// path below adds it conditionally. All interaction handlers are
+					// started in their Leaflet defaults and then explicitly
+					// enabled/disabled by the settings block below — those calls are the
+					// single source of truth, so no initial override is needed here.
 					const map = L.map( ref as HTMLElement, {
 						renderer: L.canvas(),
 						zoomControl: false,
-						dragging: false,
-						scrollWheelZoom: false,
-						touchZoom: false,
-						doubleClickZoom: false,
-						boxZoom: false,
-						keyboard: false,
 						attributionControl: true,
 					} );
 
@@ -329,6 +340,40 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 						new DownloadControl( { position: 'topleft' } ).addTo(
 							map
 						);
+					}
+
+					// Apply each interaction handler per the hydrated settings.
+					// Using explicit enable/disable calls rather than L.map init
+					// options keeps the settings as the single source of truth.
+					if ( settings.enableDrag ) {
+						map.dragging.enable();
+					} else {
+						map.dragging.disable();
+					}
+					if ( settings.enableScrollWheelZoom ) {
+						map.scrollWheelZoom.enable();
+					} else {
+						map.scrollWheelZoom.disable();
+					}
+					if ( settings.enablePinchZoom ) {
+						map.touchZoom.enable();
+					} else {
+						map.touchZoom.disable();
+					}
+					if ( settings.enableDoubleClickZoom ) {
+						map.doubleClickZoom.enable();
+					} else {
+						map.doubleClickZoom.disable();
+					}
+					if ( settings.enableBoxZoom ) {
+						map.boxZoom.enable();
+					} else {
+						map.boxZoom.disable();
+					}
+					if ( settings.enableKeyboard ) {
+						map.keyboard.enable();
+					} else {
+						map.keyboard.disable();
 					}
 
 					// Pre-compute the flat [lat, lng] coordinate array for

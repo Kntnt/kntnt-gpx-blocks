@@ -93,6 +93,16 @@ final class Render_Map {
 		$show_fullscreen   = isset( $attributes['showFullscreen'] ) ? (bool) $attributes['showFullscreen'] : false;
 		$show_download     = isset( $attributes['showDownload'] ) ? (bool) $attributes['showDownload'] : false;
 
+		// Read the six interaction flags; coerce to bool with documented defaults.
+		$enable_drag  = isset( $attributes['enableDrag'] ) ? (bool) $attributes['enableDrag'] : true;
+		$raw_swz      = $attributes['enableScrollWheelZoom'] ?? null;
+		$enable_scroll_wheel_zoom = isset( $raw_swz ) ? (bool) $raw_swz : false;
+		$enable_pinch_zoom  = isset( $attributes['enablePinchZoom'] ) ? (bool) $attributes['enablePinchZoom'] : true;
+		$raw_dclk           = $attributes['enableDoubleClickZoom'] ?? null;
+		$enable_double_click_zoom = isset( $raw_dclk ) ? (bool) $raw_dclk : true;
+		$enable_box_zoom    = isset( $attributes['enableBoxZoom'] ) ? (bool) $attributes['enableBoxZoom'] : false;
+		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
+
 		// Validate the aspect-ratio string against the whitelist pattern from
 		// docs/security.md; fall back to the default on any mismatch.
 		$aspect_ratio_input = is_string( $raw_ratio ) ? $raw_ratio : '';
@@ -143,10 +153,16 @@ final class Render_Map {
 				'waypoints'    => $waypoints,
 				'gpxFileUrl'   => $gpx_file_url,
 				'settings'     => [
-					'showZoomButtons' => $show_zoom_buttons,
-					'showScale'       => $show_scale,
-					'showFullscreen'  => $show_fullscreen,
-					'showDownload'    => $show_download,
+					'showZoomButtons'       => $show_zoom_buttons,
+					'showScale'             => $show_scale,
+					'showFullscreen'        => $show_fullscreen,
+					'showDownload'          => $show_download,
+					'enableDrag'            => $enable_drag,
+					'enableScrollWheelZoom' => $enable_scroll_wheel_zoom,
+					'enablePinchZoom'       => $enable_pinch_zoom,
+					'enableDoubleClickZoom' => $enable_double_click_zoom,
+					'enableBoxZoom'         => $enable_box_zoom,
+					'enableKeyboard'        => $enable_keyboard,
 				],
 				'fraction'     => null,
 				'consent'      => 'unknown',
