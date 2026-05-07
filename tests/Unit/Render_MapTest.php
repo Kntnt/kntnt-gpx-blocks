@@ -226,8 +226,8 @@ test( 'renders the wrapper element with data-wp-init and data-wp-watch directive
 
 	expect( $html )
 		->toContain( 'data-wp-init="callbacks.initMap"' )
-		->toContain( 'data-wp-watch="callbacks.onConsentChange"' )
-		->toContain( 'data-wp-watch="callbacks.onCursorChange"' )
+		->toContain( 'data-wp-watch--consent="callbacks.onConsentChange"' )
+		->toContain( 'data-wp-watch--cursor="callbacks.onCursorChange"' )
 		->toContain( 'kntnt-gpx-blocks-map' );
 
 } );
@@ -731,10 +731,10 @@ test( 'render output omits waypoint-label-font-weight CSS variable when weight i
 } );
 
 // ---------------------------------------------------------------------------
-// Consent — when is_required false, state has consent=granted and placeholder hidden
+// Consent — when the gate is bypassed, state has consent=granted; no UI rendered
 // ---------------------------------------------------------------------------
 
-test( 'consent=granted in state and placeholder hidden when consent not required', function (): void {
+test( 'consent=granted in state when the gate is bypassed', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 80, $coords );
@@ -764,24 +764,22 @@ test( 'consent=granted in state and placeholder hidden when consent not required
 		map_fake_block(),
 	);
 
-	// State must show consent already granted.
+	// State must show consent already granted (admin bypass via Consent_Resolver).
 	expect( $captured_state['map-consent-off']['consent'] ?? null )->toBe( 'granted' );
 
-	// Placeholder must be initially hidden; canvas must be visible.
-	expect( $html )->toContain( 'kntnt-gpx-blocks-map-placeholder' );
-	expect( $html )->toContain( 'class="kntnt-gpx-blocks-map-placeholder" style="display:none"' );
-	// Canvas wrapper must not be hidden when the consent gate is bypassed.
-	expect( $html )->toContain( 'kntnt-gpx-blocks-map-canvas' );
-	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-canvas" data-wp-watch="callbacks.onCursorChange"'
-		. ' style="display:none"' );
+	// The plugin renders no placeholder, no button, no canvas-child split —
+	// just a single block wrapper plus a noscript fallback.
+	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-placeholder' );
+	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-canvas' );
+	expect( $html )->not->toContain( 'actions.grantConsent' );
 
 } );
 
 // ---------------------------------------------------------------------------
-// Consent — when is_required true, state has consent=unknown and canvas hidden
+// Consent — when is_required true, state has consent=unknown
 // ---------------------------------------------------------------------------
 
-test( 'consent=unknown in state and canvas hidden when consent required', function (): void {
+test( 'consent=unknown in state when consent is required', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 81, $coords );
@@ -811,65 +809,21 @@ test( 'consent=unknown in state and canvas hidden when consent required', functi
 		map_fake_block(),
 	);
 
-	// State must show consent unknown.
+	// State must show consent unknown — view.ts resolves via wp_has_consent at runtime.
 	expect( $captured_state['map-consent-on']['consent'] ?? null )->toBe( 'unknown' );
 
-	// Canvas must be initially hidden; placeholder must be visible.
-	expect( $html )->toContain( 'style="display:none"' );
-	expect( $html )->toContain( 'kntnt-gpx-blocks-map-canvas' );
-	expect( $html )->toContain( 'kntnt-gpx-blocks-map-placeholder' );
-	// Placeholder has no display:none when consent is required.
-	expect( $html )->not->toContain( 'class="kntnt-gpx-blocks-map-placeholder" style="display:none"' );
+	// No plugin-rendered consent UI: the cookie-consent plugin owns that.
+	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-placeholder' );
+	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-canvas' );
+	expect( $html )->not->toContain( 'actions.grantConsent' );
 
 } );
 
 // ---------------------------------------------------------------------------
-// Consent — placeholder text comes from the filter
+// Consent — state slice includes consentCategory and consentService
 // ---------------------------------------------------------------------------
 
-test( 'placeholder text uses the kntnt_gpx_blocks_placeholder_text filter value', function (): void {
-
-	$coords = map_synthetic_coords( 10 );
-	$store  = map_seeded_store( 82, $coords );
-	map_bind_meta( $store );
-	map_stub_attached_file( 82, map_fixture_path( 'happy-path.gpx' ) );
-
-	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'is_admin' )->justReturn( false );
-	Functions\when( 'current_user_can' )->justReturn( false );
-	Functions\when( 'esc_html__' )->alias(
-		static fn ( string $text, string $domain ): string => $text
-	);
-	Functions\when( 'wp_interactivity_state' )->justReturn( null );
-
-	// Override apply_filters to intercept the placeholder_text filter.
-	Functions\when( 'apply_filters' )->alias(
-		static function ( string $hook, mixed $fallback ): mixed {
-			if ( $hook === 'kntnt_gpx_blocks_placeholder_text' ) {
-				return 'Custom consent text for testing.';
-			}
-			return $fallback;
-		}
-	);
-
-	$html = Render_Map::render(
-		[
-			'attachmentId' => 82,
-			'mapId'        => 'map-placeholder-text',
-		],
-		'',
-		map_fake_block(),
-	);
-
-	expect( $html )->toContain( 'Custom consent text for testing.' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Consent — state includes consentCategory, consentService, and placeholderText
-// ---------------------------------------------------------------------------
-
-test( 'state slice includes consentCategory, consentService, and placeholderText', function (): void {
+test( 'state slice includes consentCategory and consentService', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 83, $coords );
@@ -904,7 +858,6 @@ test( 'state slice includes consentCategory, consentService, and placeholderText
 	expect( $slice )->not->toBeNull();
 	expect( $slice['consentCategory'] )->toBe( 'marketing' );
 	expect( $slice['consentService'] )->toBe( 'openstreetmap' );
-	expect( $slice['placeholderText'] )->toBeString();
-	expect( strlen( $slice['placeholderText'] ) )->toBeGreaterThan( 0 );
+	expect( $slice )->not->toHaveKey( 'placeholderText' );
 
 } );

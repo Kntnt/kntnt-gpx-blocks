@@ -52,7 +52,7 @@ Per design — confirmed and refined:
 
 ## Privacy
 
-Map tiles are loaded from OpenStreetMap, which means visitor IPs reach a third party. The plugin does not load any tiles until consent has been granted. The integration is built on the WordPress Consent API, configurable via three filters (`kntnt_gpx_blocks_consent_required`, `kntnt_gpx_blocks_consent_category`, `kntnt_gpx_blocks_consent_service`). When consent is missing, a server-rendered placeholder takes the map's place; clicking it activates that single block's tile loading for the current page view without granting site-wide consent. See [`consent.md`](consent.md) for the full integration model.
+Map tiles are loaded from OpenStreetMap, which means visitor IPs reach a third party. The plugin does not load any tiles until consent has been granted. The integration is built on the WordPress Consent API, configurable via three filters (`kntnt_gpx_blocks_consent_required`, `kntnt_gpx_blocks_consent_category`, `kntnt_gpx_blocks_consent_service`). The plugin renders no consent UI of its own — the active cookie-consent plugin (Real Cookie Banner, Complianz, CookieYes, or any other Consent-API-compliant plugin) owns the visitor-facing UX and signals consent decisions through the standard `wp_listen_for_consent_change` event. See [`consent.md`](consent.md) for the full integration model.
 
 The Statistics and Elevation blocks load no third-party resources and need no consent. They render unconditionally.
 

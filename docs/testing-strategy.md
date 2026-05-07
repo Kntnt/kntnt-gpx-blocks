@@ -109,7 +109,7 @@ Playwright drives a WordPress Playground instance with the plugin installed:
 - Hover the chart, verify the cursor moves on the Map.
 - Hover the Map, verify the cursor moves on the chart.
 - Insert GPX Statistics, verify the values match the fixture's known totals.
-- Add the consent placeholder when the test simulates "no consent" state, click activate, verify the map appears.
+- Simulate the "no consent" state and verify no tile request reaches `tile.openstreetmap.org`. Then dispatch a `wp_listen_for_consent_change` allow event and verify the map mounts.
 
 E2E is the most expensive layer. Keep it focused on the cross-block flows that unit and integration cannot cover.
 

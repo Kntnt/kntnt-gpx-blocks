@@ -67,17 +67,15 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
     data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'
     data-wp-context='{"mapId":"map-abc123"}'
     data-wp-init="callbacks.initMap"
-    data-wp-watch="callbacks.onConsentChange"
+    data-wp-watch--consent="callbacks.onConsentChange"
+    data-wp-watch--cursor="callbacks.onCursorChange"
     style="--kntnt-gpx-blocks-aspect-ratio: 16/9; --kntnt-gpx-blocks-min-height: 240px;"
 >
     <noscript><p class="kntnt-gpx-blocks-map-noscript"><!-- text fallback --></p></noscript>
-    <div class="kntnt-gpx-blocks-map-canvas" data-wp-watch="callbacks.onCursorChange"></div>
-    <div class="kntnt-gpx-blocks-map-placeholder">
-        <p class="kntnt-gpx-blocks-map-placeholder-text"><!-- placeholder text --></p>
-        <button type="button" data-wp-on--click="actions.grantConsent">Activate map</button>
-    </div>
 </div>
 ```
+
+Leaflet mounts directly into the block element when consent is granted; the wrapper has explicit `aspect-ratio` and `min-height` via inline CSS variables, so the container always has well-defined dimensions at mount time. The plugin renders no consent UI of its own — see [`consent.md`](consent.md) for the integration model.
 
 The state hydrated via `wp_interactivity_state()`:
 
@@ -93,7 +91,6 @@ The state hydrated via `wp_interactivity_state()`:
         'consent'         => 'unknown', // or 'granted' when gate is bypassed
         'consentCategory' => 'marketing',
         'consentService'  => 'openstreetmap',
-        'placeholderText' => /* translated string */,
     ],
 ]
 ```
@@ -103,11 +100,11 @@ The state hydrated via `wp_interactivity_state()`:
 `callbacks.initMap` (registered in `view.ts`):
 
 1. Reads `state[mapId]`.
-2. Resolves consent: if `wp_has_consent` is available, calls it with the configured category and sets state to `'granted'` or `'denied'`; if the function is absent (no Consent API plugin active), defaults to `'denied'`. The placeholder is shown or hidden accordingly. Also registers a `wp_listen_for_consent_change` listener (for Consent API plugins) and a `kntnt-gpx-blocks/grant-consent` DOM event listener (for non-Consent-API fallbacks).
-3. When consent is granted, defers Leaflet initialisation via `IntersectionObserver` until the canvas enters the viewport. Builds a Leaflet map with `L.canvas()` renderer and `L.geoJSON()` from the cached GeoJSON.
+2. Resolves consent: if `wp_has_consent` is available, calls it with the configured category and sets state to `'granted'` or `'denied'`; if the function is absent (no Consent API plugin active), defaults to `'denied'`. Also registers a `wp_listen_for_consent_change` listener (for Consent API plugins) and a `kntnt-gpx-blocks/grant-consent` DOM event listener (for non-Consent-API fallbacks).
+3. When consent is granted, defers Leaflet initialisation via `IntersectionObserver` until the block element enters the viewport. Builds a Leaflet map with `L.canvas()` renderer and `L.geoJSON()` from the cached GeoJSON, mounting directly into the block element.
 4. Adds the configured controls and enables/disables interactions per `settings`.
 5. Adds waypoint markers from the hydrated `waypoints` GeoJSON. Each marker has a hover tooltip showing `name` (line 1) and `desc` (line 2 if set), built with text nodes (no innerHTML).
-6. Attaches a `pointermove` handler on the polyline layer that finds the nearest vertex and writes `fraction = index / (length - 1)` to `state[mapId].fraction`. Attaches a `pointerleave` handler on the canvas that sets `fraction = null`.
+6. Attaches a `pointermove` handler on the polyline layer that finds the nearest vertex and writes `fraction = index / (length - 1)` to `state[mapId].fraction`. Attaches a `pointerleave` handler on the block element that sets `fraction = null`.
 
 ### Accessibility
 
