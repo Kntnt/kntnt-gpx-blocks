@@ -190,6 +190,9 @@ beforeEach( function (): void {
 	Functions\when( 'esc_html__' )->alias(
 		static fn ( string $text, string $domain ): string => $text
 	);
+	Functions\when( 'esc_attr__' )->alias(
+		static fn ( string $text, string $domain ): string => $text
+	);
 	Functions\when( 'wp_json_encode' )->alias(
 		static fn ( mixed $v ): string|false => json_encode( $v )
 	);

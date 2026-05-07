@@ -246,8 +246,13 @@ final class Render_Elevation {
 			],
 		] );
 
+		// Generate a unique id for the SVG <desc> so aria-labelledby can reference it.
+		// The id is scoped to this render call; multiple elevation blocks on one page
+		// each get their own distinct suffix derived from the resolved map id.
+		$desc_id = 'kntnt-gpx-blocks-elevation-desc-' . esc_attr( $resolved_map_id );
+
 		// Build the SVG and wrap it in the Interactivity-API-annotated container.
-		$svg          = self::build_svg( $downsampled, $payload['statistics'] );
+		$svg          = self::build_svg( $downsampled, $payload['statistics'], $desc_id );
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
 
 		// Assemble the inline style: layout dimensions first, then any non-empty
@@ -305,18 +310,24 @@ final class Render_Elevation {
 
 		$style = implode( '; ', $style_parts );
 
+		// Build the noscript summary — same text as the SVG <desc> so non-JS visitors
+		// and screen readers both get the same description.
+		$noscript_text = self::build_desc( $payload['statistics'], (float) ( end( $downsampled )[0] ?? 0.0 ) );
+
 		return sprintf(
 			'<div class="wp-block-kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation"'
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
-				. ' data-wp-context=\'%s\''
+				. ' data-wp-context=\'%1$s\''
 				. ' data-wp-init="callbacks.initElevation"'
 				. ' data-wp-watch="callbacks.onCursorChange"'
-				. ' style="%s">'
-				. '%s'
+				. ' style="%2$s">'
+				. '%3$s'
+				. '<noscript><p class="kntnt-gpx-blocks-elevation-noscript">%4$s</p></noscript>'
 				. '</div>',
 			esc_attr( (string) $context_json ),
 			esc_attr( $style ),
 			$svg,
+			esc_html( $noscript_text ),
 		);
 
 	}
@@ -428,16 +439,25 @@ final class Render_Elevation {
 	/**
 	 * Builds the inline SVG chart with axes, polyline, and screen-reader desc.
 	 *
+	 * The `$desc_id` is set on the `<desc>` element so the SVG's `aria-labelledby`
+	 * attribute can reference it. Using `aria-labelledby` is preferred over
+	 * `aria-label` when the label text is already present in the document as a
+	 * child element — it avoids duplication and keeps the source of truth in one
+	 * place.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<int, array{0: float, 1: float}> $series     Downsampled
 	 *                                                          (distance, elevation)
 	 *                                                          pairs.
 	 * @param array<string,float|null>              $statistics Cached statistics.
+	 * @param string                                $desc_id    HTML id for the <desc>
+	 *                                                          element; referenced via
+	 *                                                          aria-labelledby on the svg.
 	 *
 	 * @return string SVG markup.
 	 */
-	private static function build_svg( array $series, array $statistics ): string {
+	private static function build_svg( array $series, array $statistics, string $desc_id ): string {
 
 		// Compute the data domain and pad the y-range with 5% of its span so
 		// the polyline never sits flush against the top or bottom of the chart.
@@ -510,9 +530,9 @@ final class Render_Elevation {
 			$x_unit,
 		);
 
-		// Compose the screen-reader summary.
-		$desc       = self::build_desc( $statistics, $x_max );
-		$aria_label = esc_attr__( 'Elevation profile', 'kntnt-gpx-blocks' );
+		// Compose the screen-reader summary text and escape the desc id for HTML.
+		$desc    = self::build_desc( $statistics, $x_max );
+		$safe_id = esc_attr( $desc_id );
 
 		// Plot-area frame: a faint axis line on the bottom and left edges so
 		// the chart has a clear baseline even when the polyline is short.
@@ -563,12 +583,15 @@ final class Render_Elevation {
 			$cursor_tooltip_text,
 		);
 
+		// aria-labelledby references the <desc> child element, which is the
+		// recommended pattern when the accessible name is already present in the DOM.
 		return sprintf(
-			'<svg viewBox="0 0 %d %d" role="img" aria-label="%s" preserveAspectRatio="none">'
-				. '<desc>%s</desc>%s%s%s%s%s</svg>',
+			'<svg viewBox="0 0 %d %d" role="img" aria-labelledby="%s" preserveAspectRatio="none">'
+				. '<desc id="%s">%s</desc>%s%s%s%s%s</svg>',
 			self::VIEWBOX_WIDTH,
 			self::VIEWBOX_HEIGHT,
-			$aria_label,
+			$safe_id,
+			$safe_id,
 			esc_html( $desc ),
 			$frame,
 			$y_ticks,

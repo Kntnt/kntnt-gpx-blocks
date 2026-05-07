@@ -268,6 +268,10 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				bottom: plotBottom,
 			};
 
+			// Record the mount entry immediately so onCursorChange can update the
+			// SVG cursor as soon as fraction changes — even before the pointer
+			// handlers are bound. The cursor sync only mutates SVG attributes
+			// and never needs Leaflet, so it is safe to activate right away.
 			mountedElevations.set( ref, {
 				points,
 				cursorGroup,
@@ -282,22 +286,53 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			// ViewBox width — matches the PHP constant VIEWBOX_WIDTH (1200).
 			const viewWidth = svg.viewBox.baseVal.width || 1200;
 
-			// Attach pointer tracking on the SVG element. pointermove computes
-			// fraction from the x-position and writes it to shared state.
-			svg.addEventListener( 'pointermove', ( e: PointerEvent ) => {
-				const fraction = clientXToFraction(
-					e.clientX,
-					svg,
-					chart,
-					viewWidth
-				);
-				state[ mapId ].fraction = fraction;
-			} );
+			// Defer pointer-event handler binding until the chart is in (or near)
+			// the viewport. This mirrors the Map block's IntersectionObserver
+			// pattern: heavy DOM listeners are attached lazily, but the cursor-sync
+			// watch (onCursorChange) is already live because mountedElevations is
+			// set above.
+			const bindPointerHandlers = () => {
+				// Attach pointer tracking on the SVG element. pointermove computes
+				// fraction from the x-position and writes it to shared state.
+				svg.addEventListener( 'pointermove', ( e: PointerEvent ) => {
+					const fraction = clientXToFraction(
+						e.clientX,
+						svg,
+						chart,
+						viewWidth
+					);
+					state[ mapId ].fraction = fraction;
+				} );
 
-			// Null the fraction when the pointer leaves so both cursors hide.
-			svg.addEventListener( 'pointerleave', () => {
-				state[ mapId ].fraction = null;
-			} );
+				// Null the fraction when the pointer leaves so both cursors hide.
+				svg.addEventListener( 'pointerleave', () => {
+					state[ mapId ].fraction = null;
+				} );
+			};
+
+			// Use IntersectionObserver when available (all evergreen browsers).
+			// Fall back to immediate binding when the API is absent.
+			if ( typeof IntersectionObserver !== 'undefined' ) {
+				const observer = new IntersectionObserver(
+					( entries, obs ) => {
+						if ( ! entries[ 0 ]?.isIntersecting ) {
+							return;
+						}
+
+						// Disconnect after first intersection — one-shot pattern.
+						obs.disconnect();
+						bindPointerHandlers();
+					},
+					// rootMargin pre-triggers 200 px before the SVG enters view,
+					// matching the Map block's lazy-mount margin.
+					{ rootMargin: '200px 0px', threshold: 0 }
+				);
+				observer.observe( ref );
+			} else {
+				// IntersectionObserver unavailable — bind immediately so the block
+				// is still interactive.
+				bindPointerHandlers();
+			}
 		},
 
 		/**
