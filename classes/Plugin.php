@@ -285,6 +285,22 @@ final class Plugin {
 		$upload_guard = new Bootstrap\Upload_Guard();
 		add_filter( 'wp_handle_upload_prefilter', [ $upload_guard, 'enforce_size_cap' ] );
 
+		// The cache layer is shared between the upload-lifecycle hooks and the
+		// WP-CLI command, so it is constructed once and injected into both.
+		$attachment_cache = new Cache\Attachment_Cache();
+
+		// Wire the upload lifecycle to the cache: regenerate on add, and on
+		// updates that actually change the file's bytes.
+		$conversion_hooks = new Bootstrap\Conversion_Hooks( $attachment_cache );
+		add_action( 'add_attachment', [ $conversion_hooks, 'on_added' ] );
+		add_action( 'attachment_updated', [ $conversion_hooks, 'on_updated' ] );
+
+		// Register the WP-CLI command only when running under WP_CLI to keep the
+		// web request path free of CLI dependencies.
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			\WP_CLI::add_command( 'kntnt-gpx regenerate', new Cli\Regenerate_Command( $attachment_cache ) );
+		}
+
 		// Wire the update checker to the WordPress update transient.
 		$updater = new Updater();
 		add_filter( 'pre_set_site_transient_update_plugins', [ $updater, 'check_for_updates' ] );
