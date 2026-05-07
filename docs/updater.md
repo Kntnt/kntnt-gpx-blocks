@@ -60,8 +60,8 @@ The release process — once `build-release-zip.sh` is in place:
 
 1. Bump the `Version` header in `kntnt-gpx-blocks.php` to the new version (semantic versioning).
 2. Tag the commit: `git tag v1.2.3 && git push --tags`.
-3. Run `./build-release-zip.sh`, which assembles the production ZIP into `kntnt-gpx-blocks-v1.2.3.zip`.
-4. Create a GitHub release for the tag using `gh release create v1.2.3 ./kntnt-gpx-blocks-v1.2.3.zip --title "v1.2.3" --notes "..."`.
+3. Run `./build-release-zip.sh`, which assembles the production ZIP into `kntnt-gpx-blocks.zip`. The filename has no version segment so the asset URL stays stable across releases — the per-release tag in the URL already encodes the version.
+4. Create a GitHub release for the tag using `gh release create v1.2.3 ./kntnt-gpx-blocks.zip --title "v1.2.3" --notes "..."`.
 5. The release notes are visible from the Plugins → "View version 1.2.3 details" link, but only if a `plugins_api` callback is added later. Without that, only the Update button surfaces.
 
 The release ZIP must:
