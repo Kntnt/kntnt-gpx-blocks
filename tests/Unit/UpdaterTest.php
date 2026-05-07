@@ -369,3 +369,30 @@ it( 'does not advertise an update when the GitHub API returns a non-200 status',
 
 	expect( $result->response )->toBe( [] );
 } );
+
+// ---------------------------------------------------------------------------
+// Non-stdClass transient values — defensive against set_site_transient resets
+// ---------------------------------------------------------------------------
+
+it( 'returns false unchanged when the transient is being reset to false', function (): void {
+
+	$result = ( new Updater() )->check_for_updates( false );
+
+	expect( $result )->toBeFalse();
+} );
+
+it( 'returns null unchanged when the transient value is null', function (): void {
+
+	$result = ( new Updater() )->check_for_updates( null );
+
+	expect( $result )->toBeNull();
+} );
+
+it( 'returns an array unchanged when a third-party caller passes an array', function (): void {
+
+	$payload = [ 'unexpected' => 'shape' ];
+
+	$result = ( new Updater() )->check_for_updates( $payload );
+
+	expect( $result )->toBe( $payload );
+} );

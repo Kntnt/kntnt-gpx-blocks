@@ -30,12 +30,28 @@ final class Updater {
 	 * This is the callback for 'pre_set_site_transient_update_plugins'. It
 	 * compares the installed version with the latest release tag on GitHub.
 	 *
+	 * The parameter type is intentionally `mixed` rather than `\stdClass`:
+	 * the filter fires from `set_site_transient()` with whatever the caller
+	 * passed as the value, and although WordPress core always passes a
+	 * stdClass for the update_plugins transient, third-party code can
+	 * legitimately call `set_site_transient( 'update_plugins', false )` to
+	 * clear the transient. A narrower signature would throw a fatal
+	 * TypeError in that case.
+	 *
 	 * @since 1.0.0
 	 *
-	 * @param \stdClass $transient The update transient object passed by the filter.
-	 * @return \stdClass The (potentially modified) transient object.
+	 * @param mixed $transient The update transient passed by the filter.
+	 *                          Normally a stdClass; possibly false during a
+	 *                          reset.
+	 * @return mixed The (potentially modified) transient.
 	 */
-	public function check_for_updates( \stdClass $transient ): \stdClass {
+	public function check_for_updates( mixed $transient ): mixed {
+
+		// Pass non-object payloads straight through — only stdClass values
+		// have the structure this updater expects to mutate.
+		if ( ! ( $transient instanceof \stdClass ) ) {
+			return $transient;
+		}
 
 		// If WordPress hasn't checked recently, don't check again.
 		if ( empty( $transient->checked ) ) {
