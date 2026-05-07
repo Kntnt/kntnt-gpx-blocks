@@ -1,6 +1,12 @@
 // Styles shared between the editor and the frontend for the GPX Map block.
-// Full implementation arrives in a later issue.
+// The block container's dimensions are driven by CSS custom properties so
+// that the PHP render callback's inline style is the single source of truth.
+// Leaflet's own stylesheet is imported in view.ts so that @wordpress/scripts
+// bundles it into the view-side CSS asset rather than the editor stylesheet.
 
-.wp-block-kntnt-gpx-blocks-map {
+.kntnt-gpx-blocks-map {
 	display: block;
+	width: 100%;
+	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
+	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
 }

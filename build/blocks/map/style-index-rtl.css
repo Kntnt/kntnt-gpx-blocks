@@ -1,1 +1,1 @@
-.wp-block-kntnt-gpx-blocks-map{display:block}
+.kntnt-gpx-blocks-map{aspect-ratio:var(--kntnt-gpx-blocks-aspect-ratio,16/9);display:block;min-height:var(--kntnt-gpx-blocks-min-height,240px);width:100%}

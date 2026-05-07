@@ -134,10 +134,13 @@ final class Render_Map {
 		] );
 
 		// Build the inline style string from the validated layout attributes.
+		// Dimensions are expressed as CSS custom properties so the SCSS picks them
+		// up via var() — keeping the PHP render callback as the single source of
+		// truth without duplicating the CSS logic.
 		// $min_height is always non-empty (falls back to DEFAULT_MIN_HEIGHT).
-		$style_parts   = [
-			'aspect-ratio: ' . esc_attr( $aspect_ratio ),
-			'min-height: ' . esc_attr( $min_height ),
+		$style_parts = [
+			'--kntnt-gpx-blocks-aspect-ratio: ' . esc_attr( $aspect_ratio ),
+			'--kntnt-gpx-blocks-min-height: ' . esc_attr( $min_height ),
 		];
 		if ( '' !== $max_height ) {
 			$style_parts[] = 'max-height: ' . esc_attr( $max_height );
