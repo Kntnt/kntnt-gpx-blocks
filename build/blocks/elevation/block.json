@@ -32,6 +32,66 @@
     "minHeight": {
       "type": "string",
       "default": "120px"
+    },
+    "backgroundColor": {
+      "type": "string",
+      "default": ""
+    },
+    "axisColor": {
+      "type": "string",
+      "default": ""
+    },
+    "axisLabelColor": {
+      "type": "string",
+      "default": ""
+    },
+    "lineColor": {
+      "type": "string",
+      "default": ""
+    },
+    "cursorColor": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipBackground": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipColor": {
+      "type": "string",
+      "default": ""
+    },
+    "axisFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "axisFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "axisFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "axisFontStyle": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipFontStyle": {
+      "type": "string",
+      "default": ""
     }
   }
 }
