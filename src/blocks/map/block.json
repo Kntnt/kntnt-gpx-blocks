@@ -12,5 +12,26 @@
 	"style": "file:./style-index.css",
 	"editorStyle": "file:./index.css",
 	"render": "file:./render.php",
-	"attributes": {}
+	"attributes": {
+		"attachmentId": {
+			"type": "integer",
+			"default": 0
+		},
+		"mapId": {
+			"type": "string",
+			"default": ""
+		},
+		"aspectRatio": {
+			"type": "string",
+			"default": "16/9"
+		},
+		"minHeight": {
+			"type": "string",
+			"default": "240px"
+		},
+		"maxHeight": {
+			"type": "string",
+			"default": ""
+		}
+	}
 }
