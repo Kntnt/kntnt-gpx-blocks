@@ -35,7 +35,7 @@ final class Block_Registrar {
 	 * @since 1.0.0
 	 * @var string[]
 	 */
-	private const BLOCK_SLUGS = [ 'map' ];
+	private const BLOCK_SLUGS = [ 'map', 'elevation', 'statistics' ];
 
 	/**
 	 * Registers all blocks by pointing register_block_type() at the build dir.

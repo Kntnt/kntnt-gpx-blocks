@@ -1,0 +1,15 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "kntnt-gpx-blocks/statistics",
+	"title": "GPX Statistics",
+	"category": "kntnt",
+	"description": "Renders a server-side HTML summary of GPX track statistics: distance, elevation range, and total ascent/descent.",
+	"keywords": [ "gpx", "statistics", "distance", "elevation" ],
+	"textdomain": "kntnt-gpx-blocks",
+	"editorScript": "file:./index.tsx",
+	"style": "file:./style-index.css",
+	"editorStyle": "file:./index.css",
+	"render": "file:./render.php",
+	"attributes": {}
+}

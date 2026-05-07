@@ -1,0 +1,16 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "kntnt-gpx-blocks/elevation",
+	"title": "GPX Elevation",
+	"category": "kntnt",
+	"description": "Renders a custom-SVG elevation profile for a GPX track with cursor synchronisation to GPX Map.",
+	"keywords": [ "gpx", "elevation", "profile", "chart" ],
+	"textdomain": "kntnt-gpx-blocks",
+	"editorScript": "file:./index.tsx",
+	"viewScriptModule": "file:./view.ts",
+	"style": "file:./style-index.css",
+	"editorStyle": "file:./index.css",
+	"render": "file:./render.php",
+	"attributes": {}
+}
