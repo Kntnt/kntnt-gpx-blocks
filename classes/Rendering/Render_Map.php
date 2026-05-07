@@ -62,13 +62,17 @@ final class Render_Map {
 	 *
 	 * @since 1.0.0
 	 *
+	 * The $block parameter is typed as object (not \WP_Block) so unit tests can
+	 * pass anonymous objects. WordPress always supplies a genuine \WP_Block at
+	 * runtime. Render_Map does not read any property on $block.
+	 *
 	 * @param array<string,mixed> $attributes Block attributes from post_content.
 	 * @param string              $content    Inner block HTML (always empty for this block).
-	 * @param \WP_Block           $block      The block instance carrying block.json metadata.
+	 * @param object              $block      The block instance carrying block.json metadata.
 	 *
 	 * @return string Escaped HTML ready for output.
 	 */
-	public static function render( array $attributes, string $content, \WP_Block $block ): string {
+	public static function render( array $attributes, string $content, object $block ): string {
 
 		// Read the identity attributes and coerce to the expected primitive types.
 		$raw_id        = $attributes['attachmentId'] ?? 0;
@@ -82,6 +86,12 @@ final class Render_Map {
 		$raw_maxh     = $attributes['maxHeight'] ?? '';
 		$min_height   = is_string( $raw_mh ) && '' !== $raw_mh ? $raw_mh : self::DEFAULT_MIN_HEIGHT;
 		$max_height   = is_string( $raw_maxh ) ? $raw_maxh : '';
+
+		// Read the four control-overlay flags; coerce to bool with documented defaults.
+		$show_zoom_buttons = isset( $attributes['showZoomButtons'] ) ? (bool) $attributes['showZoomButtons'] : true;
+		$show_scale        = isset( $attributes['showScale'] ) ? (bool) $attributes['showScale'] : true;
+		$show_fullscreen   = isset( $attributes['showFullscreen'] ) ? (bool) $attributes['showFullscreen'] : false;
+		$show_download     = isset( $attributes['showDownload'] ) ? (bool) $attributes['showDownload'] : false;
 
 		// Validate the aspect-ratio string against the whitelist pattern from
 		// docs/security.md; fall back to the default on any mismatch.
@@ -121,13 +131,23 @@ final class Render_Map {
 		$simplified     = $simplifier->simplify( $track_points, $tolerance );
 		$simplified_geo = self::points_to_geojson( $simplified );
 
+		// Resolve the original GPX file URL for the download control; null when unavailable.
+		$gpx_file_url = wp_get_attachment_url( $attachment_id );
+		$gpx_file_url = $gpx_file_url !== false ? $gpx_file_url : null;
+
 		// Register the per-map state slice with the Interactivity API.
 		wp_interactivity_state( 'kntnt-gpx-blocks', [
 			$map_id => [
 				'attachmentId' => $attachment_id,
 				'geojson'      => $simplified_geo,
 				'waypoints'    => $waypoints,
-				'settings'     => [],
+				'gpxFileUrl'   => $gpx_file_url,
+				'settings'     => [
+					'showZoomButtons' => $show_zoom_buttons,
+					'showScale'       => $show_scale,
+					'showFullscreen'  => $show_fullscreen,
+					'showDownload'    => $show_download,
+				],
 				'fraction'     => null,
 				'consent'      => 'unknown',
 			],

@@ -10,3 +10,28 @@
 	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
 	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
 }
+
+// Custom download-GPX Leaflet control button — styled to match the standard
+// leaflet-bar appearance so it integrates naturally with the zoom and
+// fullscreen controls.
+.kntnt-gpx-blocks-map-download-control {
+
+	a {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		color: #333;
+		text-decoration: none;
+
+		svg {
+			display: block;
+			fill: currentcolor;
+		}
+
+		&:hover {
+			color: #000;
+		}
+	}
+}

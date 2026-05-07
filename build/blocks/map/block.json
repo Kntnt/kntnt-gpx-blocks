@@ -37,6 +37,22 @@
     "maxHeight": {
       "type": "string",
       "default": ""
+    },
+    "showZoomButtons": {
+      "type": "boolean",
+      "default": true
+    },
+    "showScale": {
+      "type": "boolean",
+      "default": true
+    },
+    "showFullscreen": {
+      "type": "boolean",
+      "default": false
+    },
+    "showDownload": {
+      "type": "boolean",
+      "default": false
     }
   }
 }
