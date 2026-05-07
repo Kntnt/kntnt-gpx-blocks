@@ -120,16 +120,6 @@ Same semantics as the distance filter.
 
 **Not yet applied in v1.** This filter is reserved for a future release. Waypoints without a `<name>` element currently receive no hover label. When this filter is applied, it will provide a fallback name for such waypoints.
 
-### `kntnt_gpx_blocks_placeholder_text`
-
-Text shown on the consent placeholder before the visitor activates the map. Default is the translated string `"Map is disabled until you accept cookies from OpenStreetMap."`
-
-```php
-$text = apply_filters( 'kntnt_gpx_blocks_placeholder_text', $default );
-```
-
-Override to fit the site's tone of voice. The filter is read at render time, so the override sees the visitor's locale.
-
 ## Versioned cache
 
 The cache version constant `Cache_Version::CURRENT` is **not** a filter. It lives in `classes/Cache/Cache_Version.php` as a typed `int` on a final class. Bumping it invalidates every cached conversion across the site at the next render. See [`caching.md`](caching.md).

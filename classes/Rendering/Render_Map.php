@@ -164,15 +164,16 @@ final class Render_Map {
 		$gpx_file_url = $gpx_file_url !== false ? $gpx_file_url : null;
 
 		// Resolve the consent configuration from filters; bypass the gate in the editor.
-		$resolver          = new Consent_Resolver();
-		$consent_required  = $resolver->is_required();
-		$consent_category  = $resolver->get_category();
-		$consent_service   = $resolver->get_service();
-		$default_placeholder = __( 'Map is disabled until you accept cookies from OpenStreetMap.', 'kntnt-gpx-blocks' );
-		$filtered_placeholder = apply_filters( 'kntnt_gpx_blocks_placeholder_text', $default_placeholder );
-		$placeholder_text     = is_string( $filtered_placeholder ) ? $filtered_placeholder : $default_placeholder;
+		$resolver         = new Consent_Resolver();
+		$consent_required = $resolver->is_required();
+		$consent_category = $resolver->get_category();
+		$consent_service  = $resolver->get_service();
 
-		// Register the per-map state slice with the Interactivity API.
+		// Register the per-map state slice with the Interactivity API. The plugin
+		// is a passive consent consumer: when a gate is in effect, view.ts queries
+		// wp_has_consent and listens for wp_listen_for_consent_change. Until then,
+		// no tile request is made and no plugin-supplied placeholder is shown —
+		// the active consent-management plugin owns the visitor-facing UI.
 		wp_interactivity_state( 'kntnt-gpx-blocks', [
 			$map_id => [
 				'attachmentId'    => $attachment_id,
@@ -195,7 +196,6 @@ final class Render_Map {
 				'consent'         => $consent_required ? 'unknown' : 'granted',
 				'consentCategory' => $consent_category,
 				'consentService'  => $consent_service,
-				'placeholderText' => $placeholder_text,
 			],
 		] );
 
@@ -250,25 +250,21 @@ final class Render_Map {
 		// Encode the data-wp-context payload as a JSON string.
 		$context = wp_json_encode( [ 'mapId' => $map_id ] );
 
-		// Set initial visibility for the canvas and placeholder based on consent state.
-		// When consent is already granted (gate bypassed), the placeholder is hidden.
-		// When consent is unknown, the canvas is hidden until view.ts grants consent.
-		$canvas_style      = $consent_required ? ' style="display:none"' : '';
-		$placeholder_style = $consent_required ? '' : ' style="display:none"';
-
-		// Translate the "Activate map" button label and the ARIA / noscript strings.
-		$activate_label = esc_html__( 'Activate map', 'kntnt-gpx-blocks' );
-		$aria_label     = esc_attr__( 'Map of GPX track', 'kntnt-gpx-blocks' );
+		// Translate the ARIA label and the noscript fallback string.
+		$aria_label = esc_attr__( 'Map of GPX track', 'kntnt-gpx-blocks' );
 		// phpcs:ignore Generic.Files.LineLength.TooLong -- Translator strings must be a single literal per WordPress.WP.I18n; splitting is not permitted.
-		$noscript_text  = esc_html__( 'This map requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
+		$noscript_text = esc_html__( 'This map requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
 
-		// Return the Interactivity-API-annotated container element with both the
-		// canvas wrapper (Leaflet mounts here) and the consent placeholder.
-		// role="application" and aria-label make the interactive map discoverable
-		// by assistive technology. The <noscript> child is shown only when JS is
-		// disabled — browsers natively hide it when JS runs.
-		// data-wp-watch on the outer wrapper drives consent transitions.
-		// data-wp-watch on the canvas child drives cursor-marker updates.
+		// Return the block element. Leaflet mounts directly into this wrapper —
+		// the wrapper has explicit width / aspect-ratio / min-height via inline
+		// style, so Leaflet always sees a correctly sized container.
+		// role="application" and aria-label expose the interactive map to assistive
+		// technology. <noscript> is shown only when JS is disabled.
+		// data-wp-init bootstraps the block. The two suffixed data-wp-watch
+		// directives subscribe independently — one to consent transitions, one
+		// to cursor-marker updates from sibling Elevation blocks.
+		// No plugin-supplied placeholder, button, or consent UI is rendered —
+		// the active consent-management plugin owns the visitor-facing UX.
 		return sprintf(
 			'<div class="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"'
 				. ' role="application"'
@@ -276,25 +272,15 @@ final class Render_Map {
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%2$s\''
 				. ' data-wp-init="callbacks.initMap"'
-				. ' data-wp-watch="callbacks.onConsentChange"'
+				. ' data-wp-watch--consent="callbacks.onConsentChange"'
+				. ' data-wp-watch--cursor="callbacks.onCursorChange"'
 				. ' style="%3$s">'
 				. '<noscript><p class="kntnt-gpx-blocks-map-noscript">%4$s</p></noscript>'
-				. '<div class="kntnt-gpx-blocks-map-canvas"'
-				. ' data-wp-watch="callbacks.onCursorChange"%5$s></div>'
-				. '<div class="kntnt-gpx-blocks-map-placeholder"%6$s>'
-				. '<p class="kntnt-gpx-blocks-map-placeholder-text">%7$s</p>'
-				. '<button type="button" class="kntnt-gpx-blocks-map-placeholder-button"'
-				. ' data-wp-on--click="actions.grantConsent">%8$s</button>'
-				. '</div>'
 				. '</div>',
 			$aria_label,
 			esc_attr( (string) $context ),
 			esc_attr( $style ),
 			$noscript_text,
-			$canvas_style,
-			$placeholder_style,
-			esc_html( $placeholder_text ),
-			$activate_label,
 		);
 
 	}

@@ -20,7 +20,7 @@ The three blocks talk to each other when they're on the same page, but you choos
 
 ### Privacy by default
 
-Map tiles come from OpenStreetMap, which means visitor IPs are sent to a third party. The plugin won't load a single tile until your visitors have given consent through your existing cookie-consent plugin. Until then, a clean placeholder shows where the map will appear.
+Map tiles come from OpenStreetMap, which means visitor IPs are sent to a third party. The plugin won't load a single tile until your visitors have given consent through your existing cookie-consent plugin. The plugin renders no consent UI of its own — your cookie-consent plugin (Real Cookie Banner, Complianz, CookieYes, etc.) handles the visitor-facing flow exactly the way it handles every other third-party service.
 
 ### Performance you don't have to think about
 
@@ -56,7 +56,7 @@ Use the **Layout** panel to control the block's aspect ratio (choosing from 1:1,
 
 The **Track** panel provides colour pickers for the track polyline and for the cursor marker that appears when hovering either the map or the elevation chart. The **Waypoints** panel configures the marker fill colour, the hover label's background and text colour, and the label's font family, size, weight, and style. All colour inputs accept hex values; all typography inputs accept CSS lengths or theme font-size preset tokens. Leaving any input blank lets the CSS fall back to the hardcoded default in the plugin's stylesheet, so the block integrates cleanly with your theme without requiring any configuration.
 
-When the consent gate is active (the default), the block renders a placeholder instead of the map until the visitor consents. The placeholder uses the same aspect ratio and minimum height as the map so the layout does not shift when consent is granted. An "Activate map" button lets the visitor enable tile loading for that block in the current page view without granting site-wide consent. In the WordPress admin, editors with `edit_posts` see the live map directly — the consent placeholder is bypassed for logged-in editors.
+When the consent gate is active (the default), the block element is rendered as a correctly sized empty container. The plugin makes no tile request and renders no consent UI of its own — your active cookie-consent plugin (Real Cookie Banner, Complianz, CookieYes, or any other Consent-API-compliant plugin) handles the visitor-facing flow exactly the way it does for every other third-party service. As soon as consent is granted, the plugin mounts Leaflet automatically. In the WordPress admin, editors with `edit_posts` see the live map directly — the consent gate is bypassed for logged-in editors.
 
 ### GPX Elevation block
 
@@ -100,7 +100,7 @@ Most existing GPX/Leaflet plugins for WordPress either ship a generic shortcode 
 
 **Are visitors tracked when they look at a map?**
 
-The map tiles are loaded from OpenStreetMap's servers, which receive each visitor's IP address. The plugin does not load any tiles until consent has been given through your cookie-consent plugin (any plugin that implements the WordPress Consent API works automatically; Real Cookie Banner, Complianz, and CookieYes are tested integrations). Until consent is given, a placeholder is shown with a button the visitor can click to activate just that map for the current page view.
+The map tiles are loaded from OpenStreetMap's servers, which receive each visitor's IP address. The plugin does not load any tiles until consent has been given through your cookie-consent plugin (any plugin that implements the WordPress Consent API works automatically; Real Cookie Banner, Complianz, and CookieYes are tested integrations). The plugin renders no consent UI of its own — your cookie-consent plugin shows the banner, the per-service blocker, and any messaging exactly the way it does for every other third-party service.
 
 **Does it work without JavaScript?**
 
@@ -116,13 +116,13 @@ This section is for developers who want to integrate the plugin with consent plu
 
 ### Connecting a Cookie Consent Plugin
 
-The plugin defers all OpenStreetMap tile requests until consent has been granted. Tile-loading is gated by default on every page view because each tile request transmits the visitor's IP address to the OpenStreetMap Foundation's servers, which qualifies as a transfer of personal data to a third party under GDPR. Until consent is given, a server-rendered placeholder appears in place of the map. The placeholder uses the same dimensions as the map container and includes an "Activate map" button. Clicking the button grants consent for that single map block in that single page view — it does not grant site-wide consent, which is always the responsibility of the consent plugin.
+The plugin defers all OpenStreetMap tile requests until consent has been granted. Tile-loading is gated by default on every page view because each tile request transmits the visitor's IP address to the OpenStreetMap Foundation's servers, which qualifies as a transfer of personal data to a third party under GDPR. Until consent is given, the block element stays as a correctly sized empty container — the plugin renders no consent UI of its own. Your active cookie-consent plugin handles everything visitor-facing: the banner, the per-service blocker (Real Cookie Banner ships one out of the box for OpenStreetMap), the messaging, and the accept button.
 
 Three filters configure the consent integration. `kntnt_gpx_blocks_consent_required` (default `true`) enables or disables the gate — return `false` to bypass it entirely, for example when using a self-hosted tile server or when your jurisdiction does not require consent for OSM tiles. `kntnt_gpx_blocks_consent_category` (default `'marketing'`) sets the consent category that the plugin checks against the WordPress Consent API; override to `'statistics'` or `'functional'` if your cookie policy classifies map tiles in a different category. `kntnt_gpx_blocks_consent_service` (default `'openstreetmap'`) sets the per-service identifier used by plugins such as Real Cookie Banner that track consent at the service level rather than the category level.
 
-When any plugin that implements the [WordPress Consent API](https://github.com/rlankhorst/wp-consent-level-api) is active — Real Cookie Banner, Complianz, and CookieYes are confirmed integrations — the plugin calls `wp_has_consent( $category )` on page load to check the visitor's existing consent decision and shows or hides the map accordingly. If the visitor subsequently changes their decision (for example by withdrawing consent through the cookie banner), the plugin listens to the `wp_listen_for_consent_change` DOM event and reacts immediately: a newly granted consent initialises the Leaflet map, and a withdrawn consent tears it down and restores the placeholder.
+When any plugin that implements the [WordPress Consent API](https://github.com/rlankhorst/wp-consent-level-api) is active — Real Cookie Banner, Complianz, and CookieYes are confirmed integrations — the plugin calls `wp_has_consent( $category )` on page load to check the visitor's existing consent decision and mounts or skips the map accordingly. If the visitor subsequently changes their decision (for example by withdrawing consent through the cookie banner), the plugin listens to the `wp_listen_for_consent_change` DOM event and reacts immediately: a newly granted consent initialises the Leaflet map, and a withdrawn consent tears it down. The block element stays in the DOM throughout — the cookie-consent plugin's content blocker takes over the visual until consent is re-granted.
 
-For consent plugins that do not implement the WordPress Consent API, you can trigger the map activation directly by dispatching a custom DOM event on the block's container element: `element.dispatchEvent(new CustomEvent('kntnt-gpx-blocks/grant-consent', { bubbles: true }))`. The plugin listens for this event as a fallback integration path, so any consent system that can fire a DOM event on the right element can trigger map activation without any PHP-side changes. The `kntnt_gpx_blocks_placeholder_text` filter lets you customise the placeholder message to match your site's tone of voice.
+For consent flows that do not implement the WordPress Consent API, you can trigger the map activation directly by dispatching a custom DOM event on the block's container element: `element.dispatchEvent(new CustomEvent('kntnt-gpx-blocks/grant-consent', { bubbles: true }))`. The plugin listens for this event as a fallback integration path, so any consent system that can fire a DOM event on the right element can trigger map activation without any PHP-side changes.
 
 ### Developer Hooks
 
@@ -140,7 +140,6 @@ For consent plugins that do not implement the WordPress Consent API, you can tri
 | `kntnt_gpx_blocks_climb_threshold_meters` | `3.0` | Hysteresis threshold for ascent/descent calculation. |
 | `kntnt_gpx_blocks_format_distance` | — | Override the formatted distance string. |
 | `kntnt_gpx_blocks_format_elevation` | — | Override the formatted elevation string. |
-| `kntnt_gpx_blocks_placeholder_text` | (translated string) | Text shown on the consent placeholder. |
 
 ## For Contributors
 

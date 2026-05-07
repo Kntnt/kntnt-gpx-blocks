@@ -3,27 +3,25 @@
  *
  * Registers the `kntnt-gpx-blocks` store and implements:
  *
- * - `callbacks.initMap` — checks consent state, then either mounts a Leaflet
- *   map immediately (consent granted) or defers mount until consent is granted.
- *   The consent check queries `window.wp_has_consent`; when the Consent API
- *   plugin is absent, the block starts with the placeholder visible until the
- *   visitor clicks "Activate map".
+ * - `callbacks.initMap` — mounts Leaflet directly into the block element when
+ *   consent is granted (or no gate is in effect). When consent is unknown, it
+ *   queries `window.wp_has_consent` to resolve the initial state and otherwise
+ *   defers mount until a `wp_listen_for_consent_change` event grants it.
+ * - `callbacks.onConsentChange` — reacts to `state[mapId].consent` changes.
+ *   Mounts Leaflet on `'granted'`, tears it down on `'denied'`. The plugin
+ *   renders no consent UI of its own; the active consent-management plugin
+ *   owns whatever the visitor sees in the meantime.
  * - `callbacks.onCursorChange` — reacts to `state[mapId].fraction` changes
  *   (from Map itself or from GPX Elevation) by moving the cursor marker along
- *   the polyline without re-emitting the fraction (no feedback loop).
- * - `callbacks.onConsentChange` — reacts to `state[mapId].consent` changes.
- *   Mounts Leaflet when consent transitions to 'granted'; tears down the map
- *   and shows the placeholder when consent transitions to 'denied'.
- * - `actions.grantConsent` — sets `state[mapId].consent = 'granted'` for this
- *   block only; does NOT call into the Consent API to grant site-wide consent.
+ *   the polyline without re-emitting the fraction.
  *
- * Consent API integration:
+ * Consent API integration (passive):
  * - `wp_has_consent` (if present) is called once at `initMap` time to set the
- *   initial consent state from whatever the visitor has already decided.
+ *   initial consent state.
  * - `wp_listen_for_consent_change` events update state when consent changes
  *   site-wide (both grant and revoke).
  * - The custom DOM event `kntnt-gpx-blocks/grant-consent` on the block element
- *   dispatches `grantConsent` so non-Consent-API plugins can trigger activation.
+ *   sets consent to `'granted'` so non-Consent-API plugins can trigger mount.
  *
  * The map is deferred until the container enters the viewport via
  * IntersectionObserver. A WeakMap guards against double-mounting on
@@ -105,8 +103,6 @@ interface MapState {
 	consentCategory: string;
 	/** Consent API service identifier; comes from the kntnt_gpx_blocks_consent_service filter. */
 	consentService: string;
-	/** Placeholder text to display before consent is granted. */
-	placeholderText: string;
 }
 
 /**
@@ -144,11 +140,11 @@ interface MapEntry {
 // ─── Module state ─────────────────────────────────────────────────────────────
 
 /**
- * Tracks which container elements already have a Leaflet instance mounted so
- * that re-hydration (e.g. in the editor's ServerSideRender) never double-mounts.
+ * Tracks which block elements already have a Leaflet instance mounted so that
+ * re-hydration (e.g. in the editor's ServerSideRender) never double-mounts.
  *
- * Keyed by the block's canvas child element; the value carries the map, cursor
- * marker, and pre-computed coordinate array needed by `onCursorChange`.
+ * Keyed by the block wrapper element; the value carries the map, cursor marker,
+ * and pre-computed coordinate array needed by `onCursorChange`.
  *
  * @since 1.0.0
  */
@@ -255,33 +251,35 @@ function fractionToLatLng(
 }
 
 /**
- * Mount the Leaflet map into the canvas child element.
+ * Mount the Leaflet map directly into the block element.
  *
- * Defers actual mount until the canvas element enters the viewport via
+ * Defers actual mount until the element enters the viewport via
  * IntersectionObserver so the map has real layout dimensions at init time.
- * The `mountedMaps` WeakMap is checked before entering the observer, but the
+ * The `mountedMaps` WeakMap is checked before entering the observer; the
  * observer callback also guards against redundant mounts in case of race
- * conditions between the observer and a direct consent grant.
+ * conditions.
+ *
+ * After fitBounds, calls `map.invalidateSize()` once to force Leaflet to
+ * re-measure the container — necessary when the element became visible just
+ * before mount (e.g. consent transition from denied to granted).
  *
  * @since 1.0.0
  *
- * @param canvas   - The `.kntnt-gpx-blocks-map-canvas` child element.
+ * @param blockEl  - The `.kntnt-gpx-blocks-map` block wrapper element.
  * @param mapId    - The mapId string key in the Interactivity state.
  * @param mapState - The hydrated state slice for this map.
- * @param blockEl  - The outer block wrapper, used for CSS variable resolution.
  */
 function bootMount(
-	canvas: HTMLElement,
+	blockEl: HTMLElement,
 	mapId: string,
-	mapState: MapState,
-	blockEl: Element
+	mapState: MapState
 ): void {
 	// Guard against double-mount before entering the observer.
-	if ( mountedMaps.has( canvas ) ) {
+	if ( mountedMaps.has( blockEl ) ) {
 		return;
 	}
 
-	// Defer Leaflet initialisation until the canvas is visible so the
+	// Defer Leaflet initialisation until the block is visible so the
 	// map has real layout dimensions when it mounts.
 	const observer = new IntersectionObserver(
 		( entries, obs ) => {
@@ -293,16 +291,16 @@ function bootMount(
 			// Stop observing now that we're about to mount.
 			obs.disconnect();
 
-			// Guard again in case consent was revoked between the observer
+			// Guard again in case state mutated between the observer
 			// callback firing and this point in execution.
-			if ( mountedMaps.has( canvas ) ) {
+			if ( mountedMaps.has( blockEl ) ) {
 				return;
 			}
 
 			// Build the Leaflet map with canvas renderer for performance.
 			// Suppress the default zoomControl here because the settings-driven
 			// path below adds it conditionally.
-			const map = L.map( canvas, {
+			const map = L.map( blockEl, {
 				renderer: L.canvas(),
 				zoomControl: false,
 				attributionControl: true,
@@ -338,6 +336,12 @@ function bootMount(
 			if ( bounds.isValid() ) {
 				map.fitBounds( bounds, { padding: [ 16, 16 ] } );
 			}
+
+			// Force Leaflet to re-measure the container. Necessary in two
+			// situations: the block became visible just before mount (consent
+			// transition), or the editor's ServerSideRender re-rendered the
+			// block while its iframe was still settling layout.
+			map.invalidateSize( false );
 
 			// Add the configured control overlays based on the hydrated settings.
 			const settings = mapState.settings;
@@ -529,7 +533,7 @@ function bootMount(
 
 			// Record the instance so subsequent init calls are no-ops and
 			// onCursorChange can access the cursor and coords.
-			mountedMaps.set( canvas, { map, cursor, coords } );
+			mountedMaps.set( blockEl, { map, cursor, coords } );
 
 			// Attach pointer tracking to the GeoJSON polyline layer:
 			// write fraction when moving over the track, null on leave.
@@ -558,166 +562,98 @@ function bootMount(
 				state[ mapId ].fraction = nearest / ( coords.length - 1 );
 			} );
 
-			// Null the fraction when the pointer leaves the canvas so both
+			// Null the fraction when the pointer leaves the block so both
 			// cursors hide.
-			canvas.addEventListener( 'pointerleave', () => {
+			blockEl.addEventListener( 'pointerleave', () => {
 				state[ mapId ].fraction = null;
 			} );
 		},
-		// rootMargin pre-triggers the observer 200 px before the canvas enters
-		// the viewport, giving Leaflet time to initialise tiles before the block
-		// scrolls into view. threshold: 0 fires as soon as any pixel is visible
-		// (or pre-visible via rootMargin).
+		// rootMargin pre-triggers the observer 200 px before the block enters
+		// the viewport, giving Leaflet time to initialise tiles before the
+		// block scrolls into view. threshold: 0 fires as soon as any pixel is
+		// visible (or pre-visible via rootMargin).
 		{ rootMargin: '200px 0px', threshold: 0 }
 	);
 
-	observer.observe( canvas );
+	observer.observe( blockEl );
 }
 
 /**
- * Show the canvas child and hide the placeholder.
+ * Tear down the Leaflet instance attached to the given block element, if any.
  *
- * Mutates inline display style imperatively — consistent with Leaflet's own
- * DOM manipulation and simpler than data-wp-bind for a one-shot show/hide.
- *
- * @since 1.0.0
- *
- * @param blockEl - The outer block wrapper element.
- */
-function showCanvas( blockEl: Element ): void {
-	const canvas = blockEl.querySelector< HTMLElement >(
-		'.kntnt-gpx-blocks-map-canvas'
-	);
-	const placeholder = blockEl.querySelector< HTMLElement >(
-		'.kntnt-gpx-blocks-map-placeholder'
-	);
-	if ( canvas ) {
-		canvas.style.display = '';
-	}
-	if ( placeholder ) {
-		placeholder.style.display = 'none';
-	}
-}
-
-/**
- * Hide the canvas child and show the placeholder.
+ * Called when consent is revoked. The element is left in the DOM with no
+ * visible content; the active consent-management plugin handles the visitor-
+ * facing replacement (content blocker, banner overlay, etc.).
  *
  * @since 1.0.0
  *
- * @param blockEl - The outer block wrapper element.
+ * @param blockEl - The block wrapper element.
  */
-function showPlaceholder( blockEl: Element ): void {
-	const canvas = blockEl.querySelector< HTMLElement >(
-		'.kntnt-gpx-blocks-map-canvas'
-	);
-	const placeholder = blockEl.querySelector< HTMLElement >(
-		'.kntnt-gpx-blocks-map-placeholder'
-	);
-	if ( canvas ) {
-		canvas.style.display = 'none';
+function tearDown( blockEl: Element ): void {
+	const entry = mountedMaps.get( blockEl );
+	if ( ! entry ) {
+		return;
 	}
-	if ( placeholder ) {
-		placeholder.style.display = '';
-	}
+	entry.map.remove();
+	mountedMaps.delete( blockEl );
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 	state: {} as PluginState,
-	actions: {
-		/**
-		 * Grant consent for the current block only.
-		 *
-		 * Sets `state[mapId].consent = 'granted'` for this map's state slice.
-		 * This activates tile loading for this block in this page view only —
-		 * it does NOT call into the Consent API to grant site-wide consent.
-		 * That is the consent plugin's job.
-		 *
-		 * @since 1.0.0
-		 */
-		grantConsent() {
-			const { mapId } = getContext< MapContext >();
-			const mapState = state[ mapId ];
-			if ( mapState ) {
-				mapState.consent = 'granted';
-			}
-		},
-	},
 	callbacks: {
 		/**
-		 * Initialise the block's consent state and mount Leaflet if already granted.
+		 * Initialise the block's consent state and mount Leaflet if granted.
 		 *
-		 * Called by the data-wp-init directive on the block's root element. Queries
-		 * the WordPress Consent API (`wp_has_consent`) when it is available to set
-		 * the initial consent state. When consent is granted, calls bootMount to
-		 * initialise Leaflet. When consent is unknown and the API is absent, the
-		 * placeholder remains visible until the visitor clicks "Activate map".
+		 * Called by `data-wp-init` on the block's root element. Resolves the
+		 * initial consent state by querying `window.wp_has_consent` when the
+		 * Consent API is present; mounts Leaflet immediately when consent is
+		 * granted (or no gate is in effect). When consent is denied, the block
+		 * stays empty — no plugin-supplied placeholder is shown — and the
+		 * cookie-consent plugin handles the visitor-facing UI.
 		 *
-		 * Also:
-		 * - Registers the site-wide `wp_listen_for_consent_change` listener (once
-		 *   per page, deduplicated by a module-level flag set in the listener itself).
-		 * - Registers a `kntnt-gpx-blocks/grant-consent` custom event listener on
-		 *   the block element for non-Consent-API plugin integrations.
+		 * Also subscribes to `wp_listen_for_consent_change` (for live consent
+		 * grants/revocations) and to the custom DOM event
+		 * `kntnt-gpx-blocks/grant-consent` (for non-Consent-API integrations).
 		 *
 		 * @since 1.0.0
 		 */
 		initMap() {
 			const { ref } = getElement();
-
-			// No element reference means we're outside a valid directive scope;
-			// bail silently.
-			if ( ! ref ) {
+			if ( ! ref || ! ( ref instanceof HTMLElement ) ) {
 				return;
 			}
 
 			const { mapId } = getContext< MapContext >();
 			const mapState = state[ mapId ];
-
-			// State slice not yet populated — defensive bail; wp_interactivity_state
-			// should always populate it before the module runs.
 			if ( ! mapState ) {
 				return;
 			}
 
-			// Query the Consent API for the current consent state when available.
-			// If the API is absent (no consent plugin active), leave the state as-is:
-			// 'granted' stays granted (server-side bypass), 'unknown' stays unknown
-			// and the placeholder remains visible.
-			if (
-				mapState.consent === 'unknown' &&
-				typeof window.wp_has_consent === 'function'
-			) {
-				mapState.consent = window.wp_has_consent(
-					mapState.consentCategory
-				)
-					? 'granted'
-					: 'denied';
-			} else if ( mapState.consent === 'unknown' ) {
-				// No Consent API present — default to denied so no tiles are requested.
-				mapState.consent = 'denied';
-			}
-
-			// Apply initial visibility based on the resolved consent state.
-			if ( mapState.consent === 'granted' ) {
-				showCanvas( ref );
-			} else {
-				showPlaceholder( ref );
+			// Resolve the initial consent state. The PHP render path sets
+			// 'unknown' when a gate is in effect and 'granted' when bypassed.
+			// When 'unknown', query the Consent API if present; otherwise
+			// default to 'denied' so no tile request is made.
+			if ( mapState.consent === 'unknown' ) {
+				if ( typeof window.wp_has_consent === 'function' ) {
+					mapState.consent = window.wp_has_consent(
+						mapState.consentCategory
+					)
+						? 'granted'
+						: 'denied';
+				} else {
+					mapState.consent = 'denied';
+				}
 			}
 
 			// Mount Leaflet immediately when consent is already granted.
 			if ( mapState.consent === 'granted' ) {
-				const canvas = ref.querySelector< HTMLElement >(
-					'.kntnt-gpx-blocks-map-canvas'
-				);
-				if ( canvas ) {
-					bootMount( canvas, mapId, mapState, ref );
-				}
+				bootMount( ref, mapId, mapState );
 			}
 
 			// Listen for the custom grant-consent DOM event so non-Consent-API
 			// plugins can activate this block by dispatching on its element.
-			// The mapId is captured in the closure from the initMap call.
 			ref.addEventListener( 'kntnt-gpx-blocks/grant-consent', () => {
 				const currentState = state[ mapId ];
 				if ( currentState ) {
@@ -725,9 +661,9 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				}
 			} );
 
-			// Register the site-wide consent change listener once for this mapId.
-			// Each block instance subscribes independently so all maps on the page
-			// react to a single consent change event.
+			// Subscribe to site-wide consent change events. Each block instance
+			// subscribes independently so all maps on the page react to a
+			// single consent change.
 			document.addEventListener(
 				'wp_listen_for_consent_change',
 				( event: Event ) => {
@@ -737,8 +673,6 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 					if ( ! detail ) {
 						return;
 					}
-
-					// Mirror the category change into this block's state.
 					const category = state[ mapId ]?.consentCategory;
 					if ( ! category ) {
 						return;
@@ -753,60 +687,40 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		},
 
 		/**
-		 * React to changes in state[mapId].consent.
+		 * React to changes in `state[mapId].consent`.
 		 *
-		 * Called by data-wp-watch on the block's root element. Mounts Leaflet when
-		 * consent transitions to 'granted', and tears it down when it transitions
-		 * to 'denied'. The canvas/placeholder visibility is updated imperatively.
+		 * Bound via `data-wp-watch--consent` on the block's root element.
+		 * Mounts Leaflet on `'granted'`; tears it down on `'denied'`. The
+		 * block element is left visually empty between revocation and
+		 * re-grant — the active consent-management plugin owns the UI.
 		 *
 		 * @since 1.0.0
 		 */
 		onConsentChange() {
 			const { ref } = getElement();
-			if ( ! ref ) {
+			if ( ! ref || ! ( ref instanceof HTMLElement ) ) {
 				return;
 			}
-
 			const { mapId } = getContext< MapContext >();
 			const mapState = state[ mapId ];
 			if ( ! mapState ) {
 				return;
 			}
 
-			// Grant: show canvas, mount Leaflet (deferred until intersection).
 			if ( mapState.consent === 'granted' ) {
-				showCanvas( ref );
-				const canvas = ref.querySelector< HTMLElement >(
-					'.kntnt-gpx-blocks-map-canvas'
-				);
-				if ( canvas ) {
-					bootMount( canvas, mapId, mapState, ref );
-				}
+				bootMount( ref, mapId, mapState );
 				return;
 			}
-
-			// Deny: tear down the Leaflet instance if mounted, show placeholder.
 			if ( mapState.consent === 'denied' ) {
-				const canvas = ref.querySelector< HTMLElement >(
-					'.kntnt-gpx-blocks-map-canvas'
-				);
-				if ( canvas ) {
-					const entry = mountedMaps.get( canvas );
-					if ( entry ) {
-						entry.map.remove();
-						mountedMaps.delete( canvas );
-					}
-				}
-				showPlaceholder( ref );
+				tearDown( ref );
 			}
 		},
 
 		/**
-		 * React to changes in state[mapId].fraction and move the cursor marker.
+		 * React to changes in `state[mapId].fraction` and move the cursor marker.
 		 *
-		 * Bound via data-wp-watch on the `.kntnt-gpx-blocks-map-canvas` child
-		 * element, so `ref` here is the canvas element itself. Does NOT write
-		 * back to state — that would create a feedback loop.
+		 * Bound via `data-wp-watch--cursor` on the block's root element. Does
+		 * NOT write back to state — that would create a feedback loop.
 		 *
 		 * @since 1.0.0
 		 */
@@ -815,8 +729,6 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			if ( ! ref ) {
 				return;
 			}
-
-			// ref is the canvas child element; look up the Leaflet entry directly.
 			const entry = mountedMaps.get( ref );
 			if ( ! entry ) {
 				return;
@@ -836,7 +748,6 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			if ( ! latLng ) {
 				return;
 			}
-
 			entry.cursor.setLatLng( latLng );
 			entry.cursor.setStyle( { opacity: 1, fillOpacity: 1 } );
 		},
