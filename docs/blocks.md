@@ -62,12 +62,20 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 ```html
 <div
     class="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"
+    role="application"
+    aria-label="Map of GPX track"
     data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'
     data-wp-context='{"mapId":"map-abc123"}'
     data-wp-init="callbacks.initMap"
-    style="--kntnt-gpx-blocks-track-color: #06c; aspect-ratio: 16/9;"
+    data-wp-watch="callbacks.onConsentChange"
+    style="--kntnt-gpx-blocks-aspect-ratio: 16/9; --kntnt-gpx-blocks-min-height: 240px;"
 >
-    <noscript><!-- text fallback --></noscript>
+    <noscript><p class="kntnt-gpx-blocks-map-noscript"><!-- text fallback --></p></noscript>
+    <div class="kntnt-gpx-blocks-map-canvas" data-wp-watch="callbacks.onCursorChange"></div>
+    <div class="kntnt-gpx-blocks-map-placeholder">
+        <p class="kntnt-gpx-blocks-map-placeholder-text"><!-- placeholder text --></p>
+        <button type="button" data-wp-on--click="actions.grantConsent">Activate map</button>
+    </div>
 </div>
 ```
 
@@ -76,12 +84,16 @@ The state hydrated via `wp_interactivity_state()`:
 ```php
 [
     'map-abc123' => [
-        'attachmentId' => 42,
-        'geojson'      => /* simplified GeoJSON */,
-        'waypoints'    => /* GeoJSON FeatureCollection */,
-        'settings'     => [ 'showZoomButtons' => true, /* ... */ ],
-        'fraction'     => null,
-        'consent'      => 'unknown',
+        'attachmentId'    => 42,
+        'geojson'         => /* simplified GeoJSON */,
+        'waypoints'       => /* GeoJSON FeatureCollection */,
+        'gpxFileUrl'      => /* attachment URL or null */,
+        'settings'        => [ 'showZoomButtons' => true, /* ... */ ],
+        'fraction'        => null,
+        'consent'         => 'unknown', // or 'granted' when gate is bypassed
+        'consentCategory' => 'marketing',
+        'consentService'  => 'openstreetmap',
+        'placeholderText' => /* translated string */,
     ],
 ]
 ```
@@ -91,12 +103,11 @@ The state hydrated via `wp_interactivity_state()`:
 `callbacks.initMap` (registered in `view.ts`):
 
 1. Reads `state[mapId]`.
-2. Resolves consent: if `wp_has_consent` says granted (or `consent_required` is false), proceeds; else sets `state[mapId].consent = 'denied'` and shows the placeholder.
-3. Builds a Leaflet map with `L.canvas()` renderer and `L.geoJSON()` from the cached GeoJSON.
+2. Resolves consent: if `wp_has_consent` is available, calls it with the configured category and sets state to `'granted'` or `'denied'`; if the function is absent (no Consent API plugin active), defaults to `'denied'`. The placeholder is shown or hidden accordingly. Also registers a `wp_listen_for_consent_change` listener (for Consent API plugins) and a `kntnt-gpx-blocks/grant-consent` DOM event listener (for non-Consent-API fallbacks).
+3. When consent is granted, defers Leaflet initialisation via `IntersectionObserver` until the canvas enters the viewport. Builds a Leaflet map with `L.canvas()` renderer and `L.geoJSON()` from the cached GeoJSON.
 4. Adds the configured controls and enables/disables interactions per `settings`.
-5. Adds waypoint markers if any. Each marker has a hover tooltip showing `name` (line 1) and `desc` (line 2 if set).
-6. Attaches a `pointermove` handler on the polyline that computes the fraction along the track and writes it to `state[mapId].fraction`.
-7. Registers a `data-wp-watch` on `state[mapId].fraction` that moves the cursor marker without re-emitting.
+5. Adds waypoint markers from the hydrated `waypoints` GeoJSON. Each marker has a hover tooltip showing `name` (line 1) and `desc` (line 2 if set), built with text nodes (no innerHTML).
+6. Attaches a `pointermove` handler on the polyline layer that finds the nearest vertex and writes `fraction = index / (length - 1)` to `state[mapId].fraction`. Attaches a `pointerleave` handler on the canvas that sets `fraction = null`.
 
 ### Accessibility
 
@@ -164,9 +175,9 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
     data-wp-watch="callbacks.onCursorChange"
     style="aspect-ratio: 4/1; --kntnt-gpx-blocks-line-color: #06c;"
 >
-    <svg viewBox="0 0 1200 300" role="img" aria-label="…">
-        <desc><!-- screen-reader summary --></desc>
-        <!-- axes, line, cursor — all SVG elements -->
+    <svg viewBox="0 0 1200 300" role="img" aria-labelledby="kntnt-gpx-blocks-elevation-desc-map-abc123" preserveAspectRatio="none">
+        <desc id="kntnt-gpx-blocks-elevation-desc-map-abc123"><!-- screen-reader summary --></desc>
+        <!-- axes, polyline, server-rendered cursor group — all SVG elements -->
     </svg>
     <noscript><!-- summary text --></noscript>
 </div>
@@ -178,10 +189,10 @@ The screen-reader summary in `<desc>` reads (translated): `"Elevation profile fr
 
 `callbacks.initElevation`:
 
-1. Reads `state[mapId]` for the LTTB-downsampled `(distance, elevation)` pairs (computed and cached server-side).
-2. Builds the SVG axes, line path, cursor group.
-3. Attaches `pointermove` / `pointerleave` on the chart area; computes `fraction = pointerX / chartWidth` and writes to `state[mapId].fraction`.
-4. The shared `callbacks.onCursorChange` watch moves the cursor marker and tooltip when fraction changes from outside.
+1. Locates the server-rendered cursor group (`<g class="kntnt-gpx-blocks-elevation-cursor">`) inside the inline SVG. Reads the chart plot boundaries from `data-plot-left`, `data-plot-right`, `data-plot-top`, `data-plot-bottom` attributes on the group, which match the PHP `MARGIN_*` constants exactly.
+2. Snapshots the LTTB-downsampled `(distance, elevation)` pairs from `state[mapId].elevation` at mount time.
+3. Defers `pointermove` / `pointerleave` binding on the SVG until the block enters the viewport via `IntersectionObserver`. Pointer events compute `fraction` from the pointer's x-position relative to the plot area and write it to `state[mapId].fraction`.
+4. The `callbacks.onCursorChange` watch updates the cursor line x-position, the dot position, and the tooltip text whenever `state[mapId].fraction` changes (from either Elevation's own pointer events or from GPX Map). Does not write back to fraction (no feedback loop).
 
 ### Errors
 

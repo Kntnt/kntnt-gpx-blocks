@@ -10,7 +10,7 @@ For each `.gpx` attachment in the WordPress media library, the plugin stores up 
 |---|---|---|
 | `_kntnt_gpx_blocks_geojson` | string | JSON-encoded GeoJSON `FeatureCollection` containing the track as a `LineString` Feature plus zero or more waypoint `Point` Features. Full-fidelity (no simplification applied at conversion time). |
 | `_kntnt_gpx_blocks_statistics` | array | `[ 'distance' => float, 'min_elevation' => float|null, 'max_elevation' => float|null, 'ascent' => float|null, 'descent' => float|null ]`. Computed once with the active climb threshold; ascent/descent are `null` when the track has no elevation data. |
-| `_kntnt_gpx_blocks_version` | integer | The `KNTNT_GPX_BLOCKS_CACHE_VERSION` constant value at the time of the last conversion. Used to invalidate when the conversion algorithm changes. |
+| `_kntnt_gpx_blocks_version` | integer | The `Cache_Version::CURRENT` constant value at the time of the last conversion. Used to invalidate when the conversion algorithm changes. |
 | `_kntnt_gpx_blocks_source_hash` | string | MD5 of the file's binary content at the time of the last conversion. Used to invalidate when the file is replaced via FTP or other paths that don't fire `attachment_updated`. |
 | `_kntnt_gpx_blocks_error` | string | Set only on failure. Holds an error code (see below). When set, the four other keys may be missing or stale. |
 
@@ -33,7 +33,7 @@ Five triggers, in priority order:
 
 1. **`add_attachment` action.** The plugin's `Bootstrap\Conversion_Hooks::on_added` callback inspects the new attachment's MIME. If `application/gpx+xml`, conversion runs synchronously.
 2. **`attachment_updated` action.** Fired when an attachment's metadata changes — including some plugin-driven file replacements like Enable Media Replace. The handler compares the file's current MD5 against `_kntnt_gpx_blocks_source_hash`. If different, conversion runs.
-3. **Lazy fallback at render time.** The render function reads `_kntnt_gpx_blocks_version`. If missing, or below `KNTNT_GPX_BLOCKS_CACHE_VERSION`, or the hash mismatches the file's current MD5, conversion runs synchronously before rendering. This catches files uploaded before plugin activation, files where `add_attachment` failed silently, and stale caches after a plugin update.
+3. **Lazy fallback at render time.** The render function reads `_kntnt_gpx_blocks_version`. If missing, or below `Cache_Version::CURRENT`, or the hash mismatches the file's current MD5, conversion runs synchronously before rendering. This catches files uploaded before plugin activation, files where `add_attachment` failed silently, and stale caches after a plugin update.
 4. **WP-CLI command.** `wp kntnt-gpx regenerate [--all|--id=N]` runs conversion for the targeted attachment(s). Use during development, after a deploy that bumped the cache version, or for support cases.
 5. **Manual filter-driven regeneration.** Calling `\Kntnt\Gpx_Blocks\Cache\Attachment_Cache::regenerate( $attachment_id )` from any plugin code triggers conversion. Useful from custom hooks the site might add.
 
@@ -51,7 +51,7 @@ The rendering path (Douglas-Peucker for the polyline, LTTB for the elevation cha
 
 ## Cache version
 
-The constant `KNTNT_GPX_BLOCKS_CACHE_VERSION` lives in `classes/Cache/Cache_Version.php`. Its current value is the version of the conversion contract: change anything that affects the bytes in `_kntnt_gpx_blocks_geojson` or the values in `_kntnt_gpx_blocks_statistics` (a new GPX field captured, a bug fix in distance summation, a different default climb threshold algorithm) and bump the constant. Lazy fallback then regenerates each cache on first render after deploy. No manual `wp kntnt-gpx regenerate` is needed except as a way to spread the regeneration cost over the deploy moment instead of over the first render of each cached page.
+The constant `Cache_Version::CURRENT` lives in `classes/Cache/Cache_Version.php` as a typed `int` on a final class. Bump it whenever a change to the conversion contract makes existing cached payloads obsolete (a new GPX field captured, a bug fix in distance summation, a different default climb threshold algorithm). Lazy fallback then regenerates each cache on first render after deploy. No manual `wp kntnt-gpx regenerate` is needed except as a way to spread the regeneration cost over the deploy moment instead of over the first render of each cached page.
 
 The cache version is **not** the plugin version. Many plugin releases ship without conversion changes; those don't touch the cache version. Some plugin releases bump the cache version several times if the conversion logic was iterated during development; the constant simply takes the latest value.
 

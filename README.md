@@ -50,15 +50,33 @@ The plugin checks the requirements on activation and aborts with a clear error m
 
 ### GPX Map block
 
-*Stub — to be expanded.* Insert the **GPX Map** block, upload or pick a `.gpx` file from the media library, and the recorded track is drawn on an OpenStreetMap-based map. Use the block sidebar to toggle zoom buttons, scale, fullscreen, and the GPX download button; switch interactions like dragging, scroll-wheel zoom, and pinch zoom on or off; and choose colours for the track, cursor, and waypoint markers.
+Insert the **GPX Map** block and, in the **Source** panel on the right, upload or pick an existing `.gpx` file from the media library. The GPX is parsed once on the server and the result is cached; subsequent page loads go straight to the cache. The track is drawn as a polyline on an OpenStreetMap tile layer using Leaflet, and the viewport is automatically fitted to the track bounds. If the file contains `<wpt>` waypoints, they appear as circle markers whose hover tooltips show the waypoint name and optional description from the GPX.
+
+Use the **Layout** panel to control the block's aspect ratio (choosing from 1:1, 4:3, 3:2, 16:9, 21:9, or a custom value), set a minimum height for very narrow containers, and optionally cap the maximum height. The **Controls** panel toggles the four map overlays individually: zoom buttons (on by default), a metric scale bar (on by default), a fullscreen button (off by default), and a GPX download button (off by default — see the "Don'ts" section below). The **Interactions** panel controls the six interaction modes: drag-to-pan (on), scroll-wheel zoom (off by default to avoid scroll hijacking), pinch zoom (on), double-click zoom (on), box zoom via Shift+drag (off), and keyboard navigation (on).
+
+The **Track** panel provides colour pickers for the track polyline and for the cursor marker that appears when hovering either the map or the elevation chart. The **Waypoints** panel configures the marker fill colour, the hover label's background and text colour, and the label's font family, size, weight, and style. All colour inputs accept hex values; all typography inputs accept CSS lengths or theme font-size preset tokens. Leaving any input blank lets the CSS fall back to the hardcoded default in the plugin's stylesheet, so the block integrates cleanly with your theme without requiring any configuration.
+
+When the consent gate is active (the default), the block renders a placeholder instead of the map until the visitor consents. The placeholder uses the same aspect ratio and minimum height as the map so the layout does not shift when consent is granted. An "Activate map" button lets the visitor enable tile loading for that block in the current page view without granting site-wide consent. In the WordPress admin, editors with `edit_posts` see the live map directly — the consent placeholder is bypassed for logged-in editors.
 
 ### GPX Elevation block
 
-*Stub — to be expanded.* Insert the **GPX Elevation** block on a page that already contains a GPX Map. The elevation profile is rendered as a clean SVG chart with distance on the x-axis and elevation on the y-axis. Hovering the chart moves the cursor on both the chart and the map; hovering the track on the map moves the cursor on the chart.
+Insert the **GPX Elevation** block on a page that already contains a GPX Map. The **Datakälla** panel in the block sidebar lets you choose the data source: "Auto" (the default) resolves automatically to the single GPX Map on the page, and is the right choice whenever there is exactly one map. If the page has more than one GPX Map block you must pick the specific map explicitly from the dropdown, which lists each map by its GPX filename. Use the **Layout** panel to set the aspect ratio (default 4:1, a wide profile shape) and minimum height (default 120 px).
+
+The elevation profile is rendered server-side as an inline SVG chart with distance on the x-axis and elevation (always in metres) on the y-axis. Five evenly spaced tick labels appear on each axis. The x-axis label switches between metres and kilometres automatically at 2000 m. The SVG carries a screen-reader `<desc>` element summarising the profile in text ("Elevation profile from … at the start to … after …, with total ascent … and descent …"), and a `<noscript>` fallback paragraph repeats the same summary for visitors with JavaScript disabled. Because the chart is server-rendered, it is visible even before any JavaScript initialises.
+
+When JavaScript is active, moving the pointer over the SVG highlights a vertical cursor line, a dot on the elevation polyline, and a tooltip showing the current distance and elevation ("3.2 km | 245 m"). Moving the pointer over the GPX Map block's polyline simultaneously moves the cursor on the elevation chart, and vice versa, via a shared Interactivity API state keyed by the map's identifier. The cursor hides when the pointer leaves either block. The downsampling algorithm (LTTB) keeps up to 300 points by default — configurable via the `kntnt_gpx_blocks_elevation_target_points` filter — preserving visually significant peaks and valleys while keeping the SVG compact.
+
+The **Colours** panel provides seven colour pickers: background, axis lines, axis tick labels, the elevation line, the cursor, and the cursor tooltip's background and text colour. Two typography groups — **Axis typography** and **Tooltip typography** — let you set font family, size, weight, and style independently for the axis labels and the tooltip text. Leaving any colour or typography input blank falls back to the plugin's CSS defaults, which inherit from your theme.
 
 ### GPX Statistics block
 
-*Stub — to be expanded.* Insert the **GPX Statistics** block on a page with a GPX Map to show total distance, lowest and highest elevation, and total ascent and descent. Values are formatted in your site's locale (12,3 km in Swedish, 12.3 km in English) and are calculated server-side; the block works without JavaScript.
+Insert the **GPX Statistics** block on a page that already contains a GPX Map. As with the Elevation block, the **Datakälla** panel lets you choose "Auto" (resolves to the single map on the page) or pick a specific map by filename when there are several. The block produces a server-rendered `<dl>` list of up to five rows: total length (always shown), lowest elevation, highest elevation, total ascent, and total descent. The four elevation rows are omitted automatically when the GPX track contains no elevation data, so the block is always correct regardless of the quality of the source file.
+
+Distance is formatted auto-metric: whole metres below 1000 m, one-decimal kilometres above. Elevation is always formatted in whole metres. Both use WordPress's `number_format_i18n()` so the decimal separator and thousands separator respect your site's locale — a Swedish site shows "12,3 km" and "1 234 m" while an English site shows "12.3 km" and "1,234 m". The formatting can be overridden entirely for imperial units via the `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
+
+The block has no JavaScript on the frontend. It is entirely server-rendered and works in any browser with or without JavaScript enabled. There is no cursor synchronisation with the map or elevation chart — statistics are a static summary, not an interactive visualisation.
+
+The **Headers** and **Values** panels each provide six theming attributes: background colour, text colour, font family, font size, font weight, and font style. These are applied as CSS custom properties on the `<dl>` wrapper element, so you can style the label (`<dt>`) and value (`<dd>`) cells independently. Leaving any attribute blank falls back to the plugin's stylesheet defaults, which inherit naturally from your theme.
 
 ### Dos and don'ts
 
@@ -98,7 +116,13 @@ This section is for developers who want to integrate the plugin with consent plu
 
 ### Connecting a Cookie Consent Plugin
 
-*Stub — to be expanded.* The plugin defers all OpenStreetMap tile requests until consent has been granted. By default it integrates with any plugin that implements the [WordPress Consent API](https://github.com/rlankhorst/wp-consent-level-api) — Real Cookie Banner, Complianz, and CookieYes are confirmed working out of the box. Three filters control the integration: `kntnt_gpx_blocks_consent_required` (return `false` to disable gating entirely, e.g. for a self-hosted tile server), `kntnt_gpx_blocks_consent_category` (the consent category, default `'marketing'`), and `kntnt_gpx_blocks_consent_service` (the service identifier, default `'openstreetmap'`).
+The plugin defers all OpenStreetMap tile requests until consent has been granted. Tile-loading is gated by default on every page view because each tile request transmits the visitor's IP address to the OpenStreetMap Foundation's servers, which qualifies as a transfer of personal data to a third party under GDPR. Until consent is given, a server-rendered placeholder appears in place of the map. The placeholder uses the same dimensions as the map container and includes an "Activate map" button. Clicking the button grants consent for that single map block in that single page view — it does not grant site-wide consent, which is always the responsibility of the consent plugin.
+
+Three filters configure the consent integration. `kntnt_gpx_blocks_consent_required` (default `true`) enables or disables the gate — return `false` to bypass it entirely, for example when using a self-hosted tile server or when your jurisdiction does not require consent for OSM tiles. `kntnt_gpx_blocks_consent_category` (default `'marketing'`) sets the consent category that the plugin checks against the WordPress Consent API; override to `'statistics'` or `'functional'` if your cookie policy classifies map tiles in a different category. `kntnt_gpx_blocks_consent_service` (default `'openstreetmap'`) sets the per-service identifier used by plugins such as Real Cookie Banner that track consent at the service level rather than the category level.
+
+When any plugin that implements the [WordPress Consent API](https://github.com/rlankhorst/wp-consent-level-api) is active — Real Cookie Banner, Complianz, and CookieYes are confirmed integrations — the plugin calls `wp_has_consent( $category )` on page load to check the visitor's existing consent decision and shows or hides the map accordingly. If the visitor subsequently changes their decision (for example by withdrawing consent through the cookie banner), the plugin listens to the `wp_listen_for_consent_change` DOM event and reacts immediately: a newly granted consent initialises the Leaflet map, and a withdrawn consent tears it down and restores the placeholder.
+
+For consent plugins that do not implement the WordPress Consent API, you can trigger the map activation directly by dispatching a custom DOM event on the block's container element: `element.dispatchEvent(new CustomEvent('kntnt-gpx-blocks/grant-consent', { bubbles: true }))`. The plugin listens for this event as a fallback integration path, so any consent system that can fire a DOM event on the right element can trigger map activation without any PHP-side changes. The `kntnt_gpx_blocks_placeholder_text` filter lets you customise the placeholder message to match your site's tone of voice.
 
 ### Developer Hooks
 
@@ -116,7 +140,6 @@ This section is for developers who want to integrate the plugin with consent plu
 | `kntnt_gpx_blocks_climb_threshold_meters` | `3.0` | Hysteresis threshold for ascent/descent calculation. |
 | `kntnt_gpx_blocks_format_distance` | — | Override the formatted distance string. |
 | `kntnt_gpx_blocks_format_elevation` | — | Override the formatted elevation string. |
-| `kntnt_gpx_blocks_default_waypoint_name` | `''` | Placeholder name for waypoints without a `<name>` element. |
 | `kntnt_gpx_blocks_placeholder_text` | (translated string) | Text shown on the consent placeholder. |
 
 ## For Contributors
@@ -145,15 +168,14 @@ npm run build
 ### Running tests
 
 ```bash
-composer test          # PHPUnit/Pest unit tests
+composer test          # Pest unit tests (207 tests as of v1.0.0)
 composer phpstan       # Static analysis (PHPStan, max level)
 composer phpcs         # WordPress Coding Standards lint
 npm run lint:js        # ESLint via wp-scripts
 npm run lint:css       # Stylelint via wp-scripts
-npm run test:js        # Block JS unit tests via wp-scripts test-unit-js
 ```
 
-Integration tests run against a WordPress Playground instance — see `tests/Integration/README.md` for details.
+Integration tests against WordPress Playground and block JS unit tests via `wp-scripts test-unit-js` are planned but not yet wired up in v1.0.0. See `docs/testing-strategy.md` for the intended scope.
 
 ### Building a Release ZIP
 

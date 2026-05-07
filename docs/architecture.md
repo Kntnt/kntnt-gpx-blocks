@@ -74,7 +74,7 @@ The major classes in `classes/` (PSR-4 namespaced under `Kntnt\Gpx_Blocks`):
 | `Conversion\Geo_Json_Converter` | Translates parsed GPX into GeoJSON. |
 | `Conversion\Statistics_Calculator` | Computes the five summary statistics. |
 | `Cache\Attachment_Cache` | Reads and writes the post-meta cache. Handles version + hash checks. |
-| `Cache\Cache_Version` | The `KNTNT_GPX_BLOCKS_CACHE_VERSION` constant. |
+| `Cache\Cache_Version` | Carries the `CURRENT` typed constant used for cache-format versioning. |
 | `Rendering\Douglas_Peucker` | Polyline simplification. |
 | `Rendering\Lttb` | Elevation downsampling (Largest Triangle Three Buckets). |
 | `Rendering\Resolve_Map_Id` | Locates the GPX Map for a given `mapId` (or `"auto"`) by parsing post content. |

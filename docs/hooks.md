@@ -90,7 +90,7 @@ Hysteresis threshold for ascent/descent calculation, in metres. Default `3.0`.
 $threshold = apply_filters( 'kntnt_gpx_blocks_climb_threshold_meters', 3.0 );
 ```
 
-Read once at conversion time, not per render. Changing the value invalidates cached statistics — you must bump `KNTNT_GPX_BLOCKS_CACHE_VERSION` or run `wp kntnt-gpx regenerate --all` for the change to take effect on existing attachments. The default rejects sub-3-metre wobble, which is the dominant source of GPS noise in consumer recordings. Raising over-corrects (real climbs disappear); lowering under-corrects (noise becomes ascent).
+Read once at conversion time, not per render. Changing the value invalidates cached statistics — you must bump `Cache_Version::CURRENT` or run `wp kntnt-gpx regenerate --all` for the change to take effect on existing attachments. The default rejects sub-3-metre wobble, which is the dominant source of GPS noise in consumer recordings. Raising over-corrects (real climbs disappear); lowering under-corrects (noise becomes ascent).
 
 ## Formatting
 
@@ -118,13 +118,7 @@ Same semantics as the distance filter.
 
 ### `kntnt_gpx_blocks_default_waypoint_name`
 
-Placeholder name used when a waypoint has no `<name>` element. Default `''` (empty — the marker has no hover label at all).
-
-```php
-$name = apply_filters( 'kntnt_gpx_blocks_default_waypoint_name', '' );
-```
-
-Override to a translated string like `__( 'Waypoint', 'your-textdomain' )` if you prefer every waypoint to have a hover label even when the GPX provides none.
+**Not yet applied in v1.** This filter is reserved for a future release. Waypoints without a `<name>` element currently receive no hover label. When this filter is applied, it will provide a fallback name for such waypoints.
 
 ### `kntnt_gpx_blocks_placeholder_text`
 
@@ -138,4 +132,4 @@ Override to fit the site's tone of voice. The filter is read at render time, so 
 
 ## Versioned cache
 
-The cache version constant `KNTNT_GPX_BLOCKS_CACHE_VERSION` is **not** a filter. It lives in `classes/Cache/Cache_Version.php`. Bumping it invalidates every cached conversion across the site at the next render. See [`caching.md`](caching.md).
+The cache version constant `Cache_Version::CURRENT` is **not** a filter. It lives in `classes/Cache/Cache_Version.php` as a typed `int` on a final class. Bumping it invalidates every cached conversion across the site at the next render. See [`caching.md`](caching.md).
