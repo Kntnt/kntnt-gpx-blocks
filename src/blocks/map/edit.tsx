@@ -17,9 +17,17 @@ import {
 	useBlockProps,
 	InspectorControls,
 	MediaPlaceholder,
+	PanelColorSettings,
 	ServerSideRender,
 } from '@wordpress/block-editor';
-import { PanelBody, ToggleControl } from '@wordpress/components';
+import {
+	PanelBody,
+	ToggleControl,
+	FontSizePicker,
+	SelectControl,
+	ToggleGroupControl,
+	ToggleGroupControlOption,
+} from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
@@ -46,8 +54,41 @@ interface MapAttributes {
 	enableDoubleClickZoom: boolean;
 	enableBoxZoom: boolean;
 	enableKeyboard: boolean;
+	trackColor: string;
+	trackCursorColor: string;
+	waypointColor: string;
+	waypointLabelBackground: string;
+	waypointLabelColor: string;
+	waypointLabelFontFamily: string;
+	waypointLabelFontSize: string;
+	waypointLabelFontWeight: string;
+	waypointLabelFontStyle: string;
 	[ key: string ]: unknown;
 }
+
+/**
+ * Font family options for the waypoint label typography control.
+ *
+ * Covers the most common system stacks. The editor can store a theme preset
+ * reference (var(--wp--preset--font-family--…)) by typing it into the field,
+ * but the SelectControl covers the common case without needing an experimental
+ * API.
+ *
+ * @since 1.0.0
+ */
+const FONT_FAMILY_OPTIONS = [
+	{ label: __( 'Default (inherit)', 'kntnt-gpx-blocks' ), value: '' },
+	{ label: 'Sans-serif', value: 'sans-serif' },
+	{ label: 'Serif', value: 'serif' },
+	{ label: 'Monospace', value: 'monospace' },
+	{ label: 'Arial', value: 'Arial, sans-serif' },
+	{ label: 'Georgia', value: 'Georgia, serif' },
+	{
+		label: 'Helvetica Neue',
+		value: "'Helvetica Neue', Helvetica, sans-serif",
+	},
+	{ label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
+];
 
 /**
  * Media object shape returned by MediaPlaceholder's onSelect callback.
@@ -100,6 +141,15 @@ export const MapEdit = ( {
 		enableDoubleClickZoom,
 		enableBoxZoom,
 		enableKeyboard,
+		trackColor,
+		trackCursorColor,
+		waypointColor,
+		waypointLabelBackground,
+		waypointLabelColor,
+		waypointLabelFontFamily,
+		waypointLabelFontSize,
+		waypointLabelFontWeight,
+		waypointLabelFontStyle,
 	} = attributes;
 
 	// Show the media picker until the user selects a .gpx attachment.
@@ -209,6 +259,96 @@ export const MapEdit = ( {
 						}
 					/>
 				</PanelBody>
+				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
+				<PanelColorSettings
+					title={ __( 'Waypoints', 'kntnt-gpx-blocks' ) }
+					colorSettings={ [
+						{
+							value: waypointColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( { waypointColor: value ?? '' } ),
+							label: __( 'Marker colour', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: waypointLabelBackground,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									waypointLabelBackground: value ?? '',
+								} ),
+							label: __( 'Label background', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: waypointLabelColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									waypointLabelColor: value ?? '',
+								} ),
+							label: __(
+								'Label text colour',
+								'kntnt-gpx-blocks'
+							),
+						},
+					] }
+				>
+					<SelectControl
+						label={ __( 'Label font family', 'kntnt-gpx-blocks' ) }
+						value={ waypointLabelFontFamily }
+						options={ FONT_FAMILY_OPTIONS }
+						onChange={ ( value ) =>
+							setAttributes( { waypointLabelFontFamily: value } )
+						}
+					/>
+					<FontSizePicker
+						value={ waypointLabelFontSize || undefined }
+						onChange={ ( value ) =>
+							setAttributes( {
+								waypointLabelFontSize:
+									value !== undefined ? String( value ) : '',
+							} )
+						}
+						withReset={ true }
+					/>
+					<ToggleGroupControl
+						label={ __( 'Label font weight', 'kntnt-gpx-blocks' ) }
+						value={ waypointLabelFontWeight || 'normal' }
+						onChange={ ( value ) =>
+							setAttributes( {
+								waypointLabelFontWeight:
+									value === 'normal' ? '' : String( value ),
+							} )
+						}
+						isBlock
+					>
+						<ToggleGroupControlOption
+							value="normal"
+							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
+						/>
+						<ToggleGroupControlOption
+							value="bold"
+							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
+						/>
+					</ToggleGroupControl>
+					<ToggleGroupControl
+						label={ __( 'Label font style', 'kntnt-gpx-blocks' ) }
+						value={ waypointLabelFontStyle || 'normal' }
+						onChange={ ( value ) =>
+							setAttributes( {
+								waypointLabelFontStyle:
+									value === 'normal' ? '' : String( value ),
+							} )
+						}
+						isBlock
+					>
+						<ToggleGroupControlOption
+							value="normal"
+							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
+						/>
+						<ToggleGroupControlOption
+							value="italic"
+							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
+						/>
+					</ToggleGroupControl>
+				</PanelColorSettings>
 			</InspectorControls>
 			<div { ...blockProps }>
 				<ServerSideRender
@@ -229,6 +369,15 @@ export const MapEdit = ( {
 						enableDoubleClickZoom,
 						enableBoxZoom,
 						enableKeyboard,
+						trackColor,
+						trackCursorColor,
+						waypointColor,
+						waypointLabelBackground,
+						waypointLabelColor,
+						waypointLabelFontFamily,
+						waypointLabelFontSize,
+						waypointLabelFontWeight,
+						waypointLabelFontStyle,
 					} }
 				/>
 			</div>

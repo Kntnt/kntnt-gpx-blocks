@@ -77,6 +77,42 @@
     "enableKeyboard": {
       "type": "boolean",
       "default": true
+    },
+    "trackColor": {
+      "type": "string",
+      "default": ""
+    },
+    "trackCursorColor": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointColor": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointLabelBackground": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointLabelColor": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointLabelFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointLabelFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointLabelFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "waypointLabelFontStyle": {
+      "type": "string",
+      "default": ""
     }
   }
 }

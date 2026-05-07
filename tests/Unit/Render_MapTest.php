@@ -480,3 +480,104 @@ test( 'returns empty string when attachmentId is 0', function (): void {
 	expect( $html )->toBe( '' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Waypoint CSS variables — valid waypointColor emits the correct CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output includes waypoint-color CSS variable when waypointColor is set', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 60, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 60, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
+				? $color
+				: null;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'  => 60,
+			'mapId'         => 'map-wpt-color',
+			'waypointColor' => '#ff0000',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-waypoint-color: #ff0000' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Waypoint CSS variables — invalid waypointColor emits no CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output omits waypoint-color CSS variable when waypointColor is invalid', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 61, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 61, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
+				? $color
+				: null;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'  => 61,
+			'mapId'         => 'map-wpt-invalid',
+			'waypointColor' => 'javascript:alert(1)',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-waypoint-color' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Waypoint CSS variables — invalid waypointLabelFontWeight emits no CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output omits waypoint-label-font-weight CSS variable when weight is unsafe', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 62, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 62, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static fn ( string $c ): ?string => null
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'            => 62,
+			'mapId'                   => 'map-wpt-weight',
+			'waypointLabelFontWeight' => 'expression(alert(1))',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-waypoint-label-font-weight' );
+
+} );
