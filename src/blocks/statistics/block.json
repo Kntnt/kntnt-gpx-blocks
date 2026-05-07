@@ -11,5 +11,11 @@
 	"style": "file:./style-index.css",
 	"editorStyle": "file:./index.css",
 	"render": "file:./render.php",
-	"attributes": {}
+	"usesContext": [ "postId" ],
+	"attributes": {
+		"mapId": {
+			"type": "string",
+			"default": "auto"
+		}
+	}
 }

@@ -1,6 +1,21 @@
 // Shared styles (editor + frontend) for the GPX Statistics block.
-// Full implementation arrives in a later issue.
+// Grid layout wraps to 1–2 columns on narrow viewports and shows all five
+// items in a row on wide screens.
 
 .wp-block-kntnt-gpx-blocks-statistics {
-	display: block;
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(12em, 1fr));
+	gap: 1rem;
+
+	.kntnt-gpx-blocks-statistics-item {
+		margin: 0;
+	}
+
+	dt {
+		font-weight: 600;
+	}
+
+	dd {
+		margin: 0;
+	}
 }
