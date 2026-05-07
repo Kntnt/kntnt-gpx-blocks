@@ -276,6 +276,15 @@ final class Plugin {
 		add_action( 'init', [ $block_registrar, 'register' ] );
 		add_filter( 'block_categories_all', [ $block_registrar, 'register_category' ], 10, 2 );
 
+		// Register the GPX MIME type and correct finfo's detection result for .gpx files.
+		$mime_registrar = new Bootstrap\Mime_Registrar();
+		add_filter( 'upload_mimes', [ $mime_registrar, 'add_gpx' ] );
+		add_filter( 'wp_check_filetype_and_ext', [ $mime_registrar, 'override_check' ], 10, 5 );
+
+		// Enforce the GPX file-size cap before WordPress processes the upload.
+		$upload_guard = new Bootstrap\Upload_Guard();
+		add_filter( 'wp_handle_upload_prefilter', [ $upload_guard, 'enforce_size_cap' ] );
+
 		// Wire the update checker to the WordPress update transient.
 		$updater = new Updater();
 		add_filter( 'pre_set_site_transient_update_plugins', [ $updater, 'check_for_updates' ] );
