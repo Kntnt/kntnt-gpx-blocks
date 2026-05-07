@@ -11,6 +11,11 @@
 	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
 	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
 
+	// Track polyline and cursor marker colour defaults — overridden per-block via
+	// inline style when the editor sets non-empty attribute values.
+	--kntnt-gpx-blocks-track-color: #0073aa;
+	--kntnt-gpx-blocks-track-cursor-color: #d63638;
+
 	// Waypoint marker and label defaults — overridden per-block via inline style
 	// when the editor sets non-empty attribute values.
 	--kntnt-gpx-blocks-waypoint-color: #d63638;

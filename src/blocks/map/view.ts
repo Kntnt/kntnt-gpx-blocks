@@ -125,6 +125,32 @@ const mountedMaps = new WeakMap< Element, MapEntry >();
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
+ * Read a CSS custom property from an element's computed style.
+ *
+ * Returns the fallback when the property is not set or resolves to an empty
+ * string. CSS variables cannot be applied directly to canvas-rendered Leaflet
+ * shapes (polyline, CircleMarker), so we read them once at mount time and pass
+ * the resolved value through Leaflet's path options.
+ *
+ * @since 1.0.0
+ *
+ * @param element  - The element whose computed style is queried.
+ * @param property - CSS custom property name, e.g. `'--kntnt-gpx-blocks-track-color'`.
+ * @param fallback - Value returned when the property resolves to empty.
+ * @return Resolved value or fallback.
+ */
+function getCssVar(
+	element: Element,
+	property: string,
+	fallback: string
+): string {
+	return (
+		getComputedStyle( element ).getPropertyValue( property ).trim() ||
+		fallback
+	);
+}
+
+/**
  * Build and add the OSM tile layer to the given map.
  *
  * Extracted to keep initMap readable; the tile URL and attribution are the same
@@ -268,8 +294,25 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 					// Add the OSM tile layer.
 					addTileLayer( map );
 
-					// Render the simplified track from the hydrated GeoJSON.
-					const layer = L.geoJSON( mapState.geojson );
+					// Read the track colour CSS variables once at mount time.
+					// Leaflet canvas-rendered shapes receive their colour through JS
+					// options — they cannot be styled via CSS — so we resolve the
+					// computed value here and pass it through the style callback.
+					const trackColor = getCssVar(
+						ref,
+						'--kntnt-gpx-blocks-track-color',
+						'#0073aa'
+					);
+
+					// Render the simplified track from the hydrated GeoJSON, using
+					// the resolved track colour for the polyline.
+					const layer = L.geoJSON( mapState.geojson, {
+						style: () => ( {
+							color: trackColor,
+							weight: 4,
+							opacity: 1,
+						} ),
+					} );
 					layer.addTo( map );
 
 					// Fit the viewport to the track bounds with small padding so
@@ -380,32 +423,34 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 					// fraction→position resolution in onCursorChange.
 					const coords = extractCoords( mapState.geojson );
 
+					// Read the remaining colour CSS variables once at mount time.
+					const trackCursorColor = getCssVar(
+						ref,
+						'--kntnt-gpx-blocks-track-cursor-color',
+						'#d63638'
+					);
+					const waypointColor = getCssVar(
+						ref,
+						'--kntnt-gpx-blocks-waypoint-color',
+						'#d63638'
+					);
+
 					// Create the cursor marker at the track midpoint, initially
 					// invisible. Opacity is set to 1 on the first non-null fraction.
+					// The fill colour is driven by the cursor-colour CSS variable.
 					const midLatLng = fractionToLatLng( coords, 0.5 ) ?? [
 						0, 0,
 					];
 					const cursor = L.circleMarker( midLatLng, {
 						radius: 6,
-						color: '#000',
+						color: trackCursorColor,
 						weight: 2,
-						fillColor: '#fff',
+						fillColor: trackCursorColor,
 						fillOpacity: 1,
 						interactive: false,
 						opacity: 0,
 					} );
 					cursor.addTo( map );
-
-					// Read the waypoint marker colour from the CSS custom property
-					// set by the PHP render callback (or the SCSS default). This
-					// is done once here because circleMarker is canvas-rendered
-					// and receives its colour through JS options, not CSS.
-					const waypointColor =
-						getComputedStyle( ref )
-							.getPropertyValue(
-								'--kntnt-gpx-blocks-waypoint-color'
-							)
-							.trim() || '#d63638';
 
 					// Add a circleMarker for each waypoint from the hydrated GeoJSON.
 					const waypointsData =

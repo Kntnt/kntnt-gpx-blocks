@@ -103,6 +103,10 @@ final class Render_Map {
 		$enable_box_zoom    = isset( $attributes['enableBoxZoom'] ) ? (bool) $attributes['enableBoxZoom'] : false;
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
 
+		// Read and sanitize the two track colour attributes.
+		$track_color        = self::sanitize_color( $attributes['trackColor'] ?? '' );
+		$track_cursor_color = self::sanitize_color( $attributes['trackCursorColor'] ?? '' );
+
 		// Read and sanitize the seven waypoint styling attributes.
 		$waypoint_color          = self::sanitize_color( $attributes['waypointColor'] ?? '' );
 		$waypoint_label_bg       = self::sanitize_color( $attributes['waypointLabelBackground'] ?? '' );
@@ -189,6 +193,15 @@ final class Render_Map {
 		];
 		if ( '' !== $max_height ) {
 			$style_parts[] = 'max-height: ' . esc_attr( $max_height );
+		}
+
+		// Append CSS custom properties for track and cursor colours when set.
+		// Empty strings fall back to the hardcoded defaults in style.scss.
+		if ( '' !== $track_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-track-color: ' . esc_attr( $track_color );
+		}
+		if ( '' !== $track_cursor_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-track-cursor-color: ' . esc_attr( $track_cursor_color );
 		}
 
 		// Append a CSS custom property for each non-empty, validated waypoint
