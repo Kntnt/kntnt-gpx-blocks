@@ -27,8 +27,6 @@ import {
 	ToggleControl,
 	FontSizePicker,
 	SelectControl,
-	ToggleGroupControl,
-	ToggleGroupControlOption,
 } from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
 import { __ } from '@wordpress/i18n';
@@ -470,46 +468,46 @@ export const MapEdit = ( {
 						}
 						withReset={ true }
 					/>
-					<ToggleGroupControl
+					<SelectControl
 						label={ __( 'Label font weight', 'kntnt-gpx-blocks' ) }
 						value={ waypointLabelFontWeight || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Bold', 'kntnt-gpx-blocks' ),
+								value: 'bold',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								waypointLabelFontWeight:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="bold"
-							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
-					<ToggleGroupControl
+					/>
+					<SelectControl
 						label={ __( 'Label font style', 'kntnt-gpx-blocks' ) }
 						value={ waypointLabelFontStyle || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Italic', 'kntnt-gpx-blocks' ),
+								value: 'italic',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								waypointLabelFontStyle:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="italic"
-							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
+					/>
 				</PanelColorSettings>
 			</InspectorControls>
 			<div { ...blockProps }>

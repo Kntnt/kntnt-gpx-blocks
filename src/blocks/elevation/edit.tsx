@@ -23,8 +23,6 @@ import {
 	PanelBody,
 	SelectControl,
 	TextControl,
-	ToggleGroupControl,
-	ToggleGroupControlOption,
 } from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
 import { useSelect } from '@wordpress/data';
@@ -488,46 +486,44 @@ export const ElevationEdit = ( {
 						}
 						withReset={ true }
 					/>
-					<ToggleGroupControl
+					<SelectControl
 						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
 						value={ axisFontWeight || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Bold', 'kntnt-gpx-blocks' ),
+								value: 'bold',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
-								axisFontWeight:
-									value === 'normal' ? '' : String( value ),
+								axisFontWeight: value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="bold"
-							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
-					<ToggleGroupControl
+					/>
+					<SelectControl
 						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
 						value={ axisFontStyle || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Italic', 'kntnt-gpx-blocks' ),
+								value: 'italic',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
-								axisFontStyle:
-									value === 'normal' ? '' : String( value ),
+								axisFontStyle: value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="italic"
-							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
+					/>
 				</PanelBody>
 
 				<PanelBody
@@ -551,46 +547,46 @@ export const ElevationEdit = ( {
 						}
 						withReset={ true }
 					/>
-					<ToggleGroupControl
+					<SelectControl
 						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
 						value={ tooltipFontWeight || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Bold', 'kntnt-gpx-blocks' ),
+								value: 'bold',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								tooltipFontWeight:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="bold"
-							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
-					<ToggleGroupControl
+					/>
+					<SelectControl
 						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
 						value={ tooltipFontStyle || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Italic', 'kntnt-gpx-blocks' ),
+								value: 'italic',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								tooltipFontStyle:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="italic"
-							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
+					/>
 				</PanelBody>
 			</InspectorControls>
 

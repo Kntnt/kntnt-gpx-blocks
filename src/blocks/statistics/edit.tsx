@@ -22,8 +22,6 @@ import {
 	Notice,
 	PanelBody,
 	SelectControl,
-	ToggleGroupControl,
-	ToggleGroupControlOption,
 } from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
 import { useSelect } from '@wordpress/data';
@@ -333,46 +331,46 @@ export const StatisticsEdit = ( {
 						}
 						withReset={ true }
 					/>
-					<ToggleGroupControl
+					<SelectControl
 						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
 						value={ headerFontWeight || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Bold', 'kntnt-gpx-blocks' ),
+								value: 'bold',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								headerFontWeight:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="bold"
-							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
-					<ToggleGroupControl
+					/>
+					<SelectControl
 						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
 						value={ headerFontStyle || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Italic', 'kntnt-gpx-blocks' ),
+								value: 'italic',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								headerFontStyle:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="italic"
-							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
+					/>
 				</PanelColorSettings>
 
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
@@ -413,46 +411,45 @@ export const StatisticsEdit = ( {
 						}
 						withReset={ true }
 					/>
-					<ToggleGroupControl
+					<SelectControl
 						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
 						value={ valueFontWeight || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Bold', 'kntnt-gpx-blocks' ),
+								value: 'bold',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
 								valueFontWeight:
-									value === 'normal' ? '' : String( value ),
+									value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="bold"
-							label={ __( 'Bold', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
-					<ToggleGroupControl
+					/>
+					<SelectControl
 						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
 						value={ valueFontStyle || 'normal' }
+						options={ [
+							{
+								label: __( 'Normal', 'kntnt-gpx-blocks' ),
+								value: 'normal',
+							},
+							{
+								label: __( 'Italic', 'kntnt-gpx-blocks' ),
+								value: 'italic',
+							},
+						] }
 						onChange={ ( value ) =>
 							setAttributes( {
-								valueFontStyle:
-									value === 'normal' ? '' : String( value ),
+								valueFontStyle: value === 'normal' ? '' : value,
 							} )
 						}
-						isBlock
-					>
-						<ToggleGroupControlOption
-							value="normal"
-							label={ __( 'Normal', 'kntnt-gpx-blocks' ) }
-						/>
-						<ToggleGroupControlOption
-							value="italic"
-							label={ __( 'Italic', 'kntnt-gpx-blocks' ) }
-						/>
-					</ToggleGroupControl>
+					/>
 				</PanelColorSettings>
 			</InspectorControls>
 
