@@ -1,8 +1,23 @@
 // Shared styles (editor + frontend) for the GPX Statistics block.
 // Grid layout wraps to 1–2 columns on narrow viewports and shows all five
-// items in a row on wide screens.
+// items in a row on wide screens. CSS custom properties carry the theming
+// values set in the editor; hardcoded defaults ensure acceptable appearance
+// on any WordPress theme without configuration.
 
 .wp-block-kntnt-gpx-blocks-statistics {
+	--kntnt-gpx-blocks-header-background: transparent;
+	--kntnt-gpx-blocks-header-color: inherit;
+	--kntnt-gpx-blocks-header-font-family: inherit;
+	--kntnt-gpx-blocks-header-font-size: inherit;
+	--kntnt-gpx-blocks-header-font-weight: 600;
+	--kntnt-gpx-blocks-header-font-style: normal;
+	--kntnt-gpx-blocks-value-background: transparent;
+	--kntnt-gpx-blocks-value-color: inherit;
+	--kntnt-gpx-blocks-value-font-family: inherit;
+	--kntnt-gpx-blocks-value-font-size: inherit;
+	--kntnt-gpx-blocks-value-font-weight: 400;
+	--kntnt-gpx-blocks-value-font-style: normal;
+
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(12em, 1fr));
 	gap: 1rem;
@@ -12,10 +27,23 @@
 	}
 
 	dt {
-		font-weight: 600;
+		padding: 0.25em 0.5em;
+		background-color: var(--kntnt-gpx-blocks-header-background);
+		color: var(--kntnt-gpx-blocks-header-color);
+		font-family: var(--kntnt-gpx-blocks-header-font-family);
+		font-size: var(--kntnt-gpx-blocks-header-font-size);
+		font-weight: var(--kntnt-gpx-blocks-header-font-weight);
+		font-style: var(--kntnt-gpx-blocks-header-font-style);
 	}
 
 	dd {
+		padding: 0.25em 0.5em;
 		margin: 0;
+		background-color: var(--kntnt-gpx-blocks-value-background);
+		color: var(--kntnt-gpx-blocks-value-color);
+		font-family: var(--kntnt-gpx-blocks-value-font-family);
+		font-size: var(--kntnt-gpx-blocks-value-font-size);
+		font-weight: var(--kntnt-gpx-blocks-value-font-weight);
+		font-style: var(--kntnt-gpx-blocks-value-font-style);
 	}
 }

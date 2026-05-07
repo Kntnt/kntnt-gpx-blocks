@@ -16,6 +16,54 @@
 		"mapId": {
 			"type": "string",
 			"default": "auto"
+		},
+		"headerBackground": {
+			"type": "string",
+			"default": ""
+		},
+		"headerColor": {
+			"type": "string",
+			"default": ""
+		},
+		"headerFontFamily": {
+			"type": "string",
+			"default": ""
+		},
+		"headerFontSize": {
+			"type": "string",
+			"default": ""
+		},
+		"headerFontWeight": {
+			"type": "string",
+			"default": ""
+		},
+		"headerFontStyle": {
+			"type": "string",
+			"default": ""
+		},
+		"valueBackground": {
+			"type": "string",
+			"default": ""
+		},
+		"valueColor": {
+			"type": "string",
+			"default": ""
+		},
+		"valueFontFamily": {
+			"type": "string",
+			"default": ""
+		},
+		"valueFontSize": {
+			"type": "string",
+			"default": ""
+		},
+		"valueFontWeight": {
+			"type": "string",
+			"default": ""
+		},
+		"valueFontStyle": {
+			"type": "string",
+			"default": ""
 		}
 	}
 }
