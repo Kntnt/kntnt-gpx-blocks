@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "kntnt-gpx-blocks/map",
+  "title": "GPX Map",
+  "category": "kntnt",
+  "description": "Renders an interactive Leaflet map of a GPX track with optional waypoint markers and elevation cursor sync.",
+  "keywords": [
+    "gpx",
+    "map",
+    "track",
+    "leaflet"
+  ],
+  "textdomain": "kntnt-gpx-blocks",
+  "editorScript": "file:./index.js",
+  "viewScriptModule": "file:./view.js",
+  "style": "file:./style-index.css",
+  "editorStyle": "file:./index.css",
+  "render": "file:./render.php",
+  "attributes": {}
+}

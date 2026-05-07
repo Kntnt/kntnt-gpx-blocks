@@ -261,11 +261,25 @@ final class Plugin {
 	}
 
 	/**
-	 * Private constructor — use get_instance() instead.
+	 * Wires all plugin components and registers their WordPress hooks.
+	 *
+	 * Instantiated once by get_instance(). Components are created in dependency
+	 * order; each registers its own actions and filters here so the constructor
+	 * remains the single authoritative place to trace the hook graph.
 	 *
 	 * @since 1.0.0
 	 */
 	private function __construct() {
+
+		// Bootstrap block registration and the custom block category.
+		$block_registrar = new Bootstrap\Block_Registrar();
+		add_action( 'init', [ $block_registrar, 'register' ] );
+		add_filter( 'block_categories_all', [ $block_registrar, 'register_category' ], 10, 2 );
+
+		// Wire the update checker to the WordPress update transient.
+		$updater = new Updater();
+		add_filter( 'pre_set_site_transient_update_plugins', [ $updater, 'check_for_updates' ] );
+
 	}
 
 }
