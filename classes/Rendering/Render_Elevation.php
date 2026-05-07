@@ -228,6 +228,7 @@ final class Render_Elevation {
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%s\''
 				. ' data-wp-init="callbacks.initElevation"'
+				. ' data-wp-watch="callbacks.onCursorChange"'
 				. ' style="%s">'
 				. '%s'
 				. '</div>',
@@ -446,9 +447,43 @@ final class Render_Elevation {
 			$plot_bottom,
 		);
 
+		// Server-render the cursor group so view.ts only needs to toggle visibility
+		// and update attributes — no element creation at runtime.
+		$cursor_line = sprintf(
+			'<line class="kntnt-gpx-blocks-elevation-cursor-line"'
+			. ' x1="0" y1="%d" x2="0" y2="%d" stroke="currentColor" />',
+			$plot_top,
+			$plot_bottom,
+		);
+		$cursor_dot = sprintf(
+			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="0" cy="0" r="5" fill="currentColor" />',
+		);
+		$cursor_tooltip_rect = sprintf(
+			'<rect class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"'
+			. ' x="0" y="%d" width="120" height="28" rx="3" />',
+			$plot_top,
+		);
+		$cursor_tooltip_text = sprintf(
+			'<text class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"'
+			. ' x="0" y="%d" text-anchor="middle" dominant-baseline="hanging"></text>',
+			$plot_top + 6,
+		);
+		$cursor_group = sprintf(
+			'<g class="kntnt-gpx-blocks-elevation-cursor" style="display:none"'
+			. ' data-plot-left="%d" data-plot-right="%d" data-plot-top="%d" data-plot-bottom="%d">%s%s%s%s</g>',
+			$plot_left,
+			$plot_right,
+			$plot_top,
+			$plot_bottom,
+			$cursor_line,
+			$cursor_dot,
+			$cursor_tooltip_rect,
+			$cursor_tooltip_text,
+		);
+
 		return sprintf(
 			'<svg viewBox="0 0 %d %d" role="img" aria-label="%s" preserveAspectRatio="none">'
-				. '<desc>%s</desc>%s%s%s%s</svg>',
+				. '<desc>%s</desc>%s%s%s%s%s</svg>',
 			self::VIEWBOX_WIDTH,
 			self::VIEWBOX_HEIGHT,
 			$aria_label,
@@ -457,6 +492,7 @@ final class Render_Elevation {
 			$y_ticks,
 			$x_ticks,
 			$polyline,
+			$cursor_group,
 		);
 
 	}
