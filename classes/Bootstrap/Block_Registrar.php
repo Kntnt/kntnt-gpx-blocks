@@ -58,16 +58,19 @@ final class Block_Registrar {
 	/**
 	 * Prepends the "Kntnt" block category to the inserter category list.
 	 *
-	 * Must be wired to the 'block_categories_all' filter. The category is
-	 * prepended so it appears first, before WordPress's built-in categories.
+	 * Wired to the 'block_categories_all' filter. WordPress 5.8 changed the
+	 * second argument's type from WP_Post to WP_Block_Editor_Context — the
+	 * filter is now invoked from the post editor, the site editor, the widget
+	 * editor, and other editor surfaces. The context is unused here since the
+	 * Kntnt category is shown unconditionally.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<array<string,string|null>> $categories Existing block categories.
-	 * @param \WP_Post                         $post       The post being edited.
+	 * @param \WP_Block_Editor_Context         $context    Editor context (unused).
 	 * @return array<array<string,string|null>> Modified categories list.
 	 */
-	public function register_category( array $categories, \WP_Post $post ): array {
+	public function register_category( array $categories, \WP_Block_Editor_Context $context ): array {
 
 		// Prepend the Kntnt category so plugin blocks appear first in the inserter.
 		return [
