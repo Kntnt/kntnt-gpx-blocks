@@ -19,7 +19,6 @@ import {
 	InspectorControls,
 	MediaPlaceholder,
 	PanelColorSettings,
-	ServerSideRender,
 } from '@wordpress/block-editor';
 import {
 	Notice,
@@ -31,6 +30,7 @@ import {
 	ToggleGroupControl,
 	ToggleGroupControlOption,
 } from '@wordpress/components';
+import ServerSideRender from '@wordpress/server-side-render';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
