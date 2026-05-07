@@ -1,0 +1,84 @@
+<?php
+/**
+ * Registers Gutenberg blocks and the custom block category.
+ *
+ * Iterates over the known block slugs and calls register_block_type() for
+ * each one, pointing at the compiled output under build/blocks/<slug>/. Also
+ * hooks the block_categories_all filter to expose the "Kntnt" category in
+ * the block inserter.
+ *
+ * @package Kntnt\Gpx_Blocks
+ * @since   1.0.0
+ */
+
+declare( strict_types = 1 );
+
+namespace Kntnt\Gpx_Blocks\Bootstrap;
+
+/**
+ * Handles block and block-category registration for the plugin.
+ *
+ * All three blocks are dynamic (server-side rendered); their block.json files
+ * live in the build output directory produced by @wordpress/scripts.
+ *
+ * @package Kntnt\Gpx_Blocks
+ * @since 1.0.0
+ */
+final class Block_Registrar {
+
+	/**
+	 * Slugs of all blocks this plugin registers.
+	 *
+	 * Each slug corresponds to a directory under build/blocks/ that contains a
+	 * compiled block.json plus the compiled JS/CSS assets.
+	 *
+	 * @since 1.0.0
+	 * @var string[]
+	 */
+	private const BLOCK_SLUGS = [ 'map' ];
+
+	/**
+	 * Registers all blocks by pointing register_block_type() at the build dir.
+	 *
+	 * Must be called on the 'init' action. WordPress reads block.json from the
+	 * given directory and automatically enqueues the declared script and style
+	 * handles.
+	 *
+	 * @since 1.0.0
+	 */
+	public function register(): void {
+
+		// Register each block from its compiled build directory.
+		foreach ( self::BLOCK_SLUGS as $slug ) {
+			register_block_type( __DIR__ . '/../../build/blocks/' . $slug );
+		}
+
+	}
+
+	/**
+	 * Prepends the "Kntnt" block category to the inserter category list.
+	 *
+	 * Must be wired to the 'block_categories_all' filter. The category is
+	 * prepended so it appears first, before WordPress's built-in categories.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<array<string,string|null>> $categories Existing block categories.
+	 * @param \WP_Post                         $post       The post being edited.
+	 * @return array<array<string,string|null>> Modified categories list.
+	 */
+	public function register_category( array $categories, \WP_Post $post ): array {
+
+		// Prepend the Kntnt category so plugin blocks appear first in the inserter.
+		return [
+			[
+				'slug'  => 'kntnt',
+				'title' => __( 'Kntnt', 'kntnt-gpx-blocks' ),
+				'icon'  => null,
+			],
+			...$categories,
+		];
+
+	}
+
+}
