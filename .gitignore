@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build artefacts produced by tooling not yet committed
+# (build/ from @wordpress/scripts is intentionally NOT ignored — it is committed)
+*.log
+.phpunit.result.cache
+.phpunit.cache/
+coverage/
+.npm/
+
+# Editor / OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local config
+.env
+.env.local
+
+# Composer / npm lock files are kept (committed)
