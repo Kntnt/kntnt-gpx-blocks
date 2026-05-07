@@ -22,6 +22,7 @@ import {
 } from '@wordpress/block-editor';
 import {
 	PanelBody,
+	TextControl,
 	ToggleControl,
 	FontSizePicker,
 	SelectControl,
@@ -91,6 +92,40 @@ const FONT_FAMILY_OPTIONS = [
 ];
 
 /**
+ * Preset aspect-ratio options for the Layout panel dropdown.
+ *
+ * The last entry signals that the user wants to type a custom value; the
+ * component renders a TextControl when this option is selected.
+ *
+ * @since 1.0.0
+ */
+const ASPECT_RATIO_OPTIONS = [
+	{ label: '1 / 1', value: '1/1' },
+	{ label: '4 / 3', value: '4/3' },
+	{ label: '3 / 2', value: '3/2' },
+	{ label: '16 / 9', value: '16/9' },
+	{ label: '21 / 9', value: '21/9' },
+	{ label: __( 'Custom', 'kntnt-gpx-blocks' ), value: 'custom' },
+];
+
+/**
+ * Sentinel value used in the aspect-ratio dropdown to mean "type your own".
+ *
+ * @since 1.0.0
+ */
+const CUSTOM_RATIO_SENTINEL = 'custom';
+
+/**
+ * Regex for basic CSS length validation in the min-height TextControl.
+ *
+ * Accepts values like `240px`, `12.5em`, `10rem`, `50%`. An empty string is
+ * always valid (means "use the PHP-side default").
+ *
+ * @since 1.0.0
+ */
+const CSS_LENGTH_RE = /^\d+(\.\d+)?(px|em|rem|%)$/;
+
+/**
  * Media object shape returned by MediaPlaceholder's onSelect callback.
  *
  * @since 1.0.0
@@ -124,7 +159,8 @@ export const MapEdit = ( {
 	// Ensure this block's mapId is non-empty and unique across the post.
 	useEnsureUniqueMapId( clientId, attributes, setAttributes );
 
-	const blockProps = useBlockProps();
+	// Destructure all attributes before use so useBlockProps can read colour
+	// values when it injects the instant-preview CSS variables.
 	const {
 		attachmentId,
 		mapId,
@@ -151,6 +187,28 @@ export const MapEdit = ( {
 		waypointLabelFontWeight,
 		waypointLabelFontStyle,
 	} = attributes;
+
+	// Inject CSS variables onto the block wrapper so color-picker changes
+	// appear instantly in the editor preview without a ServerSideRender round-trip.
+	const blockProps = useBlockProps( {
+		style: {
+			...( trackColor
+				? { '--kntnt-gpx-blocks-track-color': trackColor }
+				: {} ),
+			...( trackCursorColor
+				? { '--kntnt-gpx-blocks-track-cursor-color': trackCursorColor }
+				: {} ),
+		} as React.CSSProperties,
+	} );
+
+	// Determine which dropdown value is active. When the stored aspect-ratio
+	// matches a preset value, show the preset; otherwise show "Custom".
+	const presetValues = ASPECT_RATIO_OPTIONS.filter(
+		( o ) => o.value !== CUSTOM_RATIO_SENTINEL
+	).map( ( o ) => o.value );
+	const aspectRatioDropdown = presetValues.includes( aspectRatio )
+		? aspectRatio
+		: CUSTOM_RATIO_SENTINEL;
 
 	// Show the media picker until the user selects a .gpx attachment.
 	if ( attachmentId === 0 ) {
@@ -179,6 +237,57 @@ export const MapEdit = ( {
 	return (
 		<>
 			<InspectorControls>
+				<PanelBody title={ __( 'Layout', 'kntnt-gpx-blocks' ) }>
+					<SelectControl
+						label={ __( 'Aspect ratio', 'kntnt-gpx-blocks' ) }
+						value={ aspectRatioDropdown }
+						options={ ASPECT_RATIO_OPTIONS }
+						onChange={ ( value ) => {
+							if ( value !== CUSTOM_RATIO_SENTINEL ) {
+								setAttributes( { aspectRatio: value } );
+							} else {
+								// Keep the current stored value so the TextControl is
+								// pre-filled when the user switches to Custom.
+								setAttributes( { aspectRatio: '' } );
+							}
+						} }
+					/>
+					{ aspectRatioDropdown === CUSTOM_RATIO_SENTINEL && (
+						<TextControl
+							label={ __(
+								'Custom aspect ratio',
+								'kntnt-gpx-blocks'
+							) }
+							value={ aspectRatio }
+							placeholder="e.g. 3/1"
+							onChange={ ( value ) =>
+								setAttributes( { aspectRatio: value } )
+							}
+						/>
+					) }
+					<TextControl
+						label={ __( 'Minimum height', 'kntnt-gpx-blocks' ) }
+						value={ minHeight }
+						placeholder="e.g. 240px"
+						help={
+							minHeight !== '' &&
+							! CSS_LENGTH_RE.test( minHeight )
+								? __(
+										'Enter a valid CSS length, e.g. 240px, 12em, 50%.',
+										'kntnt-gpx-blocks'
+								  )
+								: ''
+						}
+						onChange={ ( value ) =>
+							setAttributes( {
+								minHeight:
+									value === '' || CSS_LENGTH_RE.test( value )
+										? value
+										: minHeight,
+							} )
+						}
+					/>
+				</PanelBody>
 				<PanelBody title={ __( 'Controls', 'kntnt-gpx-blocks' ) }>
 					<ToggleControl
 						label={ __( 'Zoom buttons', 'kntnt-gpx-blocks' ) }
@@ -259,6 +368,26 @@ export const MapEdit = ( {
 						}
 					/>
 				</PanelBody>
+				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
+				<PanelColorSettings
+					title={ __( 'Track', 'kntnt-gpx-blocks' ) }
+					colorSettings={ [
+						{
+							value: trackColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( { trackColor: value ?? '' } ),
+							label: __( 'Track colour', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: trackCursorColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									trackCursorColor: value ?? '',
+								} ),
+							label: __( 'Cursor colour', 'kntnt-gpx-blocks' ),
+						},
+					] }
+				/>
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
 					title={ __( 'Waypoints', 'kntnt-gpx-blocks' ) }

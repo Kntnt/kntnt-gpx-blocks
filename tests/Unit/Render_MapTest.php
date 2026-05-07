@@ -552,6 +552,146 @@ test( 'render output omits waypoint-color CSS variable when waypointColor is inv
 } );
 
 // ---------------------------------------------------------------------------
+// Track CSS variables — valid trackColor emits the correct CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output includes track-color CSS variable when trackColor is set', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 70, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 70, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
+				? $color
+				: null;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 70,
+			'mapId'        => 'map-track-color',
+			'trackColor'   => '#0073aa',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-track-color: #0073aa' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Track CSS variables — invalid trackColor emits no CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output omits track-color CSS variable when trackColor is invalid', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 71, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 71, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
+				? $color
+				: null;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 71,
+			'mapId'        => 'map-track-invalid',
+			'trackColor'   => 'javascript:alert(1)',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-track-color' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Track cursor CSS variables — valid trackCursorColor emits the correct CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output includes track-cursor-color CSS variable when trackCursorColor is set', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 72, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 72, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
+				? $color
+				: null;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'     => 72,
+			'mapId'            => 'map-cursor-color',
+			'trackCursorColor' => '#d63638',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-track-cursor-color: #d63638' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Track cursor CSS variables — invalid trackCursorColor emits no CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output omits track-cursor-color CSS variable when trackCursorColor is invalid', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 73, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 73, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static function ( string $color ): ?string {
+			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
+				? $color
+				: null;
+		}
+	);
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'     => 73,
+			'mapId'            => 'map-cursor-invalid',
+			'trackCursorColor' => 'not-a-color',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-track-cursor-color' );
+
+} );
+
+// ---------------------------------------------------------------------------
 // Waypoint CSS variables — invalid waypointLabelFontWeight emits no CSS var
 // ---------------------------------------------------------------------------
 
