@@ -511,3 +511,139 @@ test( 'svg contains the server-rendered cursor group with plot data attributes',
 		->toContain( 'kntnt-gpx-blocks-elevation-cursor-tooltip-text' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Theming: colour attributes emitted as CSS custom properties
+// ---------------------------------------------------------------------------
+
+test( 'emits --kntnt-gpx-blocks-line-color when lineColor is a valid hex', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 70, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 20 );
+	elev_stub_parse_blocks( [ elev_map_block( 70, 'map-color' ) ] );
+	elev_stub_attached_file( 70, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 20 );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static fn ( string $c ): ?string => preg_match( '/^#([0-9a-f]{3}|[0-9a-f]{6})$/i', $c ) ? $c : null
+	);
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'     => 'auto',
+			'lineColor' => '#0073aa',
+		],
+		'',
+		elev_fake_block( 20 ),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-line-color: #0073aa' );
+
+} );
+
+test( 'does not emit --kntnt-gpx-blocks-line-color when lineColor is invalid', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 71, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 21 );
+	elev_stub_parse_blocks( [ elev_map_block( 71, 'map-bad-color' ) ] );
+	elev_stub_attached_file( 71, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 21 );
+	Functions\when( 'sanitize_hex_color' )->alias(
+		static fn ( string $c ): ?string => preg_match( '/^#([0-9a-f]{3}|[0-9a-f]{6})$/i', $c ) ? $c : null
+	);
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'     => 'auto',
+			'lineColor' => 'javascript:alert(1)',
+		],
+		'',
+		elev_fake_block( 21 ),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-line-color' );
+
+} );
+
+test( 'emits --kntnt-gpx-blocks-axis-font-weight when font weight is valid', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 72, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 22 );
+	elev_stub_parse_blocks( [ elev_map_block( 72, 'map-weight' ) ] );
+	elev_stub_attached_file( 72, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 22 );
+	Functions\when( 'sanitize_hex_color' )->justReturn( null );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'          => 'auto',
+			'axisFontWeight' => 'bold',
+		],
+		'',
+		elev_fake_block( 22 ),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-axis-font-weight: bold' );
+
+} );
+
+test( 'does not emit --kntnt-gpx-blocks-axis-font-weight when font weight is invalid', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 73, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 23 );
+	elev_stub_parse_blocks( [ elev_map_block( 73, 'map-bad-weight' ) ] );
+	elev_stub_attached_file( 73, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 23 );
+	Functions\when( 'sanitize_hex_color' )->justReturn( null );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'          => 'auto',
+			'axisFontWeight' => 'extra-bold; color: red',
+		],
+		'',
+		elev_fake_block( 23 ),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-axis-font-weight' );
+
+} );

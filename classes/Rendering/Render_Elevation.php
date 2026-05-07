@@ -166,6 +166,25 @@ final class Render_Elevation {
 			: self::DEFAULT_ASPECT_RATIO;
 		$min_height = is_string( $raw_mh ) && '' !== $raw_mh ? $raw_mh : self::DEFAULT_MIN_HEIGHT;
 
+		// Read and sanitize the seven colour attributes.
+		$background_color  = self::sanitize_color( $attributes['backgroundColor'] ?? '' );
+		$axis_color        = self::sanitize_color( $attributes['axisColor'] ?? '' );
+		$axis_label_color  = self::sanitize_color( $attributes['axisLabelColor'] ?? '' );
+		$line_color        = self::sanitize_color( $attributes['lineColor'] ?? '' );
+		$cursor_color      = self::sanitize_color( $attributes['cursorColor'] ?? '' );
+		$tooltip_bg        = self::sanitize_color( $attributes['tooltipBackground'] ?? '' );
+		$tooltip_color     = self::sanitize_color( $attributes['tooltipColor'] ?? '' );
+
+		// Read and sanitize the eight typography attributes (axis and tooltip).
+		$axis_font_family   = self::sanitize_font_family( $attributes['axisFontFamily'] ?? '' );
+		$axis_font_size     = self::sanitize_font_size( $attributes['axisFontSize'] ?? '' );
+		$axis_font_weight   = self::sanitize_font_weight( $attributes['axisFontWeight'] ?? '' );
+		$axis_font_style    = self::sanitize_font_style( $attributes['axisFontStyle'] ?? '' );
+		$tooltip_font_family = self::sanitize_font_family( $attributes['tooltipFontFamily'] ?? '' );
+		$tooltip_font_size   = self::sanitize_font_size( $attributes['tooltipFontSize'] ?? '' );
+		$tooltip_font_weight = self::sanitize_font_weight( $attributes['tooltipFontWeight'] ?? '' );
+		$tooltip_font_style  = self::sanitize_font_style( $attributes['tooltipFontStyle'] ?? '' );
+
 		// Determine the host post ID for block-tree discovery.
 		$context     = property_exists( $block, 'context' ) && is_array( $block->context ) ? $block->context : [];
 		$raw_post_id = $context['postId'] ?? null;
@@ -193,7 +212,11 @@ final class Render_Elevation {
 		// No usable elevation in the source — render the translated empty state
 		// in place of the chart.
 		if ( count( $series ) < 2 ) {
-			return self::render_empty_state( $aspect_ratio, $min_height );
+			return self::render_empty_state(
+				$aspect_ratio,
+				$min_height,
+				$background_color,
+			);
 		}
 
 		// Downsample the series via LTTB to a configurable target point count.
@@ -216,12 +239,62 @@ final class Render_Elevation {
 
 		// Build the SVG and wrap it in the Interactivity-API-annotated container.
 		$svg          = self::build_svg( $downsampled, $payload['statistics'] );
-		$style        = sprintf(
-			'--kntnt-gpx-blocks-aspect-ratio: %s; --kntnt-gpx-blocks-min-height: %s',
-			$aspect_ratio,
-			$min_height,
-		);
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
+
+		// Assemble the inline style: layout dimensions first, then any non-empty
+		// theming custom properties. Empty values fall back to the SCSS defaults.
+		$style_parts = [
+			'--kntnt-gpx-blocks-aspect-ratio: ' . $aspect_ratio,
+			'--kntnt-gpx-blocks-min-height: ' . $min_height,
+		];
+
+		if ( '' !== $background_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-background-color: ' . $background_color;
+		}
+		if ( '' !== $axis_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-axis-color: ' . $axis_color;
+		}
+		if ( '' !== $axis_label_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-axis-label-color: ' . $axis_label_color;
+		}
+		if ( '' !== $line_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-line-color: ' . $line_color;
+		}
+		if ( '' !== $cursor_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-cursor-color: ' . $cursor_color;
+		}
+		if ( '' !== $tooltip_bg ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-background: ' . $tooltip_bg;
+		}
+		if ( '' !== $tooltip_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-color: ' . $tooltip_color;
+		}
+		if ( '' !== $axis_font_family ) {
+			$style_parts[] = '--kntnt-gpx-blocks-axis-font-family: ' . $axis_font_family;
+		}
+		if ( '' !== $axis_font_size ) {
+			$style_parts[] = '--kntnt-gpx-blocks-axis-font-size: ' . $axis_font_size;
+		}
+		if ( '' !== $axis_font_weight ) {
+			$style_parts[] = '--kntnt-gpx-blocks-axis-font-weight: ' . $axis_font_weight;
+		}
+		if ( '' !== $axis_font_style ) {
+			$style_parts[] = '--kntnt-gpx-blocks-axis-font-style: ' . $axis_font_style;
+		}
+		if ( '' !== $tooltip_font_family ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-family: ' . $tooltip_font_family;
+		}
+		if ( '' !== $tooltip_font_size ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-size: ' . $tooltip_font_size;
+		}
+		if ( '' !== $tooltip_font_weight ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-weight: ' . $tooltip_font_weight;
+		}
+		if ( '' !== $tooltip_font_style ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-style: ' . $tooltip_font_style;
+		}
+
+		$style = implode( '; ', $style_parts );
 
 		return sprintf(
 			'<div class="wp-block-kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation"'
@@ -626,18 +699,26 @@ final class Render_Elevation {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $aspect_ratio Validated aspect ratio.
-	 * @param string $min_height   Validated min-height.
+	 * @param string $aspect_ratio      Validated aspect ratio.
+	 * @param string $min_height        Validated min-height.
+	 * @param string $background_color  Validated background colour (may be empty).
 	 *
 	 * @return string
 	 */
-	private static function render_empty_state( string $aspect_ratio, string $min_height ): string {
+	private static function render_empty_state(
+		string $aspect_ratio,
+		string $min_height,
+		string $background_color = '',
+	): string {
 
-		$style = sprintf(
-			'--kntnt-gpx-blocks-aspect-ratio: %s; --kntnt-gpx-blocks-min-height: %s',
-			$aspect_ratio,
-			$min_height,
-		);
+		$style_parts = [
+			'--kntnt-gpx-blocks-aspect-ratio: ' . $aspect_ratio,
+			'--kntnt-gpx-blocks-min-height: ' . $min_height,
+		];
+		if ( '' !== $background_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-background-color: ' . $background_color;
+		}
+		$style = implode( '; ', $style_parts );
 
 		return sprintf(
 			'<div class="wp-block-kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation'
@@ -701,6 +782,145 @@ final class Render_Elevation {
 			+ cos( $phi1 ) * cos( $phi2 ) * sin( $d_lambda / 2 ) ** 2;
 
 		return self::EARTH_RADIUS_METERS * 2 * atan2( sqrt( $a ), sqrt( 1 - $a ) );
+
+	}
+
+	// ─── Attribute sanitizers ────────────────────────────────────────────────
+
+	/**
+	 * Validates and returns a hex colour string, or empty string on invalid input.
+	 *
+	 * Accepts hex colours (#rgb, #rrggbb) via sanitize_hex_color. Returns empty
+	 * string for blank input so the CSS falls back to the hardcoded default in
+	 * style.scss rather than emitting a broken value.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated hex colour or empty string.
+	 */
+	private static function sanitize_color( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// sanitize_hex_color returns null on failure; coerce to empty string.
+		$clean = sanitize_hex_color( $raw );
+		return is_string( $clean ) ? $clean : '';
+
+	}
+
+	/**
+	 * Validates a CSS font-family value against a strict whitelist.
+	 *
+	 * Accepts common font name strings and theme-preset CSS variable references.
+	 * Returns empty string on anything that could inject CSS or HTML.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-family string or empty string.
+	 */
+	private static function sanitize_font_family( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// Accept a CSS theme-preset font-family reference.
+		if ( preg_match( '/^var\(--wp--preset--font-family--[a-z0-9-]+\)$/', $raw ) ) {
+			return $raw;
+		}
+
+		// Accept font family names composed of letters, digits, spaces, commas,
+		// hyphens, quotes, and parentheses — the characters that appear in valid
+		// CSS font-family stacks.
+		if ( preg_match( "/^[A-Za-z0-9\\s,\\-'\"()]+$/", $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS font-size value against a strict whitelist.
+	 *
+	 * Accepts numeric CSS length values (px, em, rem, %) and theme-preset
+	 * font-size references. Returns empty string on anything unsafe.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-size string or empty string.
+	 */
+	private static function sanitize_font_size( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// Accept a CSS theme-preset font-size reference.
+		if ( preg_match( '/^var\(--wp--preset--font-size--[a-z0-9-]+\)$/', $raw ) ) {
+			return $raw;
+		}
+
+		// Accept numeric lengths: optional decimal followed by a CSS length unit.
+		if ( preg_match( '/^(\d+(\.\d+)?)(px|em|rem|%)?$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS font-weight value against the accepted keyword/numeric whitelist.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-weight string or empty string.
+	 */
+	private static function sanitize_font_weight( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(normal|bold|lighter|bolder|[1-9]00)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS font-style value against the accepted keyword whitelist.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated font-style string or empty string.
+	 */
+	private static function sanitize_font_style( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(normal|italic|oblique)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
 
 	}
 

@@ -1,41 +1,102 @@
 // Shared styles (editor + frontend) for the GPX Elevation block.
 // The wrapper sets the layout box; the inline SVG fills that box completely
-// via width: 100% / height: 100%. Per-block theming arrives in #17, so the
-// colour and typography variables here are sensible hardcoded defaults.
+// via width: 100% / height: 100%. Per-block theming is driven by the CSS
+// custom properties declared below. Inline style on the wrapper overrides any
+// property that the editor or the server-side renderer has set explicitly;
+// everything else falls back to the hardcoded defaults here.
 
 .kntnt-gpx-blocks-elevation {
+	// ─── Layout variables ─────────────────────────────────────────────────
 	width: 100%;
 	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 4 / 1);
 	min-height: var(--kntnt-gpx-blocks-min-height, 120px);
-	color: var(--kntnt-gpx-blocks-elevation-line-color, #06c);
 
+	// ─── Colour defaults ──────────────────────────────────────────────────
+	// These are the fallback values used when the editor leaves a field empty.
+	// All seven properties must be declared here so var() always resolves even
+	// when the server-side renderer emits no inline style for that property.
+	--kntnt-gpx-blocks-background-color: transparent;
+	--kntnt-gpx-blocks-axis-color: #1e1e1e;
+	--kntnt-gpx-blocks-axis-label-color: #1e1e1e;
+	--kntnt-gpx-blocks-line-color: #0073aa;
+	--kntnt-gpx-blocks-cursor-color: #d63638;
+	--kntnt-gpx-blocks-tooltip-background: #1e1e1e;
+	--kntnt-gpx-blocks-tooltip-color: #fff;
+
+	// ─── Typography defaults ──────────────────────────────────────────────
+	--kntnt-gpx-blocks-axis-font-family: inherit;
+	--kntnt-gpx-blocks-axis-font-size: 11px;
+	--kntnt-gpx-blocks-axis-font-weight: 400;
+	--kntnt-gpx-blocks-axis-font-style: normal;
+	--kntnt-gpx-blocks-tooltip-font-family: inherit;
+	--kntnt-gpx-blocks-tooltip-font-size: 12px;
+	--kntnt-gpx-blocks-tooltip-font-weight: 400;
+	--kntnt-gpx-blocks-tooltip-font-style: normal;
+
+	// ─── SVG container ────────────────────────────────────────────────────
 	svg {
 		width: 100%;
 		height: 100%;
 		display: block;
-		font-family: var(--kntnt-gpx-blocks-elevation-axis-font-family, inherit);
-		font-size: var(--kntnt-gpx-blocks-elevation-axis-font-size, 12px);
+		background: var(--kntnt-gpx-blocks-background-color);
 	}
 
+	// ─── Axis lines ───────────────────────────────────────────────────────
+	// Both the bottom and the left frame lines share this class.
+	.kntnt-gpx-blocks-elevation-axis {
+		stroke: var(--kntnt-gpx-blocks-axis-color);
+		stroke-width: 1;
+	}
+
+	// ─── Axis tick labels ─────────────────────────────────────────────────
+	.kntnt-gpx-blocks-elevation-axis-label {
+		fill: var(--kntnt-gpx-blocks-axis-label-color);
+		stroke: none;
+		font-family: var(--kntnt-gpx-blocks-axis-font-family);
+		font-size: var(--kntnt-gpx-blocks-axis-font-size);
+		font-weight: var(--kntnt-gpx-blocks-axis-font-weight);
+		font-style: var(--kntnt-gpx-blocks-axis-font-style);
+	}
+
+	// ─── Elevation polyline ───────────────────────────────────────────────
 	.kntnt-gpx-blocks-elevation-line {
-		stroke: currentcolor;
+		stroke: var(--kntnt-gpx-blocks-line-color);
 		stroke-width: 2;
 		fill: none;
 	}
 
-	.kntnt-gpx-blocks-elevation-axis {
-		stroke: var(--kntnt-gpx-blocks-elevation-axis-color, #888);
+	// ─── Cursor group ─────────────────────────────────────────────────────
+	// The cursor group is server-rendered and toggled by view.ts.
+
+	.kntnt-gpx-blocks-elevation-cursor-line {
+		stroke: var(--kntnt-gpx-blocks-cursor-color);
 		stroke-width: 1;
 	}
 
-	.kntnt-gpx-blocks-elevation-axis-label {
-		fill: var(--kntnt-gpx-blocks-elevation-axis-label-color, #555);
-		stroke: none;
+	.kntnt-gpx-blocks-elevation-cursor-dot {
+		fill: var(--kntnt-gpx-blocks-cursor-color);
 	}
 
+	.kntnt-gpx-blocks-elevation-cursor-tooltip-bg {
+		fill: var(--kntnt-gpx-blocks-tooltip-background);
+	}
+
+	.kntnt-gpx-blocks-elevation-cursor-tooltip-text {
+		fill: var(--kntnt-gpx-blocks-tooltip-color);
+		font-family: var(--kntnt-gpx-blocks-tooltip-font-family);
+		font-size: var(--kntnt-gpx-blocks-tooltip-font-size);
+		font-weight: var(--kntnt-gpx-blocks-tooltip-font-weight);
+		font-style: var(--kntnt-gpx-blocks-tooltip-font-style);
+	}
+
+	// ─── Empty state ──────────────────────────────────────────────────────
 	&--empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		padding: 1rem;
 		font-style: italic;
-		color: var(--kntnt-gpx-blocks-elevation-empty-color, #555);
+		background: var(--kntnt-gpx-blocks-background-color);
+		color: #555;
 	}
 }
