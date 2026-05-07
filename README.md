@@ -183,7 +183,7 @@ Integration tests against WordPress Playground and block JS unit tests via `wp-s
 ./build-release-zip.sh
 ```
 
-The script runs a fresh `composer install --no-dev --optimize-autoloader`, runs `npm run build` to produce the block bundles, and packages everything except development files into `kntnt-gpx-blocks-vX.Y.Z.zip`. The resulting ZIP is the file users upload via WordPress's Plugins → Add New screen.
+The script runs a fresh `composer install --no-dev --optimize-autoloader`, runs `npm run build` to produce the block bundles, and packages everything except development files into `kntnt-gpx-blocks.zip`. The filename intentionally has no version segment — the GitHub Releases asset URL stays stable across releases because the per-release tag in the URL already encodes the version. The resulting ZIP is the file users upload via WordPress's Plugins → Add New screen.
 
 ### Architecture Overview
 

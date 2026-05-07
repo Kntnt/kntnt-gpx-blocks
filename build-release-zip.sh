@@ -8,7 +8,12 @@
 # composer install is restored at the end so the working tree returns to
 # development mode.
 #
-# Output: kntnt-gpx-blocks-vX.Y.Z.zip in the project root.
+# Output: kntnt-gpx-blocks.zip in the project root.
+#
+# The output filename intentionally has no version segment so that the
+# GitHub Releases asset URL stays stable across versions — the per-release
+# tag in the URL already encodes the version. The Updater identifies the
+# right asset by its content_type, not its filename.
 
 set -euo pipefail
 
@@ -38,8 +43,8 @@ if [ -z "$version" ]; then
 	exit 1
 fi
 
-zip_name="${plugin_slug}-v${version}.zip"
-echo "Building ${zip_name}"
+zip_name="${plugin_slug}.zip"
+echo "Building ${zip_name} (version ${version})"
 
 # Build a temporary staging directory and ensure it is removed on any exit.
 staging_dir="$( mktemp -d )"
