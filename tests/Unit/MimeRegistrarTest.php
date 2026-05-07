@@ -138,3 +138,36 @@ test( 'override_check leaves png entry unchanged', function (): void {
 	expect( $result )->toBe( $original );
 
 } );
+
+// ---------------------------------------------------------------------------
+// override_check() — nullable arguments per WordPress core's filter contract
+// ---------------------------------------------------------------------------
+
+test( 'override_check accepts null mimes without throwing', function (): void {
+
+	$registrar = new Mime_Registrar();
+	$result    = $registrar->override_check( baseline_data(), '/tmp/upload', 'track.gpx', null, 'text/xml' );
+
+	expect( $result['ext'] )->toBe( 'gpx' )
+		->and( $result['type'] )->toBe( 'application/gpx+xml' );
+
+} );
+
+test( 'override_check accepts null file path without throwing', function (): void {
+
+	$registrar = new Mime_Registrar();
+	$result    = $registrar->override_check( baseline_data(), null, 'track.gpx', [], 'text/xml' );
+
+	expect( $result['ext'] )->toBe( 'gpx' );
+
+} );
+
+test( 'override_check passes through unchanged when filename is null', function (): void {
+
+	$registrar = new Mime_Registrar();
+	$baseline  = baseline_data();
+	$result    = $registrar->override_check( $baseline, '/tmp/upload', null, [], 'text/xml' );
+
+	expect( $result )->toBe( $baseline );
+
+} );
