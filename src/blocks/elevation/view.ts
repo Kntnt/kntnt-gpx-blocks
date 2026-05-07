@@ -1,11 +1,11 @@
 /**
  * GPX Elevation frontend Interactivity API module.
  *
- * Registers the block's client-side store with the WordPress Interactivity
- * API. At this stub stage the store is empty — the SVG elevation chart
- * initialisation callback (`callbacks.initElevation`), the cursor-sync watch
- * (`callbacks.onCursorChange`), and the `pointermove` handler arrive in a
- * later issue once block attributes and the SVG rendering logic are in place.
+ * Registers a no-op `callbacks.initElevation` so the block's
+ * `data-wp-init="callbacks.initElevation"` directive resolves cleanly. The SVG
+ * chart is fully server-rendered, so there is no DOM building to do here. The
+ * cursor-sync watch (`callbacks.onCursorChange`) and the pointermove handler
+ * arrive in issue #12.
  *
  * This file is loaded as an ES module via `viewScriptModule` in block.json,
  * which is required by the Interactivity API.
@@ -15,5 +15,22 @@
 
 import { store } from '@wordpress/interactivity';
 
-// Register the empty store under the plugin's interactivity namespace.
-store( 'kntnt-gpx-blocks', {} );
+// Register the namespace store with a no-op init callback. Both Map and
+// Elevation share this namespace; calling store() twice with the same name is
+// safe — Interactivity merges their callback dictionaries.
+store( 'kntnt-gpx-blocks', {
+	callbacks: {
+		/**
+		 * Mount hook for the elevation chart container.
+		 *
+		 * The chart itself is server-rendered SVG, so this hook has no DOM
+		 * work to do in this slice. It exists so the data-wp-init directive
+		 * has a callable target; cursor wiring lands in #12.
+		 *
+		 * @since 1.0.0
+		 */
+		initElevation(): void {
+			// Intentionally empty — see file-level docblock.
+		},
+	},
+} );

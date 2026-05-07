@@ -1,6 +1,41 @@
 // Shared styles (editor + frontend) for the GPX Elevation block.
-// Full implementation arrives in a later issue.
+// The wrapper sets the layout box; the inline SVG fills that box completely
+// via width: 100% / height: 100%. Per-block theming arrives in #17, so the
+// colour and typography variables here are sensible hardcoded defaults.
 
-.wp-block-kntnt-gpx-blocks-elevation {
-	display: block;
+.kntnt-gpx-blocks-elevation {
+	width: 100%;
+	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 4 / 1);
+	min-height: var(--kntnt-gpx-blocks-min-height, 120px);
+	color: var(--kntnt-gpx-blocks-elevation-line-color, #06c);
+
+	svg {
+		width: 100%;
+		height: 100%;
+		display: block;
+		font-family: var(--kntnt-gpx-blocks-elevation-axis-font-family, inherit);
+		font-size: var(--kntnt-gpx-blocks-elevation-axis-font-size, 12px);
+	}
+
+	.kntnt-gpx-blocks-elevation-line {
+		stroke: currentcolor;
+		stroke-width: 2;
+		fill: none;
+	}
+
+	.kntnt-gpx-blocks-elevation-axis {
+		stroke: var(--kntnt-gpx-blocks-elevation-axis-color, #888);
+		stroke-width: 1;
+	}
+
+	.kntnt-gpx-blocks-elevation-axis-label {
+		fill: var(--kntnt-gpx-blocks-elevation-axis-label-color, #555);
+		stroke: none;
+	}
+
+	&--empty {
+		padding: 1rem;
+		font-style: italic;
+		color: var(--kntnt-gpx-blocks-elevation-empty-color, #555);
+	}
 }

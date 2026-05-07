@@ -1,1 +1,1 @@
-import{store as t}from"@wordpress/interactivity";t("kntnt-gpx-blocks",{});
+import{store as t}from"@wordpress/interactivity";t("kntnt-gpx-blocks",{callbacks:{initElevation(){}}});
