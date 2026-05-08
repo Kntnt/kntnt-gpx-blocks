@@ -8,10 +8,12 @@
  *   the SVG, reads the chart dimensions from data attributes on that group,
  *   and attaches `pointermove` / `pointerleave` handlers on the SVG that
  *   write `state[mapId].fraction` from the pointer's x-position.
- * - `callbacks.onCursorChange` — reacts to `state[mapId].fraction` changes
- *   (from Elevation itself or from GPX Map) by updating the cursor group's
- *   vertical line, dot, and tooltip text. Does NOT write back to state (no
- *   feedback loop).
+ * - `callbacks.onElevationCursorChange` — reacts to `state[mapId].fraction`
+ *   changes (from Elevation itself or from GPX Map) by updating the cursor
+ *   group's vertical line, dot, and tooltip text. Does NOT write back to state
+ *   (no feedback loop). Namespaced per block so the Map module's own watch
+ *   callback is not overwritten when both modules register into the shared
+ *   `kntnt-gpx-blocks` store.
  *
  * The SVG and cursor group are fully server-rendered by Render_Elevation.php.
  * The cursor group carries `data-plot-left`, `data-plot-right`, `data-plot-top`,
@@ -268,10 +270,11 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				bottom: plotBottom,
 			};
 
-			// Record the mount entry immediately so onCursorChange can update the
-			// SVG cursor as soon as fraction changes — even before the pointer
-			// handlers are bound. The cursor sync only mutates SVG attributes
-			// and never needs Leaflet, so it is safe to activate right away.
+			// Record the mount entry immediately so onElevationCursorChange can
+			// update the SVG cursor as soon as fraction changes — even before
+			// the pointer handlers are bound. The cursor sync only mutates SVG
+			// attributes and never needs Leaflet, so it is safe to activate
+			// right away.
 			mountedElevations.set( ref, {
 				points,
 				cursorGroup,
@@ -289,7 +292,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			// Defer pointer-event handler binding until the chart is in (or near)
 			// the viewport. This mirrors the Map block's IntersectionObserver
 			// pattern: heavy DOM listeners are attached lazily, but the cursor-sync
-			// watch (onCursorChange) is already live because mountedElevations is
+			// watch (onElevationCursorChange) is already live because mountedElevations is
 			// set above.
 			const bindPointerHandlers = () => {
 				// Attach pointer tracking on the SVG element. pointermove computes
@@ -342,9 +345,13 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		 * the Elevation's own pointermove or the Map block). Does NOT write back
 		 * to state — that would create a feedback loop.
 		 *
+		 * Named per block (rather than the generic `onCursorChange`) so that
+		 * registering both Map and Elevation modules into the same
+		 * `kntnt-gpx-blocks` store does not overwrite each other's callbacks.
+		 *
 		 * @since 1.0.0
 		 */
-		onCursorChange() {
+		onElevationCursorChange() {
 			const { ref } = getElement();
 			if ( ! ref ) {
 				return;

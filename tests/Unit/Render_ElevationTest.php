@@ -477,7 +477,7 @@ test( 'wrapper div carries the data-wp-watch cursor-change directive', function 
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 10 ) );
 
-	expect( $html )->toContain( 'data-wp-watch="callbacks.onCursorChange"' );
+	expect( $html )->toContain( 'data-wp-watch="callbacks.onElevationCursorChange"' );
 
 } );
 

@@ -226,7 +226,7 @@ test( 'renders the wrapper element with data-wp-init and data-wp-watch directive
 
 	expect( $html )
 		->toContain( 'data-wp-init="callbacks.initMap"' )
-		->toContain( 'data-wp-watch--cursor="callbacks.onCursorChange"' )
+		->toContain( 'data-wp-watch--cursor="callbacks.onMapCursorChange"' )
 		->toContain( 'kntnt-gpx-blocks-map' )
 		->not->toContain( 'data-wp-watch--consent' )
 		->not->toContain( 'callbacks.onConsentChange' );
@@ -413,11 +413,11 @@ test( 'wp_interactivity_state receives correct default interaction flags', funct
 
 	expect( $settings )->not->toBeNull();
 	expect( $settings['enableDrag'] )->toBeTrue();
-	expect( $settings['enableScrollWheelZoom'] )->toBeFalse();
 	expect( $settings['enablePinchZoom'] )->toBeTrue();
 	expect( $settings['enableDoubleClickZoom'] )->toBeTrue();
-	expect( $settings['enableBoxZoom'] )->toBeFalse();
 	expect( $settings['enableKeyboard'] )->toBeTrue();
+	expect( $settings )->not->toHaveKey( 'enableScrollWheelZoom' );
+	expect( $settings )->not->toHaveKey( 'enableBoxZoom' );
 
 } );
 
@@ -446,10 +446,8 @@ test( 'wp_interactivity_state reflects explicit interaction flag overrides', fun
 			'attachmentId'          => 51,
 			'mapId'                 => 'map-interaction-overrides',
 			'enableDrag'            => false,
-			'enableScrollWheelZoom' => true,
 			'enablePinchZoom'       => false,
 			'enableDoubleClickZoom' => false,
-			'enableBoxZoom'         => true,
 			'enableKeyboard'        => false,
 		],
 		'',
@@ -460,10 +458,8 @@ test( 'wp_interactivity_state reflects explicit interaction flag overrides', fun
 
 	expect( $settings )->not->toBeNull();
 	expect( $settings['enableDrag'] )->toBeFalse();
-	expect( $settings['enableScrollWheelZoom'] )->toBeTrue();
 	expect( $settings['enablePinchZoom'] )->toBeFalse();
 	expect( $settings['enableDoubleClickZoom'] )->toBeFalse();
-	expect( $settings['enableBoxZoom'] )->toBeTrue();
 	expect( $settings['enableKeyboard'] )->toBeFalse();
 
 } );

@@ -10,9 +10,11 @@
  *   is permitted: an absent signal does not block tile loading. Subscribes to
  *   subsequent transitions via `onConsentChanged` so a denying signal tears
  *   the map down and a granting signal re-mounts it.
- * - `callbacks.onCursorChange` — reacts to `state[mapId].fraction` changes
+ * - `callbacks.onMapCursorChange` — reacts to `state[mapId].fraction` changes
  *   (from Map itself or from GPX Elevation) by moving the cursor marker along
- *   the polyline without re-emitting the fraction.
+ *   the polyline without re-emitting the fraction. Namespaced per block so the
+ *   Elevation module's own watch callback is not overwritten when both modules
+ *   register into the shared `kntnt-gpx-blocks` store.
  *
  * Editor bypass: when PHP detects a REST `block-renderer` request from a user
  * with `edit_posts`, it sets `bypassConsent: true` in the per-map state slice.
@@ -77,14 +79,10 @@ interface MapSettings {
 	readonly showDownload: boolean;
 	/** Enable drag-to-pan. */
 	readonly enableDrag: boolean;
-	/** Enable scroll-wheel zoom. Disabled by default to prevent scroll hijacking. */
-	readonly enableScrollWheelZoom: boolean;
 	/** Enable pinch-to-zoom on touch devices. */
 	readonly enablePinchZoom: boolean;
 	/** Enable double-click zoom. */
 	readonly enableDoubleClickZoom: boolean;
-	/** Enable shift+drag box zoom. */
-	readonly enableBoxZoom: boolean;
 	/** Enable keyboard navigation. Required for accessibility. */
 	readonly enableKeyboard: boolean;
 }
@@ -102,6 +100,17 @@ interface MapState {
 	gpxFileUrl: string | null;
 	settings: MapSettings;
 	fraction: number | null;
+	/**
+	 * Translated overlay messages shown when the user scrolls a mouse wheel
+	 * over the map without holding the modifier key. Pre-translated by PHP
+	 * because `@wordpress/i18n` is not available inside view-script modules.
+	 */
+	scrollHint: {
+		/** Apple-platform variant — uses the Cmd glyph. */
+		apple: string;
+		/** Non-Apple variant — uses the Ctrl key name. */
+		other: string;
+	};
 	/**
 	 * True when PHP detected an editor render context (REST block-renderer
 	 * with `edit_posts`). When true, the view module mounts Leaflet
@@ -140,6 +149,8 @@ interface MapEntry {
 	cursor: L.CircleMarker;
 	/** Flat [lat, lng] array extracted from the simplified LineString. */
 	coords: Array< [ number, number ] >;
+	/** Aborts document-level listeners (scrub end, hint timer) on tear-down. */
+	disposer: AbortController;
 }
 
 // ─── Module constants ────────────────────────────────────────────────────────
@@ -162,7 +173,7 @@ const CONSENT_CATEGORY = 'external_media';
  * re-hydration (e.g. in the editor's ServerSideRender) never double-mounts.
  *
  * Keyed by the block wrapper element; the value carries the map, cursor marker,
- * and pre-computed coordinate array needed by `onCursorChange`.
+ * and pre-computed coordinate array needed by `onMapCursorChange`.
  *
  * @since 1.0.0
  */
@@ -269,6 +280,255 @@ function fractionToLatLng(
 }
 
 /**
+ * Find the fraction along a coordinate array that lies nearest to a given
+ * lat/lng using a linear nearest-vertex scan.
+ *
+ * For typical simplified tracks (~300 vertices) the linear scan is fast enough
+ * to run on every pointermove without throttling.
+ *
+ * @since 1.0.0
+ *
+ * @param coords - Flat [lat, lng] array.
+ * @param latlng - Pointer position.
+ * @param map    - Leaflet map used for haversine distance.
+ * @return Fraction in [0, 1].
+ */
+function nearestFraction(
+	coords: Array< [ number, number ] >,
+	latlng: L.LatLng,
+	map: L.Map
+): number {
+	let nearest = 0;
+	let best = Infinity;
+	for ( let i = 0; i < coords.length; i++ ) {
+		const d = map.distance( latlng, coords[ i ] as [ number, number ] );
+		if ( d < best ) {
+			best = d;
+			nearest = i;
+		}
+	}
+	return nearest / ( coords.length - 1 );
+}
+
+/**
+ * Wire pointer tracking on the GeoJSON polyline.
+ *
+ * Hover over the polyline writes `state[mapId].fraction` so the cursor follows
+ * the pointer without any click. A press on the polyline begins a scrub: the
+ * map's drag handler is suspended for the duration of the press, and a
+ * map-level mousemove listener follows the pointer (even if it leaves the
+ * polyline) to update fraction continuously. A document-level pointerup ends
+ * the scrub and re-enables drag.
+ *
+ * Pointerleave on the block element nulls the fraction so both cursors hide,
+ * unless a scrub is in progress — in that case the cursor stays visible and
+ * tracks the pointer until release.
+ *
+ * @since 1.0.0
+ *
+ * @param map     - Leaflet map instance.
+ * @param layer   - GeoJSON polyline layer with hit-testable mouse events.
+ * @param blockEl - Block wrapper element used for the leave handler.
+ * @param coords  - Flat [lat, lng] array shared with the cursor sync.
+ * @param mapId   - Interactivity store key for this map.
+ * @param signal  - AbortSignal that releases document-level listeners on tear-down.
+ */
+function attachScrubHandlers(
+	map: L.Map,
+	layer: L.GeoJSON,
+	blockEl: HTMLElement,
+	coords: Array< [ number, number ] >,
+	mapId: string,
+	signal: AbortSignal
+): void {
+	if ( coords.length < 2 ) {
+		return;
+	}
+
+	let scrubbing = false;
+
+	// Hover (no button pressed) — cursor follows the pointer along the track.
+	layer.on( 'mousemove', ( e: L.LeafletMouseEvent ) => {
+		state[ mapId ].fraction = nearestFraction( coords, e.latlng, map );
+	} );
+
+	// Press on the polyline — start scrubbing. Disable map drag so the map
+	// stays put and the cursor moves instead.
+	layer.on( 'mousedown', ( e: L.LeafletMouseEvent ) => {
+		scrubbing = true;
+		map.dragging.disable();
+		state[ mapId ].fraction = nearestFraction( coords, e.latlng, map );
+	} );
+
+	// While scrubbing, follow the pointer over the entire map — not just the
+	// polyline — so the cursor keeps tracking even if the pointer drifts off.
+	map.on( 'mousemove', ( e: L.LeafletMouseEvent ) => {
+		if ( ! scrubbing ) {
+			return;
+		}
+		state[ mapId ].fraction = nearestFraction( coords, e.latlng, map );
+	} );
+
+	// Release ends the scrub, regardless of where it happens. Document-level
+	// listeners catch releases that occur outside the map element. Both
+	// pointerup and pointercancel are needed: the latter fires on touch when
+	// the OS interrupts the gesture (alert, fullscreen exit, etc.).
+	const endScrub = () => {
+		if ( ! scrubbing ) {
+			return;
+		}
+		scrubbing = false;
+		map.dragging.enable();
+	};
+	document.addEventListener( 'pointerup', endScrub, { signal } );
+	document.addEventListener( 'pointercancel', endScrub, { signal } );
+
+	// Pointer leaves the block — hide both cursors. Skip while scrubbing so
+	// brief excursions outside the block (e.g., the cursor strays off-map
+	// during a fast scrub) do not flicker the cursor off.
+	blockEl.addEventListener(
+		'pointerleave',
+		() => {
+			if ( scrubbing ) {
+				return;
+			}
+			state[ mapId ].fraction = null;
+		},
+		{ signal }
+	);
+}
+
+/**
+ * Classify a wheel event into the action it should trigger on the map.
+ *
+ * On macOS, trackpad pinch gestures are delivered as wheel events with
+ * `ctrlKey: true` regardless of whether Ctrl is physically pressed; the same
+ * shortcut is used by mouse-wheel zoom on every other platform. Trackpad
+ * two-finger pan delivers wheel events with `deltaMode === 0` (pixel deltas)
+ * and no modifier. Mouse wheels deliver `deltaMode === 1` (line deltas) on
+ * most browsers; even when they emit pixel deltas, the per-tick delta is
+ * coarse and not paired with the small horizontal pans a trackpad emits.
+ *
+ * @since 1.0.0
+ *
+ * @param event - The wheel event.
+ * @return One of `'zoom'`, `'pan'`, or `'hint'`.
+ */
+function classifyWheel( event: WheelEvent ): 'zoom' | 'pan' | 'hint' {
+	if ( event.ctrlKey || event.metaKey ) {
+		return 'zoom';
+	}
+	if ( event.deltaMode === 0 ) {
+		return 'pan';
+	}
+	return 'hint';
+}
+
+/**
+ * Pick the platform-appropriate scroll-zoom hint string from the pre-translated
+ * pair carried on the state slice.
+ *
+ * Uses the apple variant on macOS / iOS / iPadOS and the non-apple variant
+ * elsewhere. Translation happens server-side because view-script modules
+ * cannot import `@wordpress/i18n`.
+ *
+ * @since 1.0.0
+ *
+ * @param hint - The pre-translated `{ apple, other }` pair.
+ * @return The variant matching the current user-agent.
+ */
+function pickScrollHintMessage( hint: MapState[ 'scrollHint' ] ): string {
+	const platform = navigator.platform || '';
+	const userAgent = navigator.userAgent || '';
+	const isApple =
+		/Mac|iPhone|iPad|iPod/i.test( platform ) ||
+		/Mac OS X|iPhone|iPad|iPod/i.test( userAgent );
+	return isApple ? hint.apple : hint.other;
+}
+
+/**
+ * Attach the custom wheel handler that replaces Leaflet's scrollWheelZoom.
+ *
+ * Sets `passive: false` so the handler can `preventDefault()` on zoom and pan
+ * events; the hint branch never preventDefault()s, letting the page scroll
+ * normally. The hint overlay is created lazily and reused; a single timer
+ * ensures the overlay disappears after roughly one second of wheel idleness.
+ *
+ * @since 1.0.0
+ *
+ * @param map     - Leaflet map instance.
+ * @param blockEl - Block wrapper element receiving wheel events.
+ * @param hint    - Pre-translated `{ apple, other }` hint pair.
+ * @param signal  - AbortSignal that releases listeners on tear-down.
+ */
+function attachWheelHandler(
+	map: L.Map,
+	blockEl: HTMLElement,
+	hint: MapState[ 'scrollHint' ],
+	signal: AbortSignal
+): void {
+	let hintEl: HTMLElement | null = null;
+	let hintTimer: number | null = null;
+
+	const showHint = (): void => {
+		// Lazy-create the overlay once per map; reuse across hint events.
+		if ( ! hintEl ) {
+			hintEl = document.createElement( 'div' );
+			hintEl.className = 'kntnt-gpx-blocks-map-scroll-hint';
+			hintEl.textContent = pickScrollHintMessage( hint );
+			hintEl.setAttribute( 'role', 'status' );
+			hintEl.setAttribute( 'aria-live', 'polite' );
+			blockEl.appendChild( hintEl );
+		}
+
+		hintEl.classList.add( 'is-visible' );
+
+		// Reset the auto-dismiss timer on every wheel tick so the overlay
+		// stays up while the user keeps scrolling.
+		if ( hintTimer !== null ) {
+			window.clearTimeout( hintTimer );
+		}
+		hintTimer = window.setTimeout( () => {
+			hintEl?.classList.remove( 'is-visible' );
+			hintTimer = null;
+		}, 1200 );
+	};
+
+	blockEl.addEventListener(
+		'wheel',
+		( event: WheelEvent ) => {
+			const action = classifyWheel( event );
+
+			if ( action === 'zoom' ) {
+				event.preventDefault();
+
+				// Step matches Leaflet's default scroll-wheel zoom feel:
+				// one delta tick equals one zoom level, scaled by deltaY sign.
+				const step = event.deltaY < 0 ? 1 : -1;
+				const center = map.mouseEventToLatLng( event );
+				const next = Math.max(
+					map.getMinZoom(),
+					Math.min( map.getMaxZoom(), map.getZoom() + step )
+				);
+				map.setZoomAround( center, next );
+				return;
+			}
+
+			if ( action === 'pan' ) {
+				event.preventDefault();
+				map.panBy( [ event.deltaX, event.deltaY ], { animate: false } );
+				return;
+			}
+
+			// `hint` — do NOT preventDefault. Page scrolls past the map
+			// while the overlay surfaces the modifier-key requirement.
+			showHint();
+		},
+		{ passive: false, signal }
+	);
+}
+
+/**
  * Mount the Leaflet map directly into the block element.
  *
  * Defers actual mount until the element enters the viewport via
@@ -316,12 +576,16 @@ function bootMount(
 			}
 
 			// Build the Leaflet map with canvas renderer for performance.
-			// Suppress the default zoomControl here because the settings-driven
-			// path below adds it conditionally.
+			// Suppress Leaflet's own scrollWheelZoom (replaced by a custom
+			// wheel handler below) and boxZoom (removed entirely — see
+			// docs/architecture.md). The default zoomControl is also off
+			// because the settings-driven path adds it conditionally.
 			const map = L.map( blockEl, {
 				renderer: L.canvas(),
 				zoomControl: false,
 				attributionControl: true,
+				scrollWheelZoom: false,
+				boxZoom: false,
 			} );
 
 			// Add the OSM tile layer — only reached when the consent contract
@@ -412,7 +676,7 @@ function bootMount(
 						anchor.title = 'Download GPX';
 						anchor.setAttribute( 'aria-label', 'Download GPX' );
 						anchor.innerHTML =
-							'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 16l-5-5 1.4-1.4 2.6 2.6V4h2v8.2l2.6-2.6L17 11l-5 5zm-7 2h14v2H5v-2z"/></svg>';
+							'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 3v12m-5-5l5 5l5-5M5 19h14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 						L.DomEvent.disableClickPropagation( container );
 						return container;
 					},
@@ -428,11 +692,6 @@ function bootMount(
 			} else {
 				map.dragging.disable();
 			}
-			if ( settings.enableScrollWheelZoom ) {
-				map.scrollWheelZoom.enable();
-			} else {
-				map.scrollWheelZoom.disable();
-			}
 			if ( settings.enablePinchZoom ) {
 				map.touchZoom.enable();
 			} else {
@@ -443,19 +702,30 @@ function bootMount(
 			} else {
 				map.doubleClickZoom.disable();
 			}
-			if ( settings.enableBoxZoom ) {
-				map.boxZoom.enable();
-			} else {
-				map.boxZoom.disable();
-			}
 			if ( settings.enableKeyboard ) {
 				map.keyboard.enable();
 			} else {
 				map.keyboard.disable();
 			}
 
+			// AbortController carrying every document-level listener attached
+			// below so tearDown() can release them in one call. Stored in the
+			// MapEntry so the cleanup path stays mechanical.
+			const disposer = new AbortController();
+
+			// Replace Leaflet's scrollWheelZoom with a wheel handler that
+			// distinguishes pinch / Cmd / Ctrl (zoom), trackpad two-finger
+			// pan (deltaMode 0, no modifier), and mouse wheel (deltaMode 1+,
+			// no modifier — show a hint and let the page scroll).
+			attachWheelHandler(
+				map,
+				blockEl,
+				mapState.scrollHint,
+				disposer.signal
+			);
+
 			// Pre-compute the flat [lat, lng] coordinate array for
-			// fraction→position resolution in onCursorChange.
+			// fraction→position resolution in onMapCursorChange.
 			const coords = extractCoords( mapState.geojson );
 
 			// Read the remaining colour CSS variables once at mount time.
@@ -552,41 +822,20 @@ function bootMount(
 			}
 
 			// Record the instance so subsequent init calls are no-ops and
-			// onCursorChange can access the cursor and coords.
-			mountedMaps.set( blockEl, { map, cursor, coords } );
+			// onMapCursorChange can access the cursor and coords.
+			mountedMaps.set( blockEl, { map, cursor, coords, disposer } );
 
-			// Attach pointer tracking to the GeoJSON polyline layer:
-			// write fraction when moving over the track, null on leave.
-			layer.on( 'mousemove', ( e: L.LeafletMouseEvent ) => {
-				if ( coords.length < 2 ) {
-					return;
-				}
-
-				// Find the nearest vertex by linear scan. For typical
-				// simplified tracks (~300 pts) this is fast enough.
-				const latlng = e.latlng;
-				let nearest = 0;
-				let best = Infinity;
-				for ( let i = 0; i < coords.length; i++ ) {
-					const d = map.distance(
-						latlng,
-						coords[ i ] as [ number, number ]
-					);
-					if ( d < best ) {
-						best = d;
-						nearest = i;
-					}
-				}
-
-				// Fraction is index / (total - 1); write to shared state.
-				state[ mapId ].fraction = nearest / ( coords.length - 1 );
-			} );
-
-			// Null the fraction when the pointer leaves the block so both
-			// cursors hide.
-			blockEl.addEventListener( 'pointerleave', () => {
-				state[ mapId ].fraction = null;
-			} );
+			// Wire pointer tracking on the polyline. Hover over the track
+			// updates fraction; press-and-drag on the track scrubs the cursor
+			// without panning the map. Pointerup anywhere ends the scrub.
+			attachScrubHandlers(
+				map,
+				layer,
+				blockEl,
+				coords,
+				mapId,
+				disposer.signal
+			);
 		},
 		// rootMargin pre-triggers the observer 200 px before the block enters
 		// the viewport, giving Leaflet time to initialise tiles before the
@@ -615,6 +864,7 @@ function tearDown( blockEl: Element ): void {
 	if ( ! entry ) {
 		return;
 	}
+	entry.disposer.abort();
 	entry.map.remove();
 	mountedMaps.delete( blockEl );
 }
@@ -715,9 +965,13 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		 * Bound via `data-wp-watch--cursor` on the block's root element. Does
 		 * NOT write back to state — that would create a feedback loop.
 		 *
+		 * Named per block (rather than the generic `onCursorChange`) so that
+		 * registering both Map and Elevation modules into the same
+		 * `kntnt-gpx-blocks` store does not overwrite each other's callbacks.
+		 *
 		 * @since 1.0.0
 		 */
-		onCursorChange() {
+		onMapCursorChange() {
 			const { ref } = getElement();
 			if ( ! ref ) {
 				return;

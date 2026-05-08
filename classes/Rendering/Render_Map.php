@@ -108,14 +108,14 @@ final class Render_Map {
 		$show_fullscreen   = isset( $attributes['showFullscreen'] ) ? (bool) $attributes['showFullscreen'] : false;
 		$show_download     = isset( $attributes['showDownload'] ) ? (bool) $attributes['showDownload'] : false;
 
-		// Read the six interaction flags; coerce to bool with documented defaults.
+		// Read the four interaction flags; coerce to bool with documented defaults.
+		// Scroll-wheel and box-zoom flags are intentionally absent — the view
+		// module replaces them with a fixed wheel-handler (see view.ts) and
+		// drops box zoom altogether.
 		$enable_drag  = isset( $attributes['enableDrag'] ) ? (bool) $attributes['enableDrag'] : true;
-		$raw_swz      = $attributes['enableScrollWheelZoom'] ?? null;
-		$enable_scroll_wheel_zoom = isset( $raw_swz ) ? (bool) $raw_swz : false;
 		$enable_pinch_zoom  = isset( $attributes['enablePinchZoom'] ) ? (bool) $attributes['enablePinchZoom'] : true;
 		$raw_dclk           = $attributes['enableDoubleClickZoom'] ?? null;
 		$enable_double_click_zoom = isset( $raw_dclk ) ? (bool) $raw_dclk : true;
-		$enable_box_zoom    = isset( $attributes['enableBoxZoom'] ) ? (bool) $attributes['enableBoxZoom'] : false;
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
 
 		// Read and sanitize the two track colour attributes.
@@ -200,13 +200,20 @@ final class Render_Map {
 					'showFullscreen'        => $show_fullscreen,
 					'showDownload'          => $show_download,
 					'enableDrag'            => $enable_drag,
-					'enableScrollWheelZoom' => $enable_scroll_wheel_zoom,
 					'enablePinchZoom'       => $enable_pinch_zoom,
 					'enableDoubleClickZoom' => $enable_double_click_zoom,
-					'enableBoxZoom'         => $enable_box_zoom,
 					'enableKeyboard'        => $enable_keyboard,
 				],
 				'fraction'      => null,
+				'scrollHint'    => [
+					// Translators: shown over the map when a mouse user scrolls
+					// without holding the modifier key. ⌘ is the Mac Command
+					// glyph; the string is rendered verbatim by the view module.
+					'apple' => __( 'Hold ⌘ + scroll to zoom the map', 'kntnt-gpx-blocks' ),
+					// Translators: shown over the map when a non-Apple user
+					// scrolls without holding the Ctrl modifier.
+					'other' => __( 'Hold Ctrl + scroll to zoom the map', 'kntnt-gpx-blocks' ),
+				],
 				'bypassConsent' => $bypass_consent,
 			],
 		] );
@@ -285,7 +292,7 @@ final class Render_Map {
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%2$s\''
 				. ' data-wp-init="callbacks.initMap"'
-				. ' data-wp-watch--cursor="callbacks.onCursorChange"'
+				. ' data-wp-watch--cursor="callbacks.onMapCursorChange"'
 				. ' style="%3$s">'
 				. '<noscript><p class="kntnt-gpx-blocks-map-noscript">%4$s</p></noscript>'
 				. '</div>',

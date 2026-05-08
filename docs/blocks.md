@@ -31,10 +31,8 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 | `showFullscreen` | boolean | `false` | `Leaflet.fullscreen` plugin. |
 | `showDownload` | boolean | `false` | Custom control that links to the original GPX file. |
 | `enableDrag` | boolean | `true` | `dragging`. |
-| `enableScrollWheelZoom` | boolean | `false` | `scrollWheelZoom`. Disabled by default to avoid the scroll-hijack annoyance. |
-| `enablePinchZoom` | boolean | `true` | `touchZoom`. |
+| `enablePinchZoom` | boolean | `true` | `touchZoom` (real touch screens). Trackpad pinch on macOS is handled by the wheel handler — see *Wheel handler* below. |
 | `enableDoubleClickZoom` | boolean | `true` | `doubleClickZoom`. |
-| `enableBoxZoom` | boolean | `false` | `boxZoom`. |
 | `enableKeyboard` | boolean | `true` | `keyboard`. Required for accessibility. |
 | `trackColor` | string | `""` | Polyline colour. Empty falls back to the hardcoded CSS default. |
 | `trackCursorColor` | string | `""` | Cursor marker colour on the polyline. |
@@ -53,7 +51,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips the editor preview (`MapEditorPreview` for Map; `<ServerSideRender>` for Elevation and Statistics).
 2. **Layout** — aspect-ratio dropdown (`1/1`, `4/3`, `3/2`, `16/9`, `21/9`, custom), min-height, optional max-height.
 3. **Controls** — toggles for the four control overlays.
-4. **Interactions** — toggles for the six interaction modes.
+4. **Interactions** — toggles for the four interaction modes (drag, pinch zoom, double-click zoom, keyboard). Scroll-wheel and box zoom are not toggles: the wheel handler is fixed (modifier-or-pinch zooms, two-finger pan pans, mouse wheel surfaces a hint), and box zoom is removed.
 5. **Track** — `PanelColorSettings` for `trackColor` and `trackCursorColor`.
 6. **Waypoints** — `PanelColorSettings` for marker colour, label colours, and a typography group for the label font.
 
@@ -67,7 +65,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
     data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'
     data-wp-context='{"mapId":"map-abc123"}'
     data-wp-init="callbacks.initMap"
-    data-wp-watch--cursor="callbacks.onCursorChange"
+    data-wp-watch--cursor="callbacks.onMapCursorChange"
     style="--kntnt-gpx-blocks-aspect-ratio: 16/9; --kntnt-gpx-blocks-min-height: 240px;"
 >
     <noscript><p class="kntnt-gpx-blocks-map-noscript"><!-- text fallback --></p></noscript>
@@ -104,7 +102,10 @@ The state slice carries no consent values — the consent decision lives in `win
 4. Adds the configured controls and enables/disables interactions per `settings`.
 5. Adds waypoint markers from the hydrated `waypoints` GeoJSON. Each marker has a hover tooltip showing `name` (line 1) and `desc` (line 2 if set), built with text nodes (no innerHTML).
 6. Subscribes to consent transitions via `window.kntnt_gpx_blocks.onConsentChanged( handler )`. On a `'granting'` transition, mounts Leaflet (idempotent — guarded by the per-element `mountedMaps` WeakMap). On a `'denying'` transition, tears down via `map.remove()`. Editor bypass skips this subscription entirely.
-7. Attaches a `pointermove` handler on the polyline layer that finds the nearest vertex and writes `fraction = index / (length - 1)` to `state[mapId].fraction`. Attaches a `pointerleave` handler on the block element that sets `fraction = null`.
+7. Attaches the polyline scrub cycle: hover writes `fraction = index / (length - 1)` to `state[mapId].fraction`; press-and-drag on the polyline disables `map.dragging` for the duration of the press and follows the pointer over the entire map until release. A document-level `pointerup` ends the scrub and re-enables drag. A `pointerleave` on the block element nulls the fraction unless a scrub is in progress.
+8. Attaches the wheel handler on the block element: `Cmd`/`Ctrl`+wheel and trackpad pinch (delivered as a wheel event with `ctrlKey:true`) zoom around the cursor; trackpad two-finger pan (wheel with `deltaMode === 0` and no modifier) pans the map; a regular mouse wheel (`deltaMode === 1+` and no modifier) does not move the map but surfaces a brief overlay reminding the user to hold the modifier to zoom, and the page scrolls past the map normally.
+
+The shared `state[mapId].fraction` is also written by the GPX Elevation block. The Map's watch callback is named `onMapCursorChange` (not `onCursorChange`) so that the two blocks' callbacks do not collide when both register into the shared `kntnt-gpx-blocks` Interactivity store. See [`architecture.md`](architecture.md) § *Cross-block sync*.
 
 ### Accessibility
 
@@ -169,7 +170,7 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
     data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'
     data-wp-context='{"mapId":"map-abc123"}'
     data-wp-init="callbacks.initElevation"
-    data-wp-watch="callbacks.onCursorChange"
+    data-wp-watch="callbacks.onElevationCursorChange"
     style="aspect-ratio: 4/1; --kntnt-gpx-blocks-line-color: #06c;"
 >
     <svg viewBox="0 0 1200 300" role="img" aria-labelledby="kntnt-gpx-blocks-elevation-desc-map-abc123" preserveAspectRatio="none">
@@ -189,7 +190,7 @@ The screen-reader summary in `<desc>` reads (translated): `"Elevation profile fr
 1. Locates the server-rendered cursor group (`<g class="kntnt-gpx-blocks-elevation-cursor">`) inside the inline SVG. Reads the chart plot boundaries from `data-plot-left`, `data-plot-right`, `data-plot-top`, `data-plot-bottom` attributes on the group, which match the PHP `MARGIN_*` constants exactly.
 2. Snapshots the LTTB-downsampled `(distance, elevation)` pairs from `state[mapId].elevation` at mount time.
 3. Defers `pointermove` / `pointerleave` binding on the SVG until the block enters the viewport via `IntersectionObserver`. Pointer events compute `fraction` from the pointer's x-position relative to the plot area and write it to `state[mapId].fraction`.
-4. The `callbacks.onCursorChange` watch updates the cursor line x-position, the dot position, and the tooltip text whenever `state[mapId].fraction` changes (from either Elevation's own pointer events or from GPX Map). Does not write back to fraction (no feedback loop).
+4. The `callbacks.onElevationCursorChange` watch updates the cursor line x-position, the dot position, and the tooltip text whenever `state[mapId].fraction` changes (from either Elevation's own pointer events or from GPX Map). Does not write back to fraction (no feedback loop). Named per block so the Map module's watch callback (`onMapCursorChange`) survives the merge into the shared `kntnt-gpx-blocks` store.
 
 ### Errors
 

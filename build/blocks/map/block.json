@@ -59,10 +59,6 @@
       "type": "boolean",
       "default": true
     },
-    "enableScrollWheelZoom": {
-      "type": "boolean",
-      "default": false
-    },
     "enablePinchZoom": {
       "type": "boolean",
       "default": true
@@ -70,10 +66,6 @@
     "enableDoubleClickZoom": {
       "type": "boolean",
       "default": true
-    },
-    "enableBoxZoom": {
-      "type": "boolean",
-      "default": false
     },
     "enableKeyboard": {
       "type": "boolean",

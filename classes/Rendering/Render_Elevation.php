@@ -319,7 +319,7 @@ final class Render_Elevation {
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%1$s\''
 				. ' data-wp-init="callbacks.initElevation"'
-				. ' data-wp-watch="callbacks.onCursorChange"'
+				. ' data-wp-watch="callbacks.onElevationCursorChange"'
 				. ' style="%2$s">'
 				. '%3$s'
 				. '<noscript><p class="kntnt-gpx-blocks-elevation-noscript">%4$s</p></noscript>'

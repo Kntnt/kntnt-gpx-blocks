@@ -50,10 +50,8 @@ interface MapAttributes {
 	showFullscreen: boolean;
 	showDownload: boolean;
 	enableDrag: boolean;
-	enableScrollWheelZoom: boolean;
 	enablePinchZoom: boolean;
 	enableDoubleClickZoom: boolean;
-	enableBoxZoom: boolean;
 	enableKeyboard: boolean;
 	trackColor: string;
 	trackCursorColor: string;
@@ -172,10 +170,8 @@ export const MapEdit = ( {
 		showFullscreen,
 		showDownload,
 		enableDrag,
-		enableScrollWheelZoom,
 		enablePinchZoom,
 		enableDoubleClickZoom,
-		enableBoxZoom,
 		enableKeyboard,
 		trackColor,
 		trackCursorColor,
@@ -335,13 +331,6 @@ export const MapEdit = ( {
 						}
 					/>
 					<ToggleControl
-						label={ __( 'Scroll wheel zoom', 'kntnt-gpx-blocks' ) }
-						checked={ enableScrollWheelZoom }
-						onChange={ ( value ) =>
-							setAttributes( { enableScrollWheelZoom: value } )
-						}
-					/>
-					<ToggleControl
 						label={ __( 'Pinch zoom', 'kntnt-gpx-blocks' ) }
 						checked={ enablePinchZoom }
 						onChange={ ( value ) =>
@@ -353,13 +342,6 @@ export const MapEdit = ( {
 						checked={ enableDoubleClickZoom }
 						onChange={ ( value ) =>
 							setAttributes( { enableDoubleClickZoom: value } )
-						}
-					/>
-					<ToggleControl
-						label={ __( 'Box zoom', 'kntnt-gpx-blocks' ) }
-						checked={ enableBoxZoom }
-						onChange={ ( value ) =>
-							setAttributes( { enableBoxZoom: value } )
 						}
 					/>
 					<ToggleControl
