@@ -231,16 +231,20 @@ export const MapEditorPreview = ( {
 			layerRef.current = null;
 		}
 
-		// Build a Leaflet map that mirrors view.ts's frontend mount, minus
-		// the consent gate, observer, controls, and cursor sync.
+		// Build a non-interactive Leaflet preview. The editor map is for
+		// visual reference only — the user wants to see what the block will
+		// look like, not pan or zoom around. Every Leaflet interaction
+		// handler is disabled at construction time, and editor.scss adds
+		// `pointer-events: none` on the container so Gutenberg can still
+		// receive clicks for block selection without Leaflet fighting back.
 		const map = L.map( containerRef.current, {
 			renderer: L.canvas(),
 			zoomControl: false,
 			attributionControl: true,
-			dragging: true,
+			dragging: false,
 			scrollWheelZoom: false,
-			doubleClickZoom: true,
-			touchZoom: true,
+			doubleClickZoom: false,
+			touchZoom: false,
 			boxZoom: false,
 			keyboard: false,
 		} );

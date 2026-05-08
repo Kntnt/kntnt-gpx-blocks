@@ -1,6 +1,15 @@
 // Editor-only styles for the GPX Map block.
-// Full implementation arrives in a later issue.
 
 .wp-block-kntnt-gpx-blocks-map {
 	min-height: 2em;
+
+	// The editor preview mounts Leaflet purely as a visual reference.
+	// Disabling pointer events keeps Gutenberg in charge of clicks on the
+	// block (for selection, drag-to-reorder, etc.) so Leaflet's pan logic
+	// can never fight Gutenberg's block-level drag handler. The Leaflet
+	// interaction handlers are also disabled in JS — see editor-preview.tsx.
+	.leaflet-container {
+		pointer-events: none;
+		cursor: default;
+	}
 }
