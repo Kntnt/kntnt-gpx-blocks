@@ -90,9 +90,16 @@ We do **not** trust the HTML in `<desc>` even if a GPX producer wrote markup the
 
 ## Cross-site request forgery
 
-The plugin exposes no AJAX endpoints, no admin-post handlers, and no REST routes of its own. ServerSideRender uses the WordPress core REST endpoint `wp/v2/block-renderer/<name>`, which validates the editor's nonce and capability automatically. No nonce work is needed in the plugin.
+The plugin exposes one REST route of its own: `GET kntnt-gpx-blocks/v1/preview/<id>` (`Rest\Preview_Controller`). It returns the cached GeoJSON for the Map block's React-based editor preview. Properties:
 
-If a future feature adds a custom REST route, it must:
+- **Permission**: `permission_callback` requires `edit_posts`. Anonymous and read-only authenticated callers receive 403.
+- **Idempotent**: GET-only, no state mutation. No nonce required.
+- **Input validation**: the `id` URL parameter is narrowed to a non-negative integer; the controller verifies the post exists, is an attachment, and has `application/gpx+xml` MIME type before reading the cache.
+- **Output**: the cached GeoJSON FeatureCollection. Already exposed publicly via `wp_interactivity_state()` on every page that contains the Map block, so no new attack surface is introduced — the REST route just provides a different access channel for editors.
+
+The Elevation and Statistics blocks' editor previews go through ServerSideRender, which uses the WordPress core REST endpoint `wp/v2/block-renderer/<name>`. That endpoint validates the editor's nonce and capability automatically.
+
+If a future feature adds another custom REST route, it must:
 
 - Set `permission_callback` to at least `'edit_posts'` for editor-only routes.
 - Validate the request via `wp_verify_nonce` if the route accepts mutating requests.

@@ -3,9 +3,11 @@
  *
  * Renders the block representation inside the Gutenberg editor. When the
  * block has no GPX attachment yet, a MediaPlaceholder is shown so the user
- * can pick a .gpx file. Once an attachment is selected, ServerSideRender
- * previews the server-rendered output including the Interactivity API
- * directives, matching the frontend exactly.
+ * can pick a .gpx file. Once an attachment is selected, MapEditorPreview
+ * mounts a native Leaflet map inside the editor iframe by fetching the
+ * cached GeoJSON via the plugin's REST endpoint — the Interactivity API
+ * runtime does not bootstrap inside ServerSideRender's injected DOM in the
+ * editor, so the editor cannot reuse the frontend view.ts mount path.
  *
  * The useEnsureUniqueMapId hook auto-generates the mapId attribute on insert
  * and resolves collisions when a block is duplicated.
@@ -13,7 +15,6 @@
  * @since 1.0.0
  */
 
-import { useRef, useState, useEffect } from '@wordpress/element';
 import {
 	useBlockProps,
 	InspectorControls,
@@ -21,18 +22,17 @@ import {
 	PanelColorSettings,
 } from '@wordpress/block-editor';
 import {
-	Notice,
 	PanelBody,
 	TextControl,
 	ToggleControl,
 	FontSizePicker,
 	SelectControl,
 } from '@wordpress/components';
-import ServerSideRender from '@wordpress/server-side-render';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
 import { useEnsureUniqueMapId } from './use-ensure-unique-map-id';
+import { MapEditorPreview } from './editor-preview';
 
 /**
  * Attributes for the GPX Map block.
@@ -140,7 +140,7 @@ interface MediaObject {
  * Editor preview for the GPX Map block.
  *
  * Shows a MediaPlaceholder when no attachment is selected; otherwise
- * delegates to ServerSideRender so the editor preview matches the frontend.
+ * delegates to MapEditorPreview which mounts Leaflet directly via React.
  * InspectorControls always render regardless of attachment state so the
  * Controls panel is accessible from the moment the block is inserted.
  *
@@ -159,37 +159,11 @@ export const MapEdit = ( {
 	// Ensure this block's mapId is non-empty and unique across the post.
 	useEnsureUniqueMapId( clientId, attributes, setAttributes );
 
-	// Track any error message surfaced by the server-rendered output so the
-	// InspectorControls Notice can repeat it for discoverability.
-	const [ errorMessage, setErrorMessage ] = useState< string >( '' );
-	const ssrWrapperRef = useRef< HTMLDivElement >( null );
-	const prevErrorRef = useRef< string >( '' );
-
-	// Inspect the SSR output after each render; look for the error notice.
-	// No dependency array: we want to re-read the DOM whenever React renders,
-	// because ServerSideRender may have swapped in new HTML. prevErrorRef guards
-	// the setErrorMessage call so it only fires when the DOM actually changes,
-	// which prevents the infinite update loop the linter is guarding against.
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	useEffect( () => {
-		if ( ! ssrWrapperRef.current ) {
-			return;
-		}
-		const errorEl = ssrWrapperRef.current.querySelector< HTMLElement >(
-			'.kntnt-gpx-blocks-error'
-		);
-		const next = errorEl ? errorEl.textContent ?? '' : '';
-		if ( next !== prevErrorRef.current ) {
-			prevErrorRef.current = next;
-			setErrorMessage( next );
-		}
-	} );
-
 	// Destructure all attributes before use so useBlockProps can read colour
-	// values when it injects the instant-preview CSS variables.
+	// values when it injects the instant-preview CSS variables. mapId is
+	// managed by useEnsureUniqueMapId above and is not consumed here directly.
 	const {
 		attachmentId,
-		mapId,
 		aspectRatio,
 		minHeight,
 		maxHeight,
@@ -214,8 +188,11 @@ export const MapEdit = ( {
 		waypointLabelFontStyle,
 	} = attributes;
 
-	// Inject CSS variables onto the block wrapper so color-picker changes
-	// appear instantly in the editor preview without a ServerSideRender round-trip.
+	// Inject CSS variables onto the block wrapper. The MapEditorPreview reads
+	// trackColor and waypointColor directly from props and applies them to
+	// Leaflet's path options, since canvas-rendered shapes cannot be styled
+	// via CSS — but propagating the variables here keeps the wrapper element
+	// consistent with the frontend's inline style.
 	const blockProps = useBlockProps( {
 		style: {
 			...( trackColor
@@ -259,15 +236,12 @@ export const MapEdit = ( {
 		);
 	}
 
-	// Render the inspector controls and server-side preview once a GPX file is attached.
+	// Render the inspector controls and the editor-side React preview once a
+	// GPX file is attached. The preview component renders any error notice
+	// inline; no separate Notice in the inspector is needed.
 	return (
 		<>
 			<InspectorControls>
-				{ errorMessage && (
-					<Notice status="error" isDismissible={ false }>
-						{ errorMessage }
-					</Notice>
-				) }
 				<PanelBody title={ __( 'Layout', 'kntnt-gpx-blocks' ) }>
 					<SelectControl
 						label={ __( 'Aspect ratio', 'kntnt-gpx-blocks' ) }
@@ -511,38 +485,17 @@ export const MapEdit = ( {
 				</PanelColorSettings>
 			</InspectorControls>
 			<div { ...blockProps }>
-				{ /* ref wrapper so useEffect can inspect the rendered SSR output */ }
-				<div ref={ ssrWrapperRef }>
-					<ServerSideRender
-						block="kntnt-gpx-blocks/map"
-						attributes={ {
-							attachmentId,
-							mapId,
-							aspectRatio,
-							minHeight,
-							maxHeight,
-							showZoomButtons,
-							showScale,
-							showFullscreen,
-							showDownload,
-							enableDrag,
-							enableScrollWheelZoom,
-							enablePinchZoom,
-							enableDoubleClickZoom,
-							enableBoxZoom,
-							enableKeyboard,
-							trackColor,
-							trackCursorColor,
-							waypointColor,
-							waypointLabelBackground,
-							waypointLabelColor,
-							waypointLabelFontFamily,
-							waypointLabelFontSize,
-							waypointLabelFontWeight,
-							waypointLabelFontStyle,
-						} }
-					/>
-				</div>
+				<MapEditorPreview
+					attributes={ {
+						attachmentId,
+						aspectRatio,
+						minHeight,
+						maxHeight,
+						trackColor,
+						trackCursorColor,
+						waypointColor,
+					} }
+				/>
 			</div>
 		</>
 	);

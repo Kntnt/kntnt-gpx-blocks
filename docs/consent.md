@@ -169,11 +169,13 @@ This is correct and intentional. The plugin *MUST* be fully functional out of th
 
 ## Editor behaviour
 
-The plugin *MUST* always render a working map inside the WordPress block editor (Gutenberg, Site Editor, REST `block-renderer` previews) regardless of consent state. The editor is an authoring surface, not a visitor-facing surface — the editor needs to see the actual map to set up colours, inspect waypoints, and verify the file resolved correctly.
+The plugin *MUST* always render a working map inside the WordPress block editor (Gutenberg, Site Editor) regardless of consent state. The editor is an authoring surface, not a visitor-facing surface — the editor needs to see the actual map to set up colours, inspect waypoints, and verify the file resolved correctly.
 
-Implementation: when the render context is the editor (the `block-renderer` REST request, identified by `current_user_can( 'edit_posts' )` inside a `REST_REQUEST` context), the PHP render path *MUST* embed `bypassConsent: true` in the per-map state slice and the JS view module *MUST* mount Leaflet immediately when that flag is present, skipping every consent check.
+**Implementation.** The Map block's editor preview is a parallel React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) that mounts Leaflet directly inside the editor iframe via `useEffect`, using GeoJSON fetched from the plugin's auth-gated REST endpoint `kntnt-gpx-blocks/v1/preview/<id>`. It does not consult the consent contract at all — neither the PHP filter nor `window.kntnt_gpx_blocks.mayProceed`. The editor never goes through `view.ts`, so the consent contract simply does not apply.
 
-This editor bypass is implemented in the plugin's PHP and JS — it is not exposed as a filter and not configurable. Sites that want strict admin-side privacy isolation should run an authentication boundary on the admin (HTTP basic auth, IP allow-list, VPN), not toggle the editor preview's tile loading.
+The PHP render path also sets `bypassConsent: true` in the per-map state slice when invoked under a `REST_REQUEST` with `edit_posts`. That flag is documented for completeness but is currently a vestigial signal — `view.ts` would honour it, but `view.ts` is not actually run for the editor preview because the Interactivity API runtime does not bootstrap inside ServerSideRender's injected DOM. The flag survives in case a future iteration restores the SSR + Interactivity editor path.
+
+The editor bypass is implemented entirely in the plugin's PHP and JS — it is not exposed as a filter and not configurable. Sites that want strict admin-side privacy isolation should run an authentication boundary on the admin (HTTP basic auth, IP allow-list, VPN), not toggle the editor preview's tile loading.
 
 ## Withdrawal
 
@@ -297,7 +299,7 @@ The implementation conforms to this contract if and only if all of the following
 - [ ] When a `'denying'` signal is received after Leaflet has mounted, the map is torn down via `map.remove()`.
 - [ ] The plugin works with no errors and a fully functional Map block when no CMP and no glue are present.
 - [ ] The plugin's PHP and JS code contain no references to `wp_has_consent`, `wp_listen_for_consent_change`, Real Cookie Banner, Complianz, CookieYes, or any other CMP-specific identifier.
-- [ ] In the WordPress editor (REST `block-renderer` requests with `edit_posts` capability), the Map block always mounts Leaflet, regardless of consent state.
+- [ ] In the WordPress block editor, the Map block always mounts Leaflet via the parallel React preview, regardless of consent state.
 - [ ] The Statistics and Elevation blocks render unconditionally and never invoke the consent filter.
 - [ ] [`README.md`](../README.md) contains the PHP and JavaScript glue templates under **For Builders**, with the optimisation-plugin exclusion list.
 

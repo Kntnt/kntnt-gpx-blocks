@@ -11,6 +11,15 @@
 	<file>install.php</file>
 	<file>uninstall.php</file>
 
+	<!--
+		Test fixtures are minimal stand-ins for WordPress core classes that
+		are not loaded in the unit-test environment. They exist solely so
+		`instanceof` checks compile and tests can return shaped data;
+		cluttering them with WordPress-style documentation comments adds
+		noise without value.
+	-->
+	<exclude-pattern>tests/Unit/fixtures/Wp_Error_Stub.php</exclude-pattern>
+
 	<!-- Only PHP files. -->
 	<arg name="extensions" value="php"/>
 

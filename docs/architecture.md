@@ -36,9 +36,11 @@ Resolution-independent payload was the deliberate choice. The Map polyline is ge
 
 ## Editor integration
 
-The Edit component (in TypeScript, `edit.tsx`) renders a `<ServerSideRender>` for content-bearing attributes (`attachmentId`, `mapId`) and uses CSS custom properties for cosmetic attributes (colours, typography) and Interactivity state mutations for behaviour toggles (zoom buttons, drag, scroll-wheel zoom, etc.). This three-way split keeps the editor responsive: dragging a colour slider updates the rendered map at frame rate via CSS variables, while picking a different GPX file triggers a single server round-trip.
+The GPX Map block's Edit component (in TypeScript, `edit.tsx`) shows a `MediaPlaceholder` until a GPX attachment is picked, then delegates to a parallel React component, `MapEditorPreview` (`src/blocks/map/editor-preview.tsx`), which mounts Leaflet directly inside the editor iframe. The preview fetches the cached GeoJSON via the plugin's REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` (auth-gated to `edit_posts`) and renders a tile + polyline + waypoint preview. It is intentionally narrower than the frontend mount: no consent gating (the editor always shows a working map), no IntersectionObserver lazy mount, no controls, no cursor sync. Cosmetic attributes (colours, dimensions) flow through CSS custom properties on the wrapper element so the user gets instant feedback when dragging a colour slider; the polyline colour is also restyled in place because Leaflet's canvas-rendered paths cannot read CSS variables.
 
-The `view.ts` module is shared between editor and frontend. ServerSideRender returns the same HTML the frontend gets, including the `data-wp-interactive` annotations, so Interactivity hydrates inside the editor's iframe identically to the frontend. There is no separate React implementation of the map or chart for the editor.
+ServerSideRender is *not* used for the Map block's editor preview. The Interactivity API runtime does not bootstrap inside ServerSideRender's injected DOM in the editor — `data-wp-init` directives never fire there — so a previous attempt to share the frontend `view.ts` mount path with the editor produced a permanently empty container. The parallel React preview is the working architecture; `view.ts` stays the frontend-only path.
+
+The Elevation and Statistics blocks still use ServerSideRender for their editor previews. Both are server-rendered as inline SVG / `<dl>` markup that does not require any JavaScript runtime to be visible — the SSR-injected HTML is the preview, no Interactivity API needed.
 
 ## Performance
 
@@ -82,6 +84,7 @@ The major classes in `classes/` (PSR-4 namespaced under `Kntnt\Gpx_Blocks`):
 | `Rendering\Render_Elevation` | Server-side render of GPX Elevation. |
 | `Rendering\Render_Statistics` | Server-side render of GPX Statistics. |
 | `Consent\Consent_Stub` | Builds the inline JS stub and the enqueue handle. The PHP filter `kntnt_gpx_blocks_has_consent` has no PHP-side resolver class — it is a plain `apply_filters()` call from `Render_Map`. |
+| `Rest\Preview_Controller` | Editor-only REST endpoint (`kntnt-gpx-blocks/v1/preview/<id>`) that returns the cached GeoJSON for the Map block's React-based editor preview. Auth-gated to `edit_posts`. |
 | `Format\Value_Formatter` | Locale-aware number formatting and unit selection (m vs km). |
 | `Cli\Regenerate_Command` | `wp kntnt-gpx regenerate` WP-CLI command. |
 | `Updater` | Checks GitHub Releases for a newer version. See [`updater.md`](updater.md). |

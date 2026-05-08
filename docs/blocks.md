@@ -10,7 +10,7 @@ This document specifies each of the three blocks: attributes, editor UI, render 
 - **Text domain:** `kntnt-gpx-blocks`.
 - **Rendering:** dynamic. `block.json` declares `"render": "file:./render.php"` and the `save` callback returns `null`.
 - **Frontend interactivity:** `viewScriptModule` (ES module) imports `@wordpress/interactivity`.
-- **Editor preview:** `<ServerSideRender>` in the Edit component; same `view.ts` mounts in the editor iframe.
+- **Editor preview:** for the Map block, a React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) mounts Leaflet directly using GeoJSON fetched from the plugin's REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` — `view.ts` is frontend-only. For Elevation and Statistics, `<ServerSideRender>` is used (their server-rendered SVG / `<dl>` is visible without any client-side runtime).
 - **Persistence:** every attribute that is a colour or a font reference stores whatever the WordPress editor component delivers — typically a hex string for colours and a `var(--wp--preset--…)` reference for typography presets. Empty/null falls back to a hardcoded default in CSS.
 
 ## GPX Map

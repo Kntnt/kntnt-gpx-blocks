@@ -105,6 +105,17 @@ final class Plugin {
 	private ?Consent\Consent_Stub $consent_stub = null;
 
 	/**
+	 * The Preview_Controller instance bound to rest_api_init.
+	 *
+	 * Held as a property so the array callable passed to add_action() keeps a
+	 * strong reference to the object for the lifetime of the request.
+	 *
+	 * @since 1.0.0
+	 * @var Rest\Preview_Controller|null
+	 */
+	private ?Rest\Preview_Controller $preview_controller = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -333,6 +344,14 @@ final class Plugin {
 		// priority guarantees.
 		$this->consent_stub = new Consent\Consent_Stub();
 		add_action( 'wp_enqueue_scripts', [ $this->consent_stub, 'enqueue' ] );
+
+		// Register the editor-only preview REST endpoint so the GPX Map block's
+		// Edit component can fetch cached GeoJSON without going through
+		// ServerSideRender. The Interactivity API does not bootstrap inside
+		// SSR-injected DOM in the editor, so the editor mounts Leaflet via a
+		// React useEffect against this endpoint.
+		$this->preview_controller = new Rest\Preview_Controller( $attachment_cache );
+		add_action( 'rest_api_init', [ $this->preview_controller, 'register_routes' ] );
 
 	}
 
