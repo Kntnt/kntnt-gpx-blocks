@@ -26,6 +26,15 @@
 	--kntnt-gpx-blocks-waypoint-label-font-weight: 500;
 	--kntnt-gpx-blocks-waypoint-label-font-style: normal;
 
+	// Crosshair cursor over the invisible fat hit-polyline overlay so the
+	// pointer signals interactivity across the whole hit band, not only over
+	// the visible 4 px stroke. Without this rule the cursor reverts to the
+	// default tile cursor whenever the pointer is inside the band but outside
+	// the visible line, which is confusing.
+	.kntnt-gpx-blocks-track-hit {
+		cursor: crosshair;
+	}
+
 	// Style Leaflet tooltips that appear over waypoint markers. The Leaflet
 	// tooltip element is positioned outside the block element by default, but
 	// scoped via CSS custom-property inheritance which flows from the block root.
@@ -66,9 +75,13 @@
 }
 
 // Custom download-GPX Leaflet control button — styled to match the standard
-// leaflet-bar appearance so it integrates naturally with the zoom and
-// fullscreen controls.
-.kntnt-gpx-blocks-map-download-control {
+// leaflet-bar appearance. The selector chains both the project class and
+// Leaflet's .leaflet-bar so its specificity (0,2,1) outranks Leaflet's own
+// .leaflet-bar a rule (0,1,1) regardless of stylesheet load order. Without
+// this, Leaflet's `display: block` overrides the flex centering and the
+// 16x16 SVG settles in the 26x26 anchor's top-left corner. Both classes
+// are already set on the container in view.ts.
+.kntnt-gpx-blocks-map-download-control.leaflet-bar {
 
 	a {
 		display: flex;
