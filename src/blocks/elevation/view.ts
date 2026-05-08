@@ -349,9 +349,20 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		 * registering both Map and Elevation modules into the same
 		 * `kntnt-gpx-blocks` store does not overwrite each other's callbacks.
 		 *
+		 * The fraction is read at the very top of the function, before any
+		 * guard, so the Interactivity API's signal-tracking establishes the
+		 * subscription on the very first watch run regardless of whether the
+		 * mount entry happens to be present yet. The Elevation block does set
+		 * `mountedElevations` synchronously in `initElevation`, so in practice
+		 * the entry is always present here, but the guard-after-read pattern
+		 * is the robust idiom and matches the Map block's `onMapCursorChange`.
+		 *
 		 * @since 1.0.0
 		 */
 		onElevationCursorChange() {
+			const { mapId } = getContext< ElevationContext >();
+			const fraction = state[ mapId ]?.fraction;
+
 			const { ref } = getElement();
 			if ( ! ref ) {
 				return;
@@ -361,9 +372,6 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			if ( ! entry ) {
 				return;
 			}
-
-			const { mapId } = getContext< ElevationContext >();
-			const fraction = state[ mapId ]?.fraction;
 
 			// Null/undefined fraction — hide the cursor group.
 			if ( fraction === null || fraction === undefined ) {

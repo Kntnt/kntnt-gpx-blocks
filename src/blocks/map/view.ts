@@ -676,7 +676,7 @@ function bootMount(
 						anchor.title = 'Download GPX';
 						anchor.setAttribute( 'aria-label', 'Download GPX' );
 						anchor.innerHTML =
-							'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 3v12m-5-5l5 5l5-5M5 19h14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+							'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 2v8m-4-4l4 4l4-4M3 13h10"/></svg>';
 						L.DomEvent.disableClickPropagation( container );
 						return container;
 					},
@@ -969,9 +969,20 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		 * registering both Map and Elevation modules into the same
 		 * `kntnt-gpx-blocks` store does not overwrite each other's callbacks.
 		 *
+		 * The fraction is read at the very top of the function, before any
+		 * guard, so the Interactivity API's signal-tracking establishes the
+		 * subscription on the very first watch run. `mountedMaps` is populated
+		 * inside an `IntersectionObserver` and is therefore typically empty
+		 * the first time this watch fires — returning before reading state
+		 * would skip the subscription and the watch would never re-fire when
+		 * the GPX Elevation block writes a new fraction.
+		 *
 		 * @since 1.0.0
 		 */
 		onMapCursorChange() {
+			const { mapId } = getContext< MapContext >();
+			const fraction = state[ mapId ]?.fraction;
+
 			const { ref } = getElement();
 			if ( ! ref ) {
 				return;
@@ -980,9 +991,6 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			if ( ! entry ) {
 				return;
 			}
-
-			const { mapId } = getContext< MapContext >();
-			const fraction = state[ mapId ]?.fraction;
 
 			// Null fraction means "pointer left" — hide the marker.
 			if ( fraction === null || fraction === undefined ) {
