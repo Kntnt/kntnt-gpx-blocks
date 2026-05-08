@@ -11,6 +11,7 @@
 	"viewScriptModule": "file:./view.ts",
 	"style": "file:./style-index.css",
 	"editorStyle": "file:./index.css",
+	"viewStyle": "file:./view.css",
 	"render": "file:./render.php",
 	"attributes": {
 		"attachmentId": {

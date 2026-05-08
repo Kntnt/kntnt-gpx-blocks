@@ -78,6 +78,7 @@ cp "${project_root}/LICENSE"        "$target/"
 cp -R "${project_root}/classes"  "$target/classes"
 cp -R "${project_root}/vendor"   "$target/vendor"
 cp -R "${project_root}/build"    "$target/build"
+cp -R "${project_root}/js"       "$target/js"
 
 # languages/ is optional in v1; copy when present.
 if [ -d "${project_root}/languages" ]; then
