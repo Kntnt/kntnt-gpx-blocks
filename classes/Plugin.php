@@ -94,6 +94,17 @@ final class Plugin {
 	private ?Updater $updater = null;
 
 	/**
+	 * The Consent_Stub instance bound to wp_enqueue_scripts.
+	 *
+	 * Held as a property so the array callable passed to add_action() keeps a
+	 * strong reference to the object for the lifetime of the request.
+	 *
+	 * @since 1.0.0
+	 * @var Consent\Consent_Stub|null
+	 */
+	private ?Consent\Consent_Stub $consent_stub = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -315,6 +326,13 @@ final class Plugin {
 		// Wire the update checker to the WordPress update transient.
 		$this->updater = new Updater();
 		add_filter( 'pre_set_site_transient_update_plugins', [ $this->updater, 'check_for_updates' ] );
+
+		// Inline the consent-contract stub in <head> on every frontend request.
+		// docs/consent.md requires the stub to load before any block view module
+		// reads window.kntnt_gpx_blocks, which wp_enqueue_scripts at default
+		// priority guarantees.
+		$this->consent_stub = new Consent\Consent_Stub();
+		add_action( 'wp_enqueue_scripts', [ $this->consent_stub, 'enqueue' ] );
 
 	}
 

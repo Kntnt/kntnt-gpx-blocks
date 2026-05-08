@@ -52,9 +52,9 @@ Per design — confirmed and refined:
 
 ## Privacy
 
-Map tiles are loaded from OpenStreetMap, which means visitor IPs reach a third party. The plugin does not load any tiles until consent has been granted. The integration is built on the WordPress Consent API, configurable via three filters (`kntnt_gpx_blocks_consent_required`, `kntnt_gpx_blocks_consent_category`, `kntnt_gpx_blocks_consent_service`). The plugin renders no consent UI of its own — the active cookie-consent plugin (Real Cookie Banner, Complianz, CookieYes, or any other Consent-API-compliant plugin) owns the visitor-facing UX and signals consent decisions through the standard `wp_listen_for_consent_change` event. See [`consent.md`](consent.md) for the full integration model.
+Map tiles are loaded from OpenStreetMap, which means visitor IPs reach a third party. Tile loading is gated by a CMP-neutral consent contract that the plugin itself defines: a PHP filter `kntnt_gpx_blocks_has_consent` (tristate — `true`/`false`/`null` with default-allow on absent), a JS global `window.kntnt_gpx_blocks` exposing `getConsent`/`mayProceed`/`onConsentChanged`, and an inbound JS event `kntnt_gpx_blocks:consent`. The plugin's own code makes *no* reference to any specific CMP — no `wp_has_consent()`, no `wp_listen_for_consent_change`, no Real-Cookie-Banner or Complianz hooks. The site builder writes a small glue snippet that bridges their CMP to this contract. The plugin renders no consent UI of its own; the CMP's content blocker is expected to reclaim the visual area when consent is denied. The plugin works fully — including loading tiles — when no CMP and no glue exist, because absent signal means permitted. In the WordPress block editor the consent contract is bypassed entirely: the editor always shows a working map. See [`consent.md`](consent.md) for the full normative contract.
 
-The Statistics and Elevation blocks load no third-party resources and need no consent. They render unconditionally.
+The Statistics and Elevation blocks load no third-party resources and never invoke the consent filter. They render unconditionally.
 
 ## Error handling
 
@@ -81,7 +81,7 @@ The major classes in `classes/` (PSR-4 namespaced under `Kntnt\Gpx_Blocks`):
 | `Rendering\Render_Map` | Server-side render of GPX Map. |
 | `Rendering\Render_Elevation` | Server-side render of GPX Elevation. |
 | `Rendering\Render_Statistics` | Server-side render of GPX Statistics. |
-| `Consent\Consent_Resolver` | Resolves the active consent state (filter values + Consent API). |
+| `Consent\Consent_Stub` | Builds the inline JS stub and the enqueue handle. The PHP filter `kntnt_gpx_blocks_has_consent` has no PHP-side resolver class — it is a plain `apply_filters()` call from `Render_Map`. |
 | `Format\Value_Formatter` | Locale-aware number formatting and unit selection (m vs km). |
 | `Cli\Regenerate_Command` | `wp kntnt-gpx regenerate` WP-CLI command. |
 | `Updater` | Checks GitHub Releases for a newer version. See [`updater.md`](updater.md). |

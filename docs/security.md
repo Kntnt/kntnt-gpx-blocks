@@ -118,10 +118,10 @@ The plugin is hardened against:
 
 - Malicious GPX uploads that try to read local files (XXE), exhaust memory (entity expansion, Billion laughs, gigantic files), or crash the parser.
 - Malicious editors who insert blocks with adversarial attribute values trying to break out of CSS or HTML context.
-- Cross-origin tile requests that would otherwise leak visitor IPs without consent.
+- Cross-origin tile requests that would otherwise leak visitor IPs without consent. (Gating is performed by the consent contract documented in [`consent.md`](consent.md); the plugin's defaults default-allow only because the contract is opt-in for the site builder. A site that needs strict gating installs a CMP and writes glue.)
 
 The plugin is **not** designed to defend against:
 
 - Malicious editors who upload GPX files revealing other people's locations. This is a content-policy issue, not a technical one — see the "Don'ts" guidance in [`README.md`](../README.md).
-- Malicious admins who change the `kntnt_gpx_blocks_consent_required` filter to `false`. Admins control filter values; if the policy needs to be tamper-proof, deploy the plugin to an environment where filter overrides require code review.
+- Malicious admins who hook `kntnt_gpx_blocks_has_consent` and force-return `true`, bypassing the CMP. Admins control filter values; if the policy needs to be tamper-proof, deploy the plugin to an environment where filter overrides require code review.
 - The OpenStreetMap tile servers themselves. They are an external service and out of scope.

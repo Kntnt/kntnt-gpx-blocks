@@ -4,24 +4,20 @@
  * Registers the `kntnt-gpx-blocks` store and implements:
  *
  * - `callbacks.initMap` — mounts Leaflet directly into the block element when
- *   consent is granted (or no gate is in effect). When consent is unknown, it
- *   queries `window.wp_has_consent` to resolve the initial state and otherwise
- *   defers mount until a `wp_listen_for_consent_change` event grants it.
- * - `callbacks.onConsentChange` — reacts to `state[mapId].consent` changes.
- *   Mounts Leaflet on `'granted'`, tears it down on `'denied'`. The plugin
- *   renders no consent UI of its own; the active consent-management plugin
- *   owns whatever the visitor sees in the meantime.
+ *   the consent contract permits it. The contract is exposed by the inline
+ *   stub on `window.kntnt_gpx_blocks` (see `js/consent-stub.js` and
+ *   `docs/consent.md`). The single category is `'external_media'`. The default
+ *   is permitted: an absent signal does not block tile loading. Subscribes to
+ *   subsequent transitions via `onConsentChanged` so a denying signal tears
+ *   the map down and a granting signal re-mounts it.
  * - `callbacks.onCursorChange` — reacts to `state[mapId].fraction` changes
  *   (from Map itself or from GPX Elevation) by moving the cursor marker along
  *   the polyline without re-emitting the fraction.
  *
- * Consent API integration (passive):
- * - `wp_has_consent` (if present) is called once at `initMap` time to set the
- *   initial consent state.
- * - `wp_listen_for_consent_change` events update state when consent changes
- *   site-wide (both grant and revoke).
- * - The custom DOM event `kntnt-gpx-blocks/grant-consent` on the block element
- *   sets consent to `'granted'` so non-Consent-API plugins can trigger mount.
+ * Editor bypass: when PHP detects a REST `block-renderer` request from a user
+ * with `edit_posts`, it sets `bypassConsent: true` in the per-map state slice.
+ * The view module then mounts Leaflet immediately and skips the consent
+ * subscription — the editor authoring surface always shows a working map.
  *
  * The map is deferred until the container enters the viewport via
  * IntersectionObserver. A WeakMap guards against double-mounting on
@@ -44,11 +40,19 @@ import 'leaflet.fullscreen/Control.FullScreen.css';
 declare global {
 	interface Window {
 		/**
-		 * WordPress Consent API — returns true when the visitor has granted
-		 * consent for the given category (and optional service). Provided by
-		 * consent-management plugins; absent when no such plugin is active.
+		 * The plugin's CMP-neutral consent contract, exposed by the inline
+		 * stub in `js/consent-stub.js`. The stub is enqueued unconditionally
+		 * in <head>, so this object is normally always present on the
+		 * frontend. Optional in the type to keep the JS robust against
+		 * optimisation plugins that strip inline scripts. See `docs/consent.md`.
 		 */
-		wp_has_consent?: ( category: string, service?: string ) => boolean;
+		kntnt_gpx_blocks?: {
+			getConsent: ( category: string ) => boolean | null;
+			mayProceed: ( category: string ) => boolean;
+			onConsentChanged: (
+				handler: ( category: string, granted: boolean | null ) => void
+			) => () => void;
+		};
 	}
 }
 
@@ -98,11 +102,12 @@ interface MapState {
 	gpxFileUrl: string | null;
 	settings: MapSettings;
 	fraction: number | null;
-	consent: 'unknown' | 'granted' | 'denied';
-	/** Consent API category to check; comes from the kntnt_gpx_blocks_consent_category filter. */
-	consentCategory: string;
-	/** Consent API service identifier; comes from the kntnt_gpx_blocks_consent_service filter. */
-	consentService: string;
+	/**
+	 * True when PHP detected an editor render context (REST block-renderer
+	 * with `edit_posts`). When true, the view module mounts Leaflet
+	 * immediately and skips every consent check.
+	 */
+	bypassConsent: boolean;
 }
 
 /**
@@ -136,6 +141,19 @@ interface MapEntry {
 	/** Flat [lat, lng] array extracted from the simplified LineString. */
 	coords: Array< [ number, number ] >;
 }
+
+// ─── Module constants ────────────────────────────────────────────────────────
+
+/**
+ * The single consent category the plugin queries.
+ *
+ * Documented in `docs/consent.md`. The plugin uses this category and only this
+ * category; the site builder's glue translates their CMP's category name to
+ * this one.
+ *
+ * @since 1.0.0
+ */
+const CONSENT_CATEGORY = 'external_media';
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 
@@ -261,7 +279,7 @@ function fractionToLatLng(
  *
  * After fitBounds, calls `map.invalidateSize()` once to force Leaflet to
  * re-measure the container — necessary when the element became visible just
- * before mount (e.g. consent transition from denied to granted).
+ * before mount (e.g. a consent transition from denying to granting).
  *
  * @since 1.0.0
  *
@@ -306,7 +324,8 @@ function bootMount(
 				attributionControl: true,
 			} );
 
-			// Add the OSM tile layer — only reached when consent is granted.
+			// Add the OSM tile layer — only reached when the consent contract
+			// permits proceeding (or in editor bypass).
 			addTileLayer( map );
 
 			// Read the track colour CSS variables once at mount time.
@@ -338,9 +357,10 @@ function bootMount(
 			}
 
 			// Force Leaflet to re-measure the container. Necessary in two
-			// situations: the block became visible just before mount (consent
-			// transition), or the editor's ServerSideRender re-rendered the
-			// block while its iframe was still settling layout.
+			// situations: the block became visible just before mount (a
+			// denying-to-granting consent transition), or the editor's
+			// ServerSideRender re-rendered the block while its iframe was
+			// still settling layout.
 			map.invalidateSize( false );
 
 			// Add the configured control overlays based on the hydrated settings.
@@ -581,9 +601,10 @@ function bootMount(
 /**
  * Tear down the Leaflet instance attached to the given block element, if any.
  *
- * Called when consent is revoked. The element is left in the DOM with no
- * visible content; the active consent-management plugin handles the visitor-
- * facing replacement (content blocker, banner overlay, etc.).
+ * Called when the consent contract reports a denying signal for
+ * `'external_media'`. The block element is left in the DOM with no visible
+ * content; the active CMP's content blocker is expected to reclaim the visual
+ * area. The plugin renders no placeholder of its own — see `docs/consent.md`.
  *
  * @since 1.0.0
  *
@@ -604,18 +625,28 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 	state: {} as PluginState,
 	callbacks: {
 		/**
-		 * Initialise the block's consent state and mount Leaflet if granted.
+		 * Initialise the block: consult the consent contract and mount Leaflet
+		 * when permitted, then subscribe to subsequent consent transitions.
 		 *
-		 * Called by `data-wp-init` on the block's root element. Resolves the
-		 * initial consent state by querying `window.wp_has_consent` when the
-		 * Consent API is present; mounts Leaflet immediately when consent is
-		 * granted (or no gate is in effect). When consent is denied, the block
-		 * stays empty — no plugin-supplied placeholder is shown — and the
-		 * cookie-consent plugin handles the visitor-facing UI.
+		 * Called by `data-wp-init` on the block's root element. The decision
+		 * tree is:
 		 *
-		 * Also subscribes to `wp_listen_for_consent_change` (for live consent
-		 * grants/revocations) and to the custom DOM event
-		 * `kntnt-gpx-blocks/grant-consent` (for non-Consent-API integrations).
+		 *  1. If `bypassConsent` is true (editor preview), mount immediately
+		 *     and skip the subscription — the editor authoring surface always
+		 *     shows a working map.
+		 *  2. Otherwise consult `window.kntnt_gpx_blocks.mayProceed` for the
+		 *     `'external_media'` category. Mount when it returns true (the
+		 *     default-allow rule means absent signal also returns true).
+		 *  3. Subscribe to `onConsentChanged`. On a denying transition, tear
+		 *     down via `map.remove()`. On a granting transition, re-mount
+		 *     (idempotent — guarded by `mountedMaps`). An absent transition
+		 *     (handler called with `null`) is a no-op: the contract's
+		 *     default-allow rule keeps any already-mounted map running.
+		 *
+		 * When the inline stub is unexpectedly missing — for example when an
+		 * optimisation plugin has stripped it — the contract's default-allow
+		 * rule applies and Leaflet mounts normally. A console warning is
+		 * emitted so the misconfiguration is visible.
 		 *
 		 * @since 1.0.0
 		 */
@@ -631,89 +662,51 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Resolve the initial consent state. The PHP render path sets
-			// 'unknown' when a gate is in effect and 'granted' when bypassed.
-			// When 'unknown', query the Consent API if present; otherwise
-			// default to 'denied' so no tile request is made.
-			if ( mapState.consent === 'unknown' ) {
-				if ( typeof window.wp_has_consent === 'function' ) {
-					mapState.consent = window.wp_has_consent(
-						mapState.consentCategory
-					)
-						? 'granted'
-						: 'denied';
-				} else {
-					mapState.consent = 'denied';
-				}
+			// Editor short-circuit: when PHP flagged this render as an editor
+			// preview, mount immediately and do not subscribe to consent.
+			if ( mapState.bypassConsent ) {
+				bootMount( ref, mapId, mapState );
+				return;
 			}
 
-			// Mount Leaflet immediately when consent is already granted.
-			if ( mapState.consent === 'granted' ) {
+			// Resolve the consent contract from the inline stub. The stub is
+			// enqueued unconditionally in <head>; if it is missing here, an
+			// optimisation plugin has stripped it. Default-allow keeps the
+			// map functional in that case, but the misconfiguration is worth
+			// surfacing.
+			const consent = window.kntnt_gpx_blocks;
+			if ( ! consent ) {
+				// eslint-disable-next-line no-console
+				console.warn(
+					'[kntnt-gpx-blocks] window.kntnt_gpx_blocks is missing; mounting under default-allow. See docs/consent.md.'
+				);
+				bootMount( ref, mapId, mapState );
+				return;
+			}
+
+			// Mount when the contract permits proceeding. mayProceed returns
+			// true on granting and on absent — only literal denying blocks.
+			if ( consent.mayProceed( CONSENT_CATEGORY ) ) {
 				bootMount( ref, mapId, mapState );
 			}
 
-			// Listen for the custom grant-consent DOM event so non-Consent-API
-			// plugins can activate this block by dispatching on its element.
-			ref.addEventListener( 'kntnt-gpx-blocks/grant-consent', () => {
-				const currentState = state[ mapId ];
-				if ( currentState ) {
-					currentState.consent = 'granted';
+			// Subscribe to subsequent transitions. Granting re-mounts (the
+			// WeakMap guards against duplicates). Denying tears down. Absent
+			// (null) is a no-op — the contract has no defined revoke-to-absent
+			// transition, and falling back to default-allow on absent would
+			// fight any pending tear-down.
+			consent.onConsentChanged( ( category, granted ) => {
+				if ( category !== CONSENT_CATEGORY ) {
+					return;
+				}
+				if ( granted === true ) {
+					bootMount( ref, mapId, mapState );
+					return;
+				}
+				if ( granted === false ) {
+					tearDown( ref );
 				}
 			} );
-
-			// Subscribe to site-wide consent change events. Each block instance
-			// subscribes independently so all maps on the page react to a
-			// single consent change.
-			document.addEventListener(
-				'wp_listen_for_consent_change',
-				( event: Event ) => {
-					const detail = (
-						event as CustomEvent< Record< string, string > >
-					 ).detail;
-					if ( ! detail ) {
-						return;
-					}
-					const category = state[ mapId ]?.consentCategory;
-					if ( ! category ) {
-						return;
-					}
-					if ( detail[ category ] === 'allow' ) {
-						state[ mapId ].consent = 'granted';
-					} else if ( detail[ category ] === 'deny' ) {
-						state[ mapId ].consent = 'denied';
-					}
-				}
-			);
-		},
-
-		/**
-		 * React to changes in `state[mapId].consent`.
-		 *
-		 * Bound via `data-wp-watch--consent` on the block's root element.
-		 * Mounts Leaflet on `'granted'`; tears it down on `'denied'`. The
-		 * block element is left visually empty between revocation and
-		 * re-grant — the active consent-management plugin owns the UI.
-		 *
-		 * @since 1.0.0
-		 */
-		onConsentChange() {
-			const { ref } = getElement();
-			if ( ! ref || ! ( ref instanceof HTMLElement ) ) {
-				return;
-			}
-			const { mapId } = getContext< MapContext >();
-			const mapState = state[ mapId ];
-			if ( ! mapState ) {
-				return;
-			}
-
-			if ( mapState.consent === 'granted' ) {
-				bootMount( ref, mapId, mapState );
-				return;
-			}
-			if ( mapState.consent === 'denied' ) {
-				tearDown( ref );
-			}
 		},
 
 		/**

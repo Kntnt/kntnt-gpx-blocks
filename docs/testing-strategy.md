@@ -109,7 +109,8 @@ Playwright drives a WordPress Playground instance with the plugin installed:
 - Hover the chart, verify the cursor moves on the Map.
 - Hover the Map, verify the cursor moves on the chart.
 - Insert GPX Statistics, verify the values match the fixture's known totals.
-- Simulate the "no consent" state and verify no tile request reaches `tile.openstreetmap.org`. Then dispatch a `wp_listen_for_consent_change` allow event and verify the map mounts.
+- Simulate a "denying" consent state by dispatching `window.dispatchEvent(new CustomEvent('kntnt_gpx_blocks:consent', { detail: { category: 'external_media', granted: false } }))` before the map renders, and verify no tile request reaches `tile.openstreetmap.org`. Then dispatch the same event with `granted: true` and verify the map mounts. Verify that the default state (no event dispatched) loads tiles — the spec's default-allow rule.
+- Verify the editor bypass: in a `block-renderer` REST request, the map mounts regardless of consent state.
 
 E2E is the most expensive layer. Keep it focused on the cross-block flows that unit and integration cannot cover.
 

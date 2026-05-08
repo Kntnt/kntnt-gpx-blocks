@@ -226,9 +226,10 @@ test( 'renders the wrapper element with data-wp-init and data-wp-watch directive
 
 	expect( $html )
 		->toContain( 'data-wp-init="callbacks.initMap"' )
-		->toContain( 'data-wp-watch--consent="callbacks.onConsentChange"' )
 		->toContain( 'data-wp-watch--cursor="callbacks.onCursorChange"' )
-		->toContain( 'kntnt-gpx-blocks-map' );
+		->toContain( 'kntnt-gpx-blocks-map' )
+		->not->toContain( 'data-wp-watch--consent' )
+		->not->toContain( 'callbacks.onConsentChange' );
 
 } );
 
@@ -731,10 +732,10 @@ test( 'render output omits waypoint-label-font-weight CSS variable when weight i
 } );
 
 // ---------------------------------------------------------------------------
-// Consent — when the gate is bypassed, state has consent=granted; no UI rendered
+// Consent contract — bypassConsent defaults to false on the frontend
 // ---------------------------------------------------------------------------
 
-test( 'consent=granted in state when the gate is bypassed', function (): void {
+test( 'bypassConsent is false in state on the frontend (no REST request)', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 80, $coords );
@@ -742,12 +743,10 @@ test( 'consent=granted in state when the gate is bypassed', function (): void {
 	map_stub_attached_file( 80, map_fixture_path( 'happy-path.gpx' ) );
 
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'is_admin' )->justReturn( true );
-	Functions\when( 'current_user_can' )->justReturn( true );
-	Functions\when( 'esc_html__' )->alias(
-		static fn ( string $text, string $domain ): string => $text
-	);
 
+	// current_user_can defaults to false via beforeEach; no REST request is
+	// in flight unless a previous test defined the constant. Either way the
+	// per-render gate must report bypass=false.
 	$captured_state = null;
 	Functions\when( 'wp_interactivity_state' )->alias(
 		static function ( string $ns, array $state ) use ( &$captured_state ): void {
@@ -758,17 +757,23 @@ test( 'consent=granted in state when the gate is bypassed', function (): void {
 	$html = Render_Map::render(
 		[
 			'attachmentId' => 80,
-			'mapId'        => 'map-consent-off',
+			'mapId'        => 'map-frontend',
 		],
 		'',
 		map_fake_block(),
 	);
 
-	// State must show consent already granted (admin bypass via Consent_Resolver).
-	expect( $captured_state['map-consent-off']['consent'] ?? null )->toBe( 'granted' );
+	$slice = $captured_state['map-frontend'] ?? null;
 
-	// The plugin renders no placeholder, no button, no canvas-child split —
-	// just a single block wrapper plus a noscript fallback.
+	expect( $slice )->not->toBeNull();
+	expect( $slice['bypassConsent'] )->toBeFalse();
+
+	// State carries no fields from the old WordPress-Consent-API design.
+	expect( $slice )->not->toHaveKey( 'consent' );
+	expect( $slice )->not->toHaveKey( 'consentCategory' );
+	expect( $slice )->not->toHaveKey( 'consentService' );
+
+	// The plugin renders no placeholder, no button, no consent UI.
 	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-placeholder' );
 	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-canvas' );
 	expect( $html )->not->toContain( 'actions.grantConsent' );
@@ -776,10 +781,20 @@ test( 'consent=granted in state when the gate is bypassed', function (): void {
 } );
 
 // ---------------------------------------------------------------------------
-// Consent — when is_required true, state has consent=unknown
+// Consent contract — bypassConsent is true in editor (REST + edit_posts)
 // ---------------------------------------------------------------------------
+//
+// REST_REQUEST is defined here for the first time in this file. PHP constants
+// cannot be undefined, so this test is intentionally placed last among the
+// consent tests; the surrounding tests rely on `current_user_can` returning
+// false (the beforeEach default) to keep `bypassConsent` false even after the
+// constant has been defined.
 
-test( 'consent=unknown in state when consent is required', function (): void {
+test( 'bypassConsent is true in state when REST_REQUEST is true and user can edit_posts', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 81, $coords );
@@ -787,54 +802,8 @@ test( 'consent=unknown in state when consent is required', function (): void {
 	map_stub_attached_file( 81, map_fixture_path( 'happy-path.gpx' ) );
 
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'is_admin' )->justReturn( false );
-	Functions\when( 'current_user_can' )->justReturn( false );
-	Functions\when( 'esc_html__' )->alias(
-		static fn ( string $text, string $domain ): string => $text
-	);
-
-	$captured_state = null;
-	Functions\when( 'wp_interactivity_state' )->alias(
-		static function ( string $ns, array $state ) use ( &$captured_state ): void {
-			$captured_state = $state;
-		}
-	);
-
-	$html = Render_Map::render(
-		[
-			'attachmentId' => 81,
-			'mapId'        => 'map-consent-on',
-		],
-		'',
-		map_fake_block(),
-	);
-
-	// State must show consent unknown — view.ts resolves via wp_has_consent at runtime.
-	expect( $captured_state['map-consent-on']['consent'] ?? null )->toBe( 'unknown' );
-
-	// No plugin-rendered consent UI: the cookie-consent plugin owns that.
-	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-placeholder' );
-	expect( $html )->not->toContain( 'kntnt-gpx-blocks-map-canvas' );
-	expect( $html )->not->toContain( 'actions.grantConsent' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Consent — state slice includes consentCategory and consentService
-// ---------------------------------------------------------------------------
-
-test( 'state slice includes consentCategory and consentService', function (): void {
-
-	$coords = map_synthetic_coords( 10 );
-	$store  = map_seeded_store( 83, $coords );
-	map_bind_meta( $store );
-	map_stub_attached_file( 83, map_fixture_path( 'happy-path.gpx' ) );
-
-	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'is_admin' )->justReturn( false );
-	Functions\when( 'current_user_can' )->justReturn( false );
-	Functions\when( 'esc_html__' )->alias(
-		static fn ( string $text, string $domain ): string => $text
+	Functions\when( 'current_user_can' )->alias(
+		static fn ( string $cap ): bool => 'edit_posts' === $cap
 	);
 
 	$captured_state = null;
@@ -846,18 +815,16 @@ test( 'state slice includes consentCategory and consentService', function (): vo
 
 	Render_Map::render(
 		[
-			'attachmentId' => 83,
-			'mapId'        => 'map-consent-fields',
+			'attachmentId' => 81,
+			'mapId'        => 'map-editor',
 		],
 		'',
 		map_fake_block(),
 	);
 
-	$slice = $captured_state['map-consent-fields'] ?? null;
+	$slice = $captured_state['map-editor'] ?? null;
 
 	expect( $slice )->not->toBeNull();
-	expect( $slice['consentCategory'] )->toBe( 'marketing' );
-	expect( $slice['consentService'] )->toBe( 'openstreetmap' );
-	expect( $slice )->not->toHaveKey( 'placeholderText' );
+	expect( $slice['bypassConsent'] )->toBeTrue();
 
 } );

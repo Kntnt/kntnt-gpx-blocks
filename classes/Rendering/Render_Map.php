@@ -15,7 +15,6 @@ declare( strict_types = 1 );
 namespace Kntnt\Gpx_Blocks\Rendering;
 
 use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
-use Kntnt\Gpx_Blocks\Consent\Consent_Resolver;
 use Kntnt\Gpx_Blocks\Plugin;
 
 /**
@@ -61,6 +60,20 @@ final class Render_Map {
 	 * render callback. Returns an empty string when the block is not yet
 	 * configured (attachmentId === 0) — the editor's MediaPlaceholder handles
 	 * that state. Returns an error notice to editors on any cache failure.
+	 *
+	 * The render path performs no consent gating server-side. Rendering the
+	 * container, embedding the GeoJSON in wp_interactivity_state(), and drawing
+	 * the polyline on a canvas are not third-party requests and do not require
+	 * consent. Tile loading is the only consent-requiring action; it is gated
+	 * client-side by the contract documented in docs/consent.md. The PHP filter
+	 * `kntnt_gpx_blocks_has_consent` exists for builders who want server-side
+	 * consent introspection from their own code, but Render_Map itself does not
+	 * consult it.
+	 *
+	 * Editor render context is detected (REST `block-renderer` requests with
+	 * `edit_posts` capability) and surfaced as `bypassConsent` in the per-map
+	 * state slice so the JS view module mounts Leaflet immediately, regardless
+	 * of consent state.
 	 *
 	 * @since 1.0.0
 	 *
@@ -163,24 +176,25 @@ final class Render_Map {
 		$gpx_file_url = wp_get_attachment_url( $attachment_id );
 		$gpx_file_url = $gpx_file_url !== false ? $gpx_file_url : null;
 
-		// Resolve the consent configuration from filters; bypass the gate in the editor.
-		$resolver         = new Consent_Resolver();
-		$consent_required = $resolver->is_required();
-		$consent_category = $resolver->get_category();
-		$consent_service  = $resolver->get_service();
+		// Detect the editor render context. The REST block-renderer endpoint
+		// invokes the render callback inside a REST request; gating on
+		// `edit_posts` excludes anonymous REST callers from the bypass. The JS
+		// view module reads this flag to mount Leaflet immediately when the
+		// editor preview is being rendered, irrespective of consent state.
+		$bypass_consent = defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'edit_posts' );
 
 		// Register the per-map state slice with the Interactivity API. The plugin
-		// is a passive consent consumer: when a gate is in effect, view.ts queries
-		// wp_has_consent and listens for wp_listen_for_consent_change. Until then,
-		// no tile request is made and no plugin-supplied placeholder is shown —
-		// the active consent-management plugin owns the visitor-facing UI.
+		// performs no consent-requiring action server-side; the JS view module
+		// gates tile loading client-side via window.kntnt_gpx_blocks (see
+		// docs/consent.md). The state carries no consent values — the only
+		// consent-related field is bypassConsent for the editor preview.
 		wp_interactivity_state( 'kntnt-gpx-blocks', [
 			$map_id => [
-				'attachmentId'    => $attachment_id,
-				'geojson'         => $simplified_geo,
-				'waypoints'       => $waypoints,
-				'gpxFileUrl'      => $gpx_file_url,
-				'settings'        => [
+				'attachmentId'  => $attachment_id,
+				'geojson'       => $simplified_geo,
+				'waypoints'     => $waypoints,
+				'gpxFileUrl'    => $gpx_file_url,
+				'settings'      => [
 					'showZoomButtons'       => $show_zoom_buttons,
 					'showScale'             => $show_scale,
 					'showFullscreen'        => $show_fullscreen,
@@ -192,10 +206,8 @@ final class Render_Map {
 					'enableBoxZoom'         => $enable_box_zoom,
 					'enableKeyboard'        => $enable_keyboard,
 				],
-				'fraction'        => null,
-				'consent'         => $consent_required ? 'unknown' : 'granted',
-				'consentCategory' => $consent_category,
-				'consentService'  => $consent_service,
+				'fraction'      => null,
+				'bypassConsent' => $bypass_consent,
 			],
 		] );
 
@@ -260,9 +272,10 @@ final class Render_Map {
 		// style, so Leaflet always sees a correctly sized container.
 		// role="application" and aria-label expose the interactive map to assistive
 		// technology. <noscript> is shown only when JS is disabled.
-		// data-wp-init bootstraps the block. The two suffixed data-wp-watch
-		// directives subscribe independently — one to consent transitions, one
-		// to cursor-marker updates from sibling Elevation blocks.
+		// data-wp-init bootstraps the block. The suffixed data-wp-watch directive
+		// reacts to cursor-marker updates from sibling Elevation blocks. Consent
+		// transitions are handled inside initMap via the JS contract documented
+		// in docs/consent.md, not via a Watch directive.
 		// No plugin-supplied placeholder, button, or consent UI is rendered —
 		// the active consent-management plugin owns the visitor-facing UX.
 		return sprintf(
@@ -272,7 +285,6 @@ final class Render_Map {
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%2$s\''
 				. ' data-wp-init="callbacks.initMap"'
-				. ' data-wp-watch--consent="callbacks.onConsentChange"'
 				. ' data-wp-watch--cursor="callbacks.onCursorChange"'
 				. ' style="%3$s">'
 				. '<noscript><p class="kntnt-gpx-blocks-map-noscript">%4$s</p></noscript>'
