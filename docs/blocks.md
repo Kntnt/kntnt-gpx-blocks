@@ -50,7 +50,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 
 `InspectorControls` panels, in order:
 
-1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips `<ServerSideRender>`.
+1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips the editor preview (`MapEditorPreview` for Map; `<ServerSideRender>` for Elevation and Statistics).
 2. **Layout** — aspect-ratio dropdown (`1/1`, `4/3`, `3/2`, `16/9`, `21/9`, custom), min-height, optional max-height.
 3. **Controls** — toggles for the four control overlays.
 4. **Interactions** — toggles for the six interaction modes.

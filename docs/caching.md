@@ -78,6 +78,11 @@ Errors are logged via `Plugin::error()` with the attachment ID and code.
 
 ## Editor view of the cache
 
-The Edit component uses `<ServerSideRender>`, which means the editor goes through the same render path as the frontend. There is **no** REST endpoint for fetching cached data into the editor — that was an early design idea, dropped in favour of letting `<ServerSideRender>` handle the round-trip. ServerSideRender is invalidated automatically when the watched block attributes change, so changing the GPX file in the media picker triggers a refetch.
+The three blocks reach the cache through two different paths:
 
-If you ever need to expose cached data to a non-WordPress consumer (e.g. a headless frontend), reach for the WordPress REST API and build a custom controller that reads the same meta. Don't add it speculatively — there's no current consumer.
+- **Map** — the editor preview is a parallel React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) that mounts Leaflet directly inside the editor iframe. It fetches the cached GeoJSON through a dedicated, auth-gated REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` served by `Rest\Preview_Controller`. The endpoint reuses `Attachment_Cache` so the editor sees exactly the same payload the frontend will hydrate. The reason for the parallel path: the Interactivity API runtime does not bootstrap inside ServerSideRender's injected DOM, so the frontend `view.ts` mount cannot run in the editor. See [`architecture.md`](architecture.md) *Editor integration* for the full reasoning.
+- **Elevation and Statistics** — the Edit components use `<ServerSideRender>`, which goes through the same `the_content` render path as the frontend. ServerSideRender is invalidated automatically when the watched block attributes change, so changing the GPX file in the media picker triggers a refetch.
+
+Both paths read from the same `Attachment_Cache`, so editor previews stay consistent with the frontend without any extra cache invalidation work.
+
+If you ever need to expose cached data to a non-WordPress consumer (e.g. a headless frontend), extend `Rest\Preview_Controller` or add a sibling controller. Don't introduce a new internal access path for cached data — go through `Attachment_Cache::get()` so the version + hash invalidation logic stays in one place.
