@@ -613,6 +613,29 @@ function bootMount(
 			} );
 			layer.addTo( map );
 
+			// Invisible fat overlay sharing the visible polyline's geometry.
+			// Leaflet's polyline mousemove fires only inside the line's narrow
+			// pixel hit zone (a few pixels at weight 4), which makes hover-driven
+			// cursor sync feel jumpy as the pointer drifts in and out of the
+			// zone. Stacking a transparent weight: 30 layer above the visible
+			// one widens the hit zone to ~15 px on each side without changing
+			// the visible appearance, lets Leaflet's native pixel-space hit
+			// detection handle hairpins (it picks the closer screen segment),
+			// and is more idiomatic than hand-rolled distance thresholding.
+			// pointer-events stays on (interactive: true) so the hit layer
+			// receives mouse events; bubbling stays at Leaflet's default so
+			// popups and controls below it still work.
+			const hitLayer = L.geoJSON( mapState.geojson, {
+				style: () => ( {
+					weight: 30,
+					opacity: 0,
+					fillOpacity: 0,
+				} ),
+				interactive: true,
+				className: 'kntnt-gpx-blocks-track-hit',
+			} );
+			hitLayer.addTo( map );
+
 			// Fit the viewport to the track bounds with small padding so
 			// the polyline never touches the container edge.
 			const bounds = layer.getBounds();
@@ -825,12 +848,14 @@ function bootMount(
 			// onMapCursorChange can access the cursor and coords.
 			mountedMaps.set( blockEl, { map, cursor, coords, disposer } );
 
-			// Wire pointer tracking on the polyline. Hover over the track
-			// updates fraction; press-and-drag on the track scrubs the cursor
-			// without panning the map. Pointerup anywhere ends the scrub.
+			// Wire pointer tracking on the invisible fat overlay so the hit
+			// zone for hover and press is wide enough to feel smooth. Hover
+			// over the track updates fraction; press-and-drag on the track
+			// scrubs the cursor without panning the map. Pointerup anywhere
+			// ends the scrub.
 			attachScrubHandlers(
 				map,
-				layer,
+				hitLayer,
 				blockEl,
 				coords,
 				mapId,
