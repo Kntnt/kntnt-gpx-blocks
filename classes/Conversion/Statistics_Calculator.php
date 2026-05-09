@@ -27,11 +27,6 @@ namespace Kntnt\Gpx_Blocks\Conversion;
 final class Statistics_Calculator {
 
 	/**
-	 * Earth radius in metres used for Haversine summation.
-	 */
-	private const EARTH_RADIUS_METERS = 6371000.0;
-
-	/**
 	 * Computes the five summary statistics for a parsed track.
 	 *
 	 * The returned shape matches the cache contract documented in
@@ -208,7 +203,7 @@ final class Statistics_Calculator {
 		$count = count( $points );
 
 		for ( $i = 1; $i < $count; $i++ ) {
-			$total += $this->haversine_meters(
+			$total += Distance::haversine_meters(
 				$points[ $i - 1 ]->lat,
 				$points[ $i - 1 ]->lon,
 				$points[ $i ]->lat,
@@ -217,32 +212,6 @@ final class Statistics_Calculator {
 		}
 
 		return $total;
-
-	}
-
-	/**
-	 * Great-circle distance between two lat/lon pairs in metres.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param float $lat1 Latitude of point 1, decimal degrees.
-	 * @param float $lon1 Longitude of point 1, decimal degrees.
-	 * @param float $lat2 Latitude of point 2, decimal degrees.
-	 * @param float $lon2 Longitude of point 2, decimal degrees.
-	 *
-	 * @return float
-	 */
-	private function haversine_meters( float $lat1, float $lon1, float $lat2, float $lon2 ): float {
-
-		$phi1     = deg2rad( $lat1 );
-		$phi2     = deg2rad( $lat2 );
-		$d_phi    = deg2rad( $lat2 - $lat1 );
-		$d_lambda = deg2rad( $lon2 - $lon1 );
-
-		$a = sin( $d_phi / 2 ) ** 2
-			+ cos( $phi1 ) * cos( $phi2 ) * sin( $d_lambda / 2 ) ** 2;
-
-		return self::EARTH_RADIUS_METERS * 2 * atan2( sqrt( $a ), sqrt( 1 - $a ) );
 
 	}
 
