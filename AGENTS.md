@@ -17,3 +17,16 @@ See `docs/design.md` for the original design brief and `docs/architecture.md` fo
 ## Project-specific conventions
 
 The project follows the standard above verbatim with the instantiations listed in [Project-specific instantiation](docs/coding-standards.md#project-specific-instantiation) at the end of `docs/coding-standards.md`. There are no overrides beyond pinning placeholders to concrete values.
+
+## Cutting a release
+
+The full release sequence is six steps, in order. None are optional — skipping the build-zip + upload pair (steps 4 and 6) means the auto-updater silently sees no new version and users who notice the new tag and try to install GitHub's auto-generated source ZIP end up with a parallel `kntnt-gpx-blocks-<tag>/` plugin alongside the original. See `docs/updater.md` for the underlying mechanism.
+
+1. **Bump the version** in two files (must match exactly): the `Version:` header in `kntnt-gpx-blocks.php` and `"version"` in `package.json`. Pre-1.0 semver: minor when any closed issue is `type:feature`, patch otherwise.
+2. **Run all gates** one final time over the merged work: `npm run build && composer test && vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M && npm run test:js`. Plus `npx wp-scripts lint-js src/blocks/` if `src/blocks/` was touched. A green run on every individual issue commit does not guarantee a green run on their union — that is what this gate catches.
+3. **Commit and tag.** `git commit -m "Release vX.Y.Z"` then `git tag -a vX.Y.Z -m vX.Y.Z`.
+4. **Build the release ZIP.** `./build-release-zip.sh` produces `kntnt-gpx-blocks.zip` in the project root with top-level folder `kntnt-gpx-blocks/` and runtime artefacts only (`vendor/` from `composer install --no-dev`, `build/`, `classes/`, `js/`, etc.). Re-runs `npm ci` and rebuilds, then restores the dev composer install. Working tree stays clean.
+5. **Push the commit and the tag.** `git push origin main && git push origin vX.Y.Z`.
+6. **Create the GitHub release with the ZIP attached.** `gh release create vX.Y.Z ./kntnt-gpx-blocks.zip --title "vX.Y.Z" --notes "..."`. The `Updater` identifies the right asset by `content_type === "application/zip"`, not by filename, so the stable filename is intentional. Verify with `gh release view vX.Y.Z --json assets --jq '.assets[].contentType'` — must return `application/zip`.
+
+If a user-supplied prompt or instruction omits steps 4 or 6 (e.g. says "no asset" or "skip the ZIP"), flag the contradiction with `docs/updater.md` before proceeding rather than following the prompt literally.
