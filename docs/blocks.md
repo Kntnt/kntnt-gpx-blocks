@@ -225,14 +225,16 @@ The GPX Statistics summary is **not** a block. It is a *`core/group` block-varia
 ```html
 <!-- wp:group {"metadata":{"name":"GPX Statistics"},"layout":{"type":"grid","columnCount":2}} -->
   <!-- wp:group {"metadata":{"name":"Total length"},"style":{"layout":{"columnSpan":2}},"layout":{"type":"flex"}} -->
-    <!-- wp:paragraph --><p><strong>Total length:</strong></p><!-- /wp:paragraph -->
-    <!-- wp:paragraph {"metadata":{"bindings":{"content":{"source":"kntnt-gpx-blocks/statistics","args":{"key":"distance"}}}}} -->
+    <!-- wp:paragraph {"metadata":{"name":"Label"}} --><p><strong>Total length:</strong></p><!-- /wp:paragraph -->
+    <!-- wp:paragraph {"metadata":{"name":"Value","bindings":{"content":{"source":"kntnt-gpx-blocks/statistics","args":{"key":"distance"}}}}} -->
       <p></p>
     <!-- /wp:paragraph -->
   <!-- /wp:group -->
   <!-- ... four more rows for min_elevation, max_elevation, ascent, descent ... -->
 <!-- /wp:group -->
 ```
+
+The `metadata.name` strings on the inner blocks (`Total length`, `Label`, `Value`, etc.) are deliberately fixed English — Gutenberg's `metadata.name` is editor-side metadata, and Core's own templates leave it as a fixed English string. The visitor-facing label paragraph content (`Total length:`) stays translated through the plugin's text domain.
 
 Once the user inserts the variation, the markup is standard `core/group` and `core/paragraph` content — the variation's role ends at insertion time; the post_content carries no reference back to the variation name.
 

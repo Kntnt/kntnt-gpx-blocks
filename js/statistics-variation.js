@@ -28,15 +28,26 @@
 	/**
 	 * Builds the markup for one label-and-value row.
 	 *
-	 * @param {string}  label      Translated label text (without trailing colon).
-	 * @param {string}  bindingKey Statistics key passed to the bindings source.
-	 * @param {boolean} columnSpan When true, the row spans both columns of the grid.
+	 * The English `name` strings (the row's English label and the literal
+	 * `'Label'` / `'Value'` strings on the inner paragraphs) populate
+	 * `metadata.name` so the editor's List View / Document Outline shows
+	 * meaningful names instead of the generic *Group* / *Paragraph* labels.
+	 * They are deliberately NOT translated through the plugin's text domain:
+	 * `metadata.name` is editor-side metadata, and the Gutenberg convention —
+	 * which Core itself follows — is to leave it as a fixed English string.
+	 * The visitor-facing label content (the `<strong>…</strong>` paragraph)
+	 * remains translated via the separate `translatedLabel` argument.
+	 *
+	 * @param {string}  englishName     Fixed English row name for `metadata.name`.
+	 * @param {string}  translatedLabel Translated label text (without trailing colon).
+	 * @param {string}  bindingKey      Statistics key passed to the bindings source.
+	 * @param {boolean} columnSpan      When true, the row spans both columns of the grid.
 	 * @return {Array} A nested innerBlocks tuple suitable for variation.innerBlocks.
 	 */
-	function row( label, bindingKey, columnSpan ) {
+	function row( englishName, translatedLabel, bindingKey, columnSpan ) {
 
 		const groupAttrs = {
-			metadata: { name: label },
+			metadata: { name: englishName },
 			style: {
 				spacing: { blockGap: '0.5em' },
 			},
@@ -51,10 +62,14 @@
 			'core/group',
 			groupAttrs,
 			[
-				[ 'core/paragraph', { content: '<strong>' + label + ':</strong>' } ],
+				[ 'core/paragraph', {
+					content: '<strong>' + translatedLabel + ':</strong>',
+					metadata: { name: 'Label' },
+				} ],
 				[ 'core/paragraph', {
 					content: '',
 					metadata: {
+						name: 'Value',
 						bindings: {
 							content: {
 								source: 'kntnt-gpx-blocks/statistics',
@@ -87,11 +102,11 @@
 			layout: { type: 'grid', columnCount: 2, minimumColumnWidth: null },
 		},
 		innerBlocks: [
-			row( __( 'Total length',     'kntnt-gpx-blocks' ), 'distance',      true  ),
-			row( __( 'Lowest elevation', 'kntnt-gpx-blocks' ), 'min_elevation', false ),
-			row( __( 'Highest elevation','kntnt-gpx-blocks' ), 'max_elevation', false ),
-			row( __( 'Total ascent',     'kntnt-gpx-blocks' ), 'ascent',        false ),
-			row( __( 'Total descent',    'kntnt-gpx-blocks' ), 'descent',       false ),
+			row( 'Total length',      __( 'Total length',     'kntnt-gpx-blocks' ), 'distance',      true  ),
+			row( 'Lowest elevation',  __( 'Lowest elevation', 'kntnt-gpx-blocks' ), 'min_elevation', false ),
+			row( 'Highest elevation', __( 'Highest elevation','kntnt-gpx-blocks' ), 'max_elevation', false ),
+			row( 'Total ascent',      __( 'Total ascent',     'kntnt-gpx-blocks' ), 'ascent',        false ),
+			row( 'Total descent',     __( 'Total descent',    'kntnt-gpx-blocks' ), 'descent',       false ),
 		],
 	} );
 
