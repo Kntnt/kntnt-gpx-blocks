@@ -3,6 +3,13 @@
 .wp-block-kntnt-gpx-blocks-map {
 	min-height: 2em;
 
+	// Confine Leaflet's z-indexes (panes 100–700, controls 1000) to a
+	// local stacking context so they cannot paint over sibling blocks'
+	// contextual toolbars, which the editor renders inline at z-index
+	// around 31. Without this, selecting the Elevation block immediately
+	// below the Map paints the toolbar behind the map's bottom edge.
+	isolation: isolate;
+
 	// The editor preview mounts Leaflet purely as a visual reference.
 	// Disabling pointer events keeps Gutenberg in charge of clicks on the
 	// block (for selection, drag-to-reorder, etc.) so Leaflet's pan logic
