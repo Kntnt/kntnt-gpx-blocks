@@ -491,6 +491,47 @@ test( 'editor snapshot is ignored for users without edit_posts (frontend safety)
 
 } );
 
+test( 'logged-in editor on frontend ignores empty default snapshot and resolves via saved post_content', function (): void {
+
+	// Regression guard for v0.4.2: the block.json default for
+	// __editorBlockSnapshot is `[]`. Without the count > 0 check,
+	// WordPress filling in that default at render time made the snapshot
+	// path kick in for any logged-in editor visiting the frontend, which
+	// then resolved against the empty default tree → no-map → editor saw
+	// an error notice on the published page. The count gate keeps the
+	// snapshot path scoped to genuine editor-preview requests.
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 93, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 23 );
+	elev_stub_parse_blocks( [ elev_map_block( 93, 'map-saved' ) ] );
+	elev_stub_attached_file( 93, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 23 );
+	Functions\when( 'current_user_can' )->justReturn( true );
+
+	$attributes = [
+		'mapId'                 => 'auto',
+		'__editorBlockSnapshot' => [],
+	];
+
+	$html = Render_Elevation::render( $attributes, '', elev_fake_block( 23 ) );
+
+	expect( $html )
+		->toContain( '<svg' )
+		->toContain( '<polyline' )
+		->not->toContain( 'kntnt-gpx-blocks-error' );
+
+} );
+
 test( 'frontend render still resolves via saved post_content when no snapshot is set', function (): void {
 
 	$coords = elev_synthetic_coords_3d( 200 );
