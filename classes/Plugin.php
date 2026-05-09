@@ -129,15 +129,15 @@ final class Plugin {
 	private ?Bindings\Statistics_Source $statistics_source = null;
 
 	/**
-	 * The Pattern_Registrar instance bound to init.
+	 * The Variation_Registrar instance bound to enqueue_block_editor_assets.
 	 *
 	 * Held as a property so the array callable passed to add_action() keeps a
 	 * strong reference to the object for the lifetime of the request.
 	 *
 	 * @since 1.0.0
-	 * @var Bootstrap\Pattern_Registrar|null
+	 * @var Bootstrap\Variation_Registrar|null
 	 */
-	private ?Bootstrap\Pattern_Registrar $pattern_registrar = null;
+	private ?Bootstrap\Variation_Registrar $variation_registrar = null;
 
 	/**
 	 * Returns (and on first call, creates) the singleton instance.
@@ -384,11 +384,12 @@ final class Plugin {
 		$this->statistics_source = new Bindings\Statistics_Source( $attachment_cache );
 		add_action( 'init', [ $this->statistics_source, 'register' ] );
 
-		// Register the bundled GPX Statistics pattern and its custom
-		// "kntnt" pattern category. Must run on init like Block_Registrar
-		// because both core registries are initialised on that hook.
-		$this->pattern_registrar = new Bootstrap\Pattern_Registrar();
-		add_action( 'init', [ $this->pattern_registrar, 'register' ] );
+		// Enqueue the editor-only script that registers the GPX Statistics
+		// block variation of core/group. The variation surfaces the layout
+		// in the main block inserter (under the kntnt category), with the
+		// same bindings on the inner paragraphs as a manual insertion.
+		$this->variation_registrar = new Bootstrap\Variation_Registrar();
+		add_action( 'enqueue_block_editor_assets', [ $this->variation_registrar, 'enqueue' ] );
 
 	}
 

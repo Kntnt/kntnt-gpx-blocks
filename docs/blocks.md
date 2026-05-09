@@ -1,6 +1,6 @@
 # Block specifications
 
-This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and the GPX Statistics pattern + bindings source: attributes, editor UI, render output, interactivity behaviour, accessibility. Read it when implementing or modifying any of the three. For the data flow that feeds them, see [`architecture.md`](architecture.md). For the cache they read from, see [`caching.md`](caching.md).
+This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and the GPX Statistics block-variation + bindings source: attributes, editor UI, render output, interactivity behaviour, accessibility. Read it when implementing or modifying any of the three. For the data flow that feeds them, see [`architecture.md`](architecture.md). For the cache they read from, see [`caching.md`](caching.md).
 
 ## Common to both blocks
 
@@ -13,7 +13,7 @@ This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and th
 - **Editor preview:** for the Map block, a React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) mounts Leaflet directly using GeoJSON fetched from the plugin's REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` — `view.ts` is frontend-only. For Elevation, `<ServerSideRender>` is used (its server-rendered SVG is visible without any client-side runtime).
 - **Persistence:** every attribute that is a colour or a font reference stores whatever the WordPress editor component delivers — typically a hex string for colours and a `var(--wp--preset--…)` reference for typography presets. Empty/null falls back to a hardcoded default in CSS.
 
-The GPX Statistics pattern and its bindings source follow a different model — see *GPX Statistics pattern* at the bottom of this doc. Pattern markup is registered by `Bootstrap\Pattern_Registrar` from `patterns/statistics.php`; the bindings source is `kntnt-gpx-blocks/statistics`, registered by `Bindings\Statistics_Source` with `uses_context: ['postId']`.
+The GPX Statistics variation and its bindings source follow a different model — see *GPX Statistics variation* at the bottom of this doc. The variation lives in `js/statistics-variation.js` (a plain ES2022 file using `window.wp.blocks.registerBlockVariation`); the script is enqueued by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets`. The bindings source is `kntnt-gpx-blocks/statistics`, registered by `Bindings\Statistics_Source` with `uses_context: ['postId']`.
 
 ## GPX Map
 
@@ -205,31 +205,33 @@ The screen-reader summary in `<desc>` reads (translated): `"Elevation profile fr
 
 The Map's own errors propagate up if the underlying attachment is broken — Elevation shows the same error.
 
-## GPX Statistics pattern
+## GPX Statistics variation
 
-The GPX Statistics summary is **not** a block. It is a *block pattern* + a *Block Bindings source*. The pattern provides the layout (a 2×3 grid of label/value paragraph pairs, first row spanning both columns); the bindings source provides the data (one formatted statistic per binding key). All theming is whatever the user's theme + the standard core paragraph controls give — there is no plugin-specific theming surface.
+The GPX Statistics summary is **not** a block. It is a *`core/group` block-variation* + a *Block Bindings source*. The variation provides the layout (a 2×3 grid of label/value paragraph pairs, first row spanning both columns) and is registered with `scope: ['inserter']` so it appears as a standalone item in the block inserter alongside GPX Map and GPX Elevation. The bindings source provides the data (one formatted statistic per binding key). All theming is whatever the user's theme + the standard core paragraph controls give — there is no plugin-specific theming surface.
 
-### Pattern
+### Block variation
 
-- **Slug:** `kntnt-gpx-blocks/statistics`.
-- **Title / description:** translated via `__()` from the pattern file's headers.
-- **Categories:** `kntnt` (a custom pattern category registered by `Bootstrap\Pattern_Registrar`, mirroring the `kntnt` block category).
-- **Source file:** `patterns/statistics.php`. WP-canonical pattern format with header comments + a PHP body that emits the block markup. Each label paragraph wraps its text in `<?php echo esc_html__( 'Total length', 'kntnt-gpx-blocks' ); ?>` so labels extract to `.po` and translate at insertion time.
-- **Markup shape:**
+- **Variation name:** `kntnt-gpx-blocks-statistics` (variation of `core/group`).
+- **Title / description:** translated via JS-side `__()`.
+- **Category:** `kntnt` (the existing block category registered by `Bootstrap\Block_Registrar`).
+- **Scope:** `['inserter']` only — keeps the variation out of the Group placeholder picker so unrelated `core/group` insertions are unaffected.
+- **Icon:** `chart-bar` (Dashicon string).
+- **Source file:** `js/statistics-variation.js`. Plain ES2022 that calls `window.wp.blocks.registerBlockVariation('core/group', { ... })` and uses `window.wp.i18n.__()` for label translation. Enqueued by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets` with the script handle `kntnt-gpx-blocks-statistics-variation` and dependencies on `wp-blocks` and `wp-i18n`. `wp_set_script_translations()` wires the `__()` calls into the plugin's text domain.
+- **Inserted markup shape:**
 
 ```html
-<!-- wp:group {"layout":{"type":"grid","columnCount":2}} -->
-  <!-- wp:group {"style":{"layout":{"columnSpan":2}},"layout":{"type":"flex"}} -->
+<!-- wp:group {"metadata":{"name":"GPX Statistics"},"layout":{"type":"grid","columnCount":2}} -->
+  <!-- wp:group {"metadata":{"name":"Total length"},"style":{"layout":{"columnSpan":2}},"layout":{"type":"flex"}} -->
     <!-- wp:paragraph --><p><strong>Total length:</strong></p><!-- /wp:paragraph -->
     <!-- wp:paragraph {"metadata":{"bindings":{"content":{"source":"kntnt-gpx-blocks/statistics","args":{"key":"distance"}}}}} -->
-      <p>40 km</p>
+      <p></p>
     <!-- /wp:paragraph -->
   <!-- /wp:group -->
   <!-- ... four more rows for min_elevation, max_elevation, ascent, descent ... -->
 <!-- /wp:group -->
 ```
 
-The placeholder text inside each bound paragraph (`40 km`, `-8 m`, etc.) is what shows in the inserter preview; on render, the bindings overwrite it.
+Once the user inserts the variation, the markup is standard `core/group` and `core/paragraph` content — the variation's role ends at insertion time; the post_content carries no reference back to the variation name.
 
 ### Bindings source
 
@@ -241,13 +243,13 @@ The placeholder text inside each bound paragraph (`40 km`, `-8 m`, etc.) is what
   - `mapId` (optional) — defaults to `'auto'`. Forwarded to `Resolve_Map_Id::resolve()` along with the host post ID.
 - **Return value:** a string, locale-formatted via `Format\Value_Formatter` (the same formatter the plugin uses elsewhere). Distance gets auto-metric units (m below 1000, km above); elevations are always whole metres. Both go through the existing `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
 - **Error contract:** every error path (no map, multiple maps with `'auto'`, mapId not found, cache parse error, missing file, unknown key, missing postId) returns the empty string. The misconfiguration is logged once per render via `Plugin::error()` (resolve/cache errors) or `Plugin::warning()` (unknown key) — bindings cannot return HTML, so the editor's only signal is the visible empty values in the editor preview.
-- **Per-request memoization:** an instance-level array keyed by `"$post_id|$map_id"` collapses the five binding-key calls per pattern instance into one map resolve + one cache fetch + one log line. The memo lives for the request only; cleared by PHP shutdown.
+- **Per-request memoization:** an instance-level array keyed by `"$post_id|$map_id"` collapses the five binding-key calls per inserted variation into one map resolve + one cache fetch + one log line. The memo lives for the request only; cleared by PHP shutdown.
 
 ### Render output
 
-The pattern is plain `core/group` + `core/paragraph` markup. Once inserted, it persists in `post_content` as standard core blocks; only the `metadata.bindings` slot on each value paragraph references the plugin. There is no plugin-specific HTML wrapper, no plugin-specific CSS class, and no plugin-specific JS.
+The inserted markup is plain `core/group` + `core/paragraph`. The post_content persists as standard core blocks; only the `metadata.bindings` slot on each value paragraph references the plugin. There is no plugin-specific HTML wrapper, no plugin-specific CSS class, and no plugin-specific JS at render time.
 
-When the track has no elevation data, the four elevation rows render with empty values (the binding callback returns `''` for null statistics). The static label paragraphs still render — the user can delete unwanted rows from the inserted pattern if they want to hide them entirely.
+When the track has no elevation data, the four elevation rows render with empty values (the binding callback returns `''` for null statistics). The static label paragraphs still render — the user can delete unwanted rows from the inserted variation if they want to hide them entirely.
 
 ### Errors (visitor side)
 

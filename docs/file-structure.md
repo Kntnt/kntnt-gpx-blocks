@@ -33,7 +33,7 @@ PHP classes under the `\Kntnt\Gpx_Blocks` namespace, mapped one-to-one to filena
 | `Conversion/` | `\Kntnt\Gpx_Blocks\Conversion` | `Gpx_Parser`, `Geo_Json_Converter`, `Statistics_Calculator`, `Track_Data`, `Track_Point`, `Waypoint`, `Parser_Exception`. The streaming GPX → GeoJSON + statistics pipeline. |
 | `Format/` | `\Kntnt\Gpx_Blocks\Format` | `Value_Formatter`. Locale-aware metric formatting via `number_format_i18n()`. |
 | `Rendering/` | `\Kntnt\Gpx_Blocks\Rendering` | `Render_Map`, `Render_Elevation`, `Render_Error`, `Error_Renderer`, `Resolve_Map_Id`, `Douglas_Peucker`, `Lttb`. Server-side render of each block plus shared simplification/downsampling/lookup helpers. |
-| `Bindings/` | `\Kntnt\Gpx_Blocks\Bindings` | `Statistics_Source`. The Block Bindings source `kntnt-gpx-blocks/statistics` that powers the bound paragraphs in the GPX Statistics pattern. |
+| `Bindings/` | `\Kntnt\Gpx_Blocks\Bindings` | `Statistics_Source`. The Block Bindings source `kntnt-gpx-blocks/statistics` that powers the bound paragraphs inside the GPX Statistics block-variation. |
 | `Rest/` | `\Kntnt\Gpx_Blocks\Rest` | `Preview_Controller`. The editor-only REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` consumed by the Map block's React-based editor preview. |
 | _(root)_ | `\Kntnt\Gpx_Blocks` | `Plugin` (singleton entry point that wires everything) and `Updater` (GitHub-Releases auto-update). |
 
@@ -65,19 +65,16 @@ src/blocks/
 
 Each block is dynamic (`render` field in `block.json`) and uses `viewScriptModule` to load `view.ts` as an ES module that imports `@wordpress/interactivity`.
 
-## `patterns/` — block patterns
-
-WordPress-canonical pattern files. One file per pattern, with header comments parsed by `Bootstrap\Pattern_Registrar` via `get_file_data()` and the body captured via `ob_start`/`include`. Currently holds:
-
-- `statistics.php` — the GPX Statistics pattern. Plain `core/group` + `core/paragraph` markup; each value paragraph's `content` attribute is bound to the `kntnt-gpx-blocks/statistics` Block Bindings source. Static labels are wrapped in `<?php echo esc_html__( ... ) ?>` so they extract to the project's `.po` file.
-
 ## `build/` — compiled bundles
 
 Output of `npm run build`. Mirrors `src/blocks/` with one subfolder per block, each containing the bundled `index.js`, `index.css`, `index.asset.php` (script dependencies), and where applicable `view.js` and `view.asset.php`. **`build/` is committed to git** so users who clone the repo do not need a Node toolchain — see [`coding-standards.md`](coding-standards.md) § *Project-specific instantiation* for the rationale.
 
 ## `js/` — non-bundled ES2022
 
-Plain ES2022 scripts that are enqueued directly by WordPress without going through the `@wordpress/scripts` build pipeline. Currently holds `consent-stub.js`, the inline-friendly source for the `kntnt-gpx-blocks-consent-stub` script handle that publishes the `window.kntnt_gpx_blocks` API. The contents are inlined into `<head>` by `Consent\Consent_Stub`. See [`consent.md`](consent.md) for the full contract.
+Plain ES2022 scripts that are enqueued directly by WordPress without going through the `@wordpress/scripts` build pipeline. Currently holds:
+
+- `consent-stub.js` — the inline-friendly source for the `kntnt-gpx-blocks-consent-stub` script handle that publishes the `window.kntnt_gpx_blocks` API. The contents are inlined into `<head>` by `Consent\Consent_Stub`. See [`consent.md`](consent.md) for the full contract.
+- `statistics-variation.js` — calls `window.wp.blocks.registerBlockVariation()` to register the GPX Statistics block-variation of `core/group`. Enqueued in the editor by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets`; depends on the `wp-blocks` and `wp-i18n` script handles. `wp_set_script_translations()` makes the `__()` calls inside the file pick up entries from the plugin's text domain.
 
 ## `tests/`
 

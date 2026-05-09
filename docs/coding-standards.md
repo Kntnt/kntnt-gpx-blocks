@@ -908,8 +908,7 @@ in this document to the concrete values that apply to the
 | Block build output root | `build/blocks/<slug>/` |
 | Block names | `kntnt-gpx-blocks/map`, `kntnt-gpx-blocks/elevation` |
 | Block Bindings source name | `kntnt-gpx-blocks/statistics` |
-| Block pattern slug | `kntnt-gpx-blocks/statistics` |
-| Pattern category slug | `kntnt` (display name `Kntnt`) |
+| Block variation name | `kntnt-gpx-blocks-statistics` (variation of `core/group`) |
 
 ### Versions and platform targets
 
@@ -968,8 +967,8 @@ kntnt-gpx-blocks/
 ├── docs/
 ├── languages/
 ├── classes/                     # PSR-4 source (Kntnt\Gpx_Blocks)
+├── js/                          # Plain ES2022 (consent stub, statistics variation)
 ├── migrations/                  # Empty in v1
-├── patterns/                    # Block patterns (e.g. statistics.php)
 ├── src/
 │   └── blocks/
 │       ├── map/
@@ -986,6 +985,6 @@ kntnt-gpx-blocks/
 Both blocks use the WordPress Interactivity API. In `block.json`,
 this means `viewScriptModule` (not `viewScript`) so that the entry
 file is loaded as an ES module and can `import { store, getContext }
-from '@wordpress/interactivity'`. The GPX Statistics pattern needs no
-view script — its bound paragraphs are server-rendered text.
+from '@wordpress/interactivity'`. The GPX Statistics block-variation
+needs no view script — its bound paragraphs are server-rendered text.
 

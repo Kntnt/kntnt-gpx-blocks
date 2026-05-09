@@ -4,11 +4,11 @@
 [![Requires PHP: 8.4+](https://img.shields.io/badge/PHP-8.4+-blue.svg)](https://php.net)
 [![License: GPL v2+](https://img.shields.io/badge/License-GPLv2+-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
 
-WordPress plugin that adds two Gutenberg blocks for visualising GPX tracks — **GPX Map** (an interactive map of the recorded route) and **GPX Elevation** (an elevation profile chart) — plus a **GPX Statistics** pattern that uses a Block Bindings source to pull total distance, min/max elevation, and total ascent and descent into ordinary paragraphs. The two blocks work together — moving the cursor over the elevation profile highlights the matching point on the map, and vice versa — and either can also be used on its own. The Statistics pattern is data-only: layout and theming use core paragraphs and the standard typography and colour controls.
+WordPress plugin that adds two Gutenberg blocks for visualising GPX tracks — **GPX Map** (an interactive map of the recorded route) and **GPX Elevation** (an elevation profile chart) — plus a **GPX Statistics** block-variation that uses a Block Bindings source to pull total distance, min/max elevation, and total ascent and descent into ordinary paragraphs. The two blocks work together — moving the cursor over the elevation profile highlights the matching point on the map, and vice versa — and either can also be used on its own. The Statistics variation is data-only: layout and theming use core paragraphs and the standard typography and colour controls.
 
 ## Description
 
-Take a GPX file from Strava, Komoot, Garmin Connect, AllTrails, or your own watch, drop it into the WordPress media library, and turn it into a polished route presentation: a map, an elevation profile, and a clean summary of the key numbers. No external services, no client-side GPX parsing, no JavaScript libraries fighting your theme — just blocks and a pattern that look like they were always part of WordPress.
+Take a GPX file from Strava, Komoot, Garmin Connect, AllTrails, or your own watch, drop it into the WordPress media library, and turn it into a polished route presentation: a map, an elevation profile, and a clean summary of the key numbers. No external services, no client-side GPX parsing, no JavaScript libraries fighting your theme — just blocks that look like they were always part of WordPress.
 
 ### Built like a Core block
 
@@ -16,7 +16,7 @@ Every setting uses the same color picker, the same typography panel, and the sam
 
 ### Coordinated, not coupled
 
-The blocks and the pattern talk to each other when they're on the same page, but you choose the layout. Place the map full-width at the top of an article, the elevation profile in a sidebar, and the statistics pattern under a hero image — they all reference the same GPX track via the page's Map block.
+The blocks talk to each other when they're on the same page, but you choose the layout. Place the map full-width at the top of an article, the elevation profile in a sidebar, and the statistics under a hero image — they all reference the same GPX track via the page's Map block.
 
 ### Privacy by default
 
@@ -68,25 +68,25 @@ When JavaScript is active, moving the pointer over the SVG highlights a vertical
 
 The **Colours** panel provides seven colour pickers: background, axis lines, axis tick labels, the elevation line, the cursor, and the cursor tooltip's background and text colour. Two typography groups — **Axis typography** and **Tooltip typography** — let you set font family, size, weight, and style independently for the axis labels and the tooltip text. Leaving any colour or typography input blank falls back to the plugin's CSS defaults, which inherit from your theme.
 
-### GPX Statistics pattern
+### GPX Statistics
 
-Insert the **GPX Statistics** pattern from the inserter (under the **Kntnt** category) on a page that already contains a GPX Map. The pattern is a 2×3 grid of label/value paragraph pairs — the first row spans both columns and shows the total length, the four remaining rows show lowest and highest elevation, total ascent, and total descent. Each value paragraph uses Block Bindings to pull its number from the page's GPX Map automatically; you do not need to configure anything on the pattern itself. When the page has more than one Map block you can edit a value paragraph's binding (in the block-editor source view) to add `"mapId":"<id>"`; otherwise the pattern auto-resolves to the single Map on the page.
+Insert the **GPX Statistics** block from the inserter (under the **Kntnt** category) on a page that already contains a GPX Map. It appears alongside the GPX Map and GPX Elevation blocks in the main block list. What you actually insert is a `core/group` block-variation: a 2×3 grid of label/value paragraph pairs where the first row spans both columns for the total length and the four remaining rows show lowest and highest elevation, total ascent, and total descent. Each value paragraph uses Block Bindings to pull its number from the page's GPX Map automatically; you do not need to configure anything. When the page has more than one Map block you can edit a value paragraph's binding (in the block-editor source view) to add `"mapId":"<id>"`; otherwise the values auto-resolve to the single Map on the page.
 
-The pattern is built from ordinary `core/paragraph` blocks inside `core/group` containers, so every label, every value, every column, and every spacing rule is editable through the standard block-editor controls — typography panel, colour panel, layout controls, alignment, and so on. There is no separate "Statistics block" with its own custom theming attributes; theming is whatever your theme and the core controls give you.
+Once inserted, the layout is built from ordinary `core/paragraph` blocks inside `core/group` containers, so every label, every value, every column, and every spacing rule is editable through the standard block-editor controls — typography panel, colour panel, layout controls, alignment, and so on. There is no separate "Statistics block" type with its own custom theming attributes; theming is whatever your theme and the core controls give you.
 
 Distance is formatted auto-metric: whole metres below 1000 m, one-decimal kilometres above. Elevation is always formatted in whole metres. Both use WordPress's `number_format_i18n()` so the decimal separator and thousands separator respect your site's locale — a Swedish site shows "12,3 km" and "1 234 m" while an English site shows "12.3 km" and "1,234 m". The formatting can be overridden entirely for imperial units via the `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
 
-The bound values render server-side. The pattern works in any browser with or without JavaScript enabled. There is no cursor synchronisation with the map or elevation chart — the statistics are a static summary, not an interactive visualisation. When the GPX track contains no elevation data, the four elevation rows render with empty values; if you want them hidden in that case, delete the rows from the pattern after inserting it (the pattern is editable like any other content).
+The bound values render server-side. The statistics work in any browser with or without JavaScript enabled. There is no cursor synchronisation with the map or elevation chart — they are a static summary, not an interactive visualisation. When the GPX track contains no elevation data, the four elevation rows render with empty values; if you want them hidden in that case, delete the rows from the inserted block (the variation is editable like any other content).
 
 ### Dos and don'ts
 
-**Do** place the blocks and the pattern in the same scope. They communicate by reading each other's attributes from the post content, so they must live in the same post (or the same template part, or the same synced pattern). A GPX Map in the post content and a GPX Elevation in a header template part will not connect — the elevation block will not find the map.
+**Do** place the blocks in the same scope. They communicate by reading each other's attributes from the post content, so they must live in the same post (or the same template part, or the same synced pattern). A GPX Map in the post content and a GPX Elevation in a header template part will not connect — the elevation block will not find the map.
 
-**Do** use the auto-binding when there is one map per page. With a single GPX Map on the page, both GPX Elevation and the GPX Statistics pattern resolve to it automatically. Only set the data source explicitly when you genuinely have several maps on the same page.
+**Do** use the auto-binding when there is one map per page. With a single GPX Map on the page, both GPX Elevation and GPX Statistics resolve to it automatically. Only set the data source explicitly when you genuinely have several maps on the same page.
 
 **Do** check the file size before uploading. The plugin caps GPX uploads at 10 MB by default. Most real-world GPX files are well under this — a 50 km hike at one-second resolution is around 2 MB — but multi-day raw recordings can be larger. Simplify them in your GPX editor before uploading.
 
-**Don't** split the blocks and the pattern across different scopes. If the GPX Map is in a template part and you want the elevation profile inside an article, the only reliable solution today is to put both in the article. Cross-scope discovery is not supported in v1.
+**Don't** split the blocks across different scopes. If the GPX Map is in a template part and you want the elevation profile inside an article, the only reliable solution today is to put both in the article. Cross-scope discovery is not supported in v1.
 
 **Don't** enable the GPX download button for tracks that contain personally identifiable locations — for example, a track that starts at the rider's home or a daily commute — unless the file has first been scrubbed of those locations. The download button gives every visitor the original recording, which means precise GPS coordinates of every point along the route.
 
@@ -104,7 +104,7 @@ The map tiles are loaded from OpenStreetMap's servers, which receive each visito
 
 **Does it work without JavaScript?**
 
-The **GPX Statistics** pattern is rendered server-side and works in any browser, with or without JavaScript. The **GPX Map** and **GPX Elevation** blocks require JavaScript and show a `<noscript>` fallback with the key numbers when JavaScript is disabled.
+The **GPX Statistics** values are rendered server-side via Block Bindings and work in any browser, with or without JavaScript. The **GPX Map** and **GPX Elevation** blocks require JavaScript and show a `<noscript>` fallback with the key numbers when JavaScript is disabled.
 
 **How can I get help or report a bug?**
 
@@ -276,7 +276,7 @@ The script runs a fresh `composer install --no-dev --optimize-autoloader`, runs 
 
 ### Architecture Overview
 
-The plugin parses the uploaded GPX file once on the server, converts it to GeoJSON plus a small bundle of pre-computed statistics, and caches both on the attachment as post-meta. The two blocks render dynamically (server-side, via the `render` field in `block.json`) and pass their data to the client through the WordPress Interactivity API. The map and the elevation chart synchronise their cursor through a shared interactivity state keyed by a per-map identifier. The GPX Statistics pattern is plain `core/paragraph` blocks whose `content` attribute is bound to the `kntnt-gpx-blocks/statistics` Block Bindings source; the source resolves the page's GPX Map, reads the cached statistics, and returns the locale-formatted value. OpenStreetMap tile loading is gated by a CMP-neutral consent contract that the plugin defines (PHP filter, JS global, JS event); the plugin's own code references no specific cookie-consent plugin. The plugin checks for new versions on GitHub via a built-in `Updater` class that hooks into the WordPress plugin update system.
+The plugin parses the uploaded GPX file once on the server, converts it to GeoJSON plus a small bundle of pre-computed statistics, and caches both on the attachment as post-meta. The two blocks render dynamically (server-side, via the `render` field in `block.json`) and pass their data to the client through the WordPress Interactivity API. The map and the elevation chart synchronise their cursor through a shared interactivity state keyed by a per-map identifier. The GPX Statistics layout is a `core/group` block-variation whose inner `core/paragraph` blocks have a `content` attribute bound to the `kntnt-gpx-blocks/statistics` Block Bindings source; the source resolves the page's GPX Map, reads the cached statistics, and returns the locale-formatted value. OpenStreetMap tile loading is gated by a CMP-neutral consent contract that the plugin defines (PHP filter, JS global, JS event); the plugin's own code references no specific cookie-consent plugin. The plugin checks for new versions on GitHub via a built-in `Updater` class that hooks into the WordPress plugin update system.
 
 The detailed specs live in `docs/`:
 

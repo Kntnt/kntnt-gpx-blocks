@@ -6,7 +6,7 @@ This document specifies what is tested, with what tooling, and what is deliberat
 
 | Layer | Tooling | Where | What it covers |
 |---|---|---|---|
-| PHP unit | Pest + Brain Monkey + Mockery | `tests/Unit/` | Conversion (parser, GeoJSON converter, statistics calculator), cache (read/write/version/hash), rendering algorithms (Douglas-Peucker, LTTB, climb hysteresis), value formatters, the `Resolve_Map_Id` algorithm, the `Statistics_Source` bindings dispatch, the `Pattern_Registrar` registration |
+| PHP unit | Pest + Brain Monkey + Mockery | `tests/Unit/` | Conversion (parser, GeoJSON converter, statistics calculator), cache (read/write/version/hash), rendering algorithms (Douglas-Peucker, LTTB, climb hysteresis), value formatters, the `Resolve_Map_Id` algorithm, the `Statistics_Source` bindings dispatch, the `Variation_Registrar` script enqueue |
 | PHP integration | WordPress Playground + Pest | `tests/Integration/` | The plugin actually loads in WordPress, the two blocks register, the bindings source and the pattern register, an end-to-end "upload GPX → block renders / pattern values resolve" flow works |
 | Block JS unit | Jest via `wp-scripts test-unit-js` | `src/blocks/<slug>/*.test.ts(x)` (co-located) | Pure geometry helpers behind the cursor sync; Edit-component coverage is the next target |
 | Block end-to-end | Playwright + `@wordpress/e2e-test-utils-playwright` | `tests/e2e/` | The block can be inserted in the editor, the editor preview matches the frontend, cursor sync between Map and Elevation works |
@@ -79,12 +79,12 @@ The XXE tests use a fixture that includes an external entity reference. The expe
 - The per-request memo collapses five binding-key calls into one `parse_blocks()` call and one `Attachment_Cache::get()` call (verified via `Functions\expect( 'parse_blocks' )->once()`).
 - Separate `(postId, mapId)` pairs are memoized independently — different posts on the same request do not collide.
 
-### `Bootstrap\Pattern_Registrar`
+### `Bootstrap\Variation_Registrar`
 
-- Registers the `kntnt` pattern category exactly once with the `Kntnt` label.
-- Registers the bundled pattern with title, description, keywords, and viewport-width pulled from the file headers, all routed through `__()`.
-- Logs a warning and skips registration when the pattern file is missing.
-- Including the pattern file at registration time captures the body and resolves each `<?php echo esc_html__( ... ) ?>` label, so the registered content carries the localized labels.
+- Enqueues the variation script with the `kntnt-gpx-blocks-statistics-variation` handle and dependencies on `wp-blocks` and `wp-i18n`.
+- Calls `wp_set_script_translations()` for the same handle so the script's `__()` calls pick up entries from the `kntnt-gpx-blocks` text domain.
+- The enqueued URL points at `js/statistics-variation.js`.
+- Logs a warning and skips enqueue when the script file is missing.
 
 ## What is integration-tested
 
@@ -93,7 +93,7 @@ The XXE tests use a fixture that includes an external entity reference. The expe
 WordPress Playground spins up a full WP instance in a browser-WASM sandbox. The plugin is installed, an editor user is logged in, and a fixture GPX file is uploaded through the media REST endpoint. Then:
 
 - The two blocks are insertable in a post.
-- The bundled GPX Statistics pattern is insertable from the inserter under the `kntnt` category.
+- The bundled GPX Statistics variation is insertable from the main block inserter under the `kntnt` category.
 - A post containing both blocks plus the pattern renders without PHP errors and the bound paragraphs resolve to the cached statistics.
 - The cached meta is written after upload.
 - The MIME registration accepts `.gpx` uploads (without it, this fails).
@@ -132,7 +132,7 @@ Playwright drives a WordPress Playground instance with the plugin installed:
 - Insert GPX Elevation, verify the chart appears and shares data with the Map.
 - Hover the chart, verify the cursor moves on the Map.
 - Hover the Map, verify the cursor moves on the chart.
-- Insert the GPX Statistics pattern, verify the bound paragraph values match the fixture's known totals.
+- Insert the GPX Statistics variation, verify the bound paragraph values match the fixture's known totals.
 - Simulate a "denying" consent state by dispatching `window.dispatchEvent(new CustomEvent('kntnt_gpx_blocks:consent', { detail: { category: 'external_media', granted: false } }))` before the map renders, and verify no tile request reaches `tile.openstreetmap.org`. Then dispatch the same event with `granted: true` and verify the map mounts. Verify that the default state (no event dispatched) loads tiles — the spec's default-allow rule.
 - Verify the editor bypass: in a `block-renderer` REST request, the map mounts regardless of consent state.
 
