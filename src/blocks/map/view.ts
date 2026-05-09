@@ -340,13 +340,17 @@ function nearestFraction(
  *
  * @since 1.0.0
  *
- * @param map      - Leaflet map instance.
- * @param hitLayer - SVG-rendered GeoJSON layer whose first inner layer
- *                 exposes the `<path>` we attach pointer events to.
- * @param blockEl  - Block wrapper element used for the mouse-leave handler.
- * @param coords   - Flat [lat, lng] array shared with the cursor sync.
- * @param mapId    - Interactivity store key for this map.
- * @param signal   - AbortSignal that releases listeners on tear-down.
+ * @param map          - Leaflet map instance.
+ * @param hitLayer     - SVG-rendered GeoJSON layer whose first inner layer
+ *                     exposes the `<path>` we attach pointer events to.
+ * @param blockEl      - Block wrapper element used for the mouse-leave handler.
+ * @param coords       - Flat [lat, lng] array shared with the cursor sync.
+ * @param mapId        - Interactivity store key for this map.
+ * @param onOutsideTap - Fired at the start of a track scrub and on a map click
+ *                     outside the hit-layer. Used to dismiss any sticky
+ *                     waypoint tooltip when the user's attention moves to
+ *                     the track or to empty map area.
+ * @param signal       - AbortSignal that releases listeners on tear-down.
  */
 function attachScrubHandlers(
 	map: L.Map,
@@ -354,6 +358,7 @@ function attachScrubHandlers(
 	blockEl: HTMLElement,
 	coords: Array< [ number, number ] >,
 	mapId: string,
+	onOutsideTap: () => void,
 	signal: AbortSignal
 ): void {
 	if ( coords.length < 2 ) {
@@ -385,6 +390,7 @@ function attachScrubHandlers(
 			}
 
 			event.preventDefault();
+			onOutsideTap();
 			scrubbing = true;
 			map.dragging.disable();
 			pathEl.setPointerCapture( event.pointerId );
@@ -429,12 +435,15 @@ function attachScrubHandlers(
 	pathEl.addEventListener( 'pointerup', endScrub, { signal } );
 	pathEl.addEventListener( 'pointercancel', endScrub, { signal } );
 
-	// Tap or click on the map outside the hit-layer dismisses the cursor.
-	// Symmetric for mouse and touch. Leaflet's `click` event only fires when
-	// there was no significant drag, so a panning gesture on empty map area
-	// does not dismiss.
+	// Tap or click on the map outside the hit-layer dismisses the cursor and
+	// any sticky waypoint tooltip. Symmetric for mouse and touch. Leaflet's
+	// `click` event only fires when there was no significant drag, so a
+	// panning gesture on empty map area does not dismiss. Waypoint markers
+	// set `bubblingMouseEvents: false`, so a click on a marker does not
+	// reach this handler — the marker's own click handler owns that gesture.
 	map.on( 'click', () => {
 		state[ mapId ].fraction = null;
+		onOutsideTap();
 	} );
 
 	// Mouse leaves the block — null the fraction so the cursor disappears.
@@ -670,17 +679,21 @@ function bootMount(
 			} );
 			layer.addTo( map );
 
+			// Shared SVG renderer used by every interactive overlay that
+			// needs a real DOM element: the hit-layer below and the waypoint
+			// markers further down. Sharing one renderer keeps everything
+			// in a single `<svg>` so DOM order alone decides stacking and
+			// pointer-event priority — later additions sit on top. Canvas
+			// would force routing through Leaflet's mouse-event emulation
+			// (slow on touch — see the hit-layer commit) and would split
+			// the overlays across two stacked elements, where the SVG would
+			// then steal pointer events from canvas-rendered markers below.
+			const svgRenderer = L.svg();
+
 			// Invisible fat overlay sharing the visible polyline's geometry.
 			// Stacking a transparent weight: 30 layer above the visible 4 px
 			// stroke widens the pointer hit zone to ~15 px on each side without
-			// changing the visible appearance. The hit layer is forced onto
-			// the SVG renderer (overriding the map's canvas default) so it
-			// renders to a real `<path>` DOM element that native pointer
-			// events can attach to. Canvas-rendered shapes have no per-shape
-			// element, which forces routing through Leaflet's mouse-event
-			// emulation — and on touch that emulation only synthesises
-			// `mousedown` after a tap-detection delay, by which time the
-			// browser has already claimed the gesture for scroll or pan.
+			// changing the visible appearance.
 			const hitLayer = L.geoJSON( mapState.geojson, {
 				style: () => ( {
 					weight: 30,
@@ -689,7 +702,7 @@ function bootMount(
 					className: 'kntnt-gpx-blocks-track-hit',
 				} ),
 				interactive: true,
-				renderer: L.svg(),
+				renderer: svgRenderer,
 			} );
 			hitLayer.addTo( map );
 
@@ -834,7 +847,29 @@ function bootMount(
 			} );
 			cursor.addTo( map );
 
+			// Sticky-tooltip state shared across all waypoint markers in this
+			// map. At most one marker is sticky at a time. `closeSticky`
+			// nulls the reference *before* calling `closeTooltip`, so the
+			// `tooltipclose` handler below sees no sticky and skips its
+			// auto-reopen path. The same helper is also handed to
+			// `attachScrubHandlers` so a tap on the track or on empty map
+			// area dismisses any open sticky.
+			let stickyMarker: L.CircleMarker | null = null;
+			const closeSticky = (): void => {
+				if ( stickyMarker ) {
+					const previous = stickyMarker;
+					stickyMarker = null;
+					previous.closeTooltip();
+				}
+			};
+
 			// Add a circleMarker for each waypoint from the hydrated GeoJSON.
+			// Markers go through `svgRenderer` (the same instance as the
+			// hit-layer) so they sit later in the SVG than the 30 px
+			// hit-zone path and therefore receive pointer events first.
+			// `bubblingMouseEvents: false` keeps a click on a marker from
+			// also firing `map.on('click')`, which would otherwise dismiss
+			// the tooltip we just opened.
 			const waypointsData = mapState.waypoints as GeoJSON.GeoJsonObject;
 			if ( waypointsData?.type === 'FeatureCollection' ) {
 				const wfc = waypointsData as GeoJSON.FeatureCollection;
@@ -858,6 +893,8 @@ function bootMount(
 						fillOpacity: 1,
 						weight: 2,
 						interactive: true,
+						bubblingMouseEvents: false,
+						renderer: svgRenderer,
 					} );
 
 					// Build the tooltip label from name and optional desc.
@@ -889,11 +926,51 @@ function bootMount(
 							);
 						} );
 
+						// Bind with `permanent: false` so Leaflet's built-in
+						// hover handlers drive the transient open-on-mouseover
+						// / close-on-mouseout behaviour. Sticky mode is
+						// layered on top by intercepting `tooltipclose` and
+						// re-opening when this marker is the sticky one.
 						marker.bindTooltip( tooltipEl, {
 							direction: 'top',
 							permanent: false,
 							sticky: false,
 							opacity: 1,
+						} );
+
+						// Click toggles sticky on this marker, swapping out
+						// any sticky on a different marker. The transient
+						// hover tooltip is already open at this point (a
+						// click implies the pointer is over the marker), so
+						// `openTooltip()` is idempotent on the open case
+						// and is only doing real work after a swap.
+						marker.on( 'click', () => {
+							if ( stickyMarker === marker ) {
+								closeSticky();
+								return;
+							}
+
+							closeSticky();
+							stickyMarker = marker;
+							marker.openTooltip();
+						} );
+
+						// Leaflet auto-closes the tooltip on `mouseout`. When
+						// this marker is the sticky one, re-open in a
+						// microtask so Leaflet finishes its close cleanup
+						// first and the recursive close→open→close chain
+						// breaks cleanly. The reference check inside the
+						// microtask guards against the user dismissing
+						// before the microtask runs.
+						marker.on( 'tooltipclose', () => {
+							if ( stickyMarker !== marker ) {
+								return;
+							}
+							queueMicrotask( () => {
+								if ( stickyMarker === marker ) {
+									marker.openTooltip();
+								}
+							} );
 						} );
 					}
 
@@ -909,13 +986,17 @@ function bootMount(
 			// zone for hover and press is wide enough to feel smooth. Hover
 			// over the track updates fraction; press-and-drag on the track
 			// scrubs the cursor without panning the map. Pointerup anywhere
-			// ends the scrub.
+			// ends the scrub. The `closeSticky` callback wired in here lets
+			// a track tap or empty-area click dismiss any sticky waypoint
+			// tooltip — the convention "tap outside to close" extended to
+			// the two outside surfaces this map exposes.
 			attachScrubHandlers(
 				map,
 				hitLayer,
 				blockEl,
 				coords,
 				mapId,
+				closeSticky,
 				disposer.signal
 			);
 		},
