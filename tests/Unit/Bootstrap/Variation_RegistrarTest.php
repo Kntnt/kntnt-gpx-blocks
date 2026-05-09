@@ -2,16 +2,15 @@
 /**
  * Tests for Bootstrap\Variation_Registrar.
  *
- * Covers the registrar's two responsibilities: enqueuing the variation
- * registration script with the right handle and dependencies, and wiring
- * up `wp_set_script_translations()` so the script's `__()` calls pick up
- * the plugin's text domain. Also covers the defensive guard for a missing
- * script file.
+ * Covers the registrar's responsibilities: enqueuing the variation
+ * registration script, the editor-only preview script + stylesheet, wiring
+ * up `wp_set_script_translations()` so each script's `__()` calls pick up
+ * the plugin's text domain, and the defensive guards for missing assets.
  *
  * The registrar accepts a constructor-injectable plugin root so tests
- * point it at the real `js/statistics-variation.js` (for happy-path
- * coverage) or at a non-existent directory (for the missing-script guard)
- * without touching the Plugin singleton.
+ * point it at the real `js/`/`css/` directories (for happy-path coverage)
+ * or at a non-existent directory (for the missing-asset guards) without
+ * touching the Plugin singleton.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -33,59 +32,129 @@ beforeEach( function (): void {
 } );
 
 // ---------------------------------------------------------------------------
-// Happy path: real bundled script file
+// Happy path: real bundled assets
 // ---------------------------------------------------------------------------
 
 test( 'enqueues the variation script with the right handle and dependencies', function (): void {
 
-	Functions\expect( 'wp_enqueue_script' )
-		->once()
-		->with(
-			'kntnt-gpx-blocks-statistics-variation',
-			Mockery::type( 'string' ),
-			Mockery::on(
-				static fn ( array $deps ): bool => in_array( 'wp-blocks', $deps, true )
-					&& in_array( 'wp-i18n', $deps, true )
-			),
-			Mockery::type( 'string' ),
-			true,
-		);
+	$captured_handles = [];
 
-	Functions\expect( 'wp_set_script_translations' )
-		->once()
-		->with( 'kntnt-gpx-blocks-statistics-variation', 'kntnt-gpx-blocks' );
+	Functions\when( 'wp_enqueue_script' )->alias(
+		static function ( string $handle, string $url, array $deps ) use ( &$captured_handles ): void {
+			$captured_handles[ $handle ] = $deps;
+		}
+	);
+	Functions\when( 'wp_set_script_translations' )->justReturn( true );
+	Functions\when( 'wp_enqueue_style' )->justReturn( true );
 
 	$registrar = new Variation_Registrar( __DIR__ . '/../../..' );
 	$registrar->enqueue();
+
+	expect( $captured_handles )->toHaveKey( 'kntnt-gpx-blocks-statistics-variation' );
+	expect( $captured_handles['kntnt-gpx-blocks-statistics-variation'] )->toContain( 'wp-blocks' );
+	expect( $captured_handles['kntnt-gpx-blocks-statistics-variation'] )->toContain( 'wp-i18n' );
+
+} );
+
+test( 'enqueues the editor preview script with the documented dependencies', function (): void {
+
+	$captured_handles = [];
+
+	Functions\when( 'wp_enqueue_script' )->alias(
+		static function ( string $handle, string $url, array $deps ) use ( &$captured_handles ): void {
+			$captured_handles[ $handle ] = $deps;
+		}
+	);
+	Functions\when( 'wp_set_script_translations' )->justReturn( true );
+	Functions\when( 'wp_enqueue_style' )->justReturn( true );
+
+	$registrar = new Variation_Registrar( __DIR__ . '/../../..' );
+	$registrar->enqueue();
+
+	expect( $captured_handles )->toHaveKey( 'kntnt-gpx-blocks-statistics-preview' );
+	$preview_deps = $captured_handles['kntnt-gpx-blocks-statistics-preview'];
+
+	// The preview HOC needs wp.hooks (addFilter), wp.element (createElement,
+	// useState, useEffect), wp.compose (createHigherOrderComponent), wp.data
+	// (useSelect), wp.i18n (__), and wp.apiFetch.
+	foreach ( [ 'wp-hooks', 'wp-element', 'wp-compose', 'wp-data', 'wp-i18n', 'wp-api-fetch' ] as $dep ) {
+		expect( $preview_deps )->toContain( $dep );
+	}
+
+} );
+
+test( 'enqueues the editor preview stylesheet alongside the script', function (): void {
+
+	$captured_styles = [];
+
+	Functions\when( 'wp_enqueue_script' )->justReturn( true );
+	Functions\when( 'wp_set_script_translations' )->justReturn( true );
+	Functions\when( 'wp_enqueue_style' )->alias(
+		static function ( string $handle, string $url ) use ( &$captured_styles ): void {
+			$captured_styles[ $handle ] = $url;
+		}
+	);
+
+	$registrar = new Variation_Registrar( __DIR__ . '/../../..' );
+	$registrar->enqueue();
+
+	expect( $captured_styles )->toHaveKey( 'kntnt-gpx-blocks-statistics-preview' );
+	expect( $captured_styles['kntnt-gpx-blocks-statistics-preview'] )->toContain( '/css/statistics-preview.css' );
+
+} );
+
+test( 'wires script translations for both scripts', function (): void {
+
+	$translated_handles = [];
+
+	Functions\when( 'wp_enqueue_script' )->justReturn( true );
+	Functions\when( 'wp_enqueue_style' )->justReturn( true );
+	Functions\when( 'wp_set_script_translations' )->alias(
+		static function ( string $handle, string $domain ) use ( &$translated_handles ): bool {
+			$translated_handles[ $handle ] = $domain;
+			return true;
+		}
+	);
+
+	$registrar = new Variation_Registrar( __DIR__ . '/../../..' );
+	$registrar->enqueue();
+
+	expect( $translated_handles )->toHaveKey( 'kntnt-gpx-blocks-statistics-variation' );
+	expect( $translated_handles )->toHaveKey( 'kntnt-gpx-blocks-statistics-preview' );
+	expect( $translated_handles['kntnt-gpx-blocks-statistics-variation'] )->toBe( 'kntnt-gpx-blocks' );
+	expect( $translated_handles['kntnt-gpx-blocks-statistics-preview'] )->toBe( 'kntnt-gpx-blocks' );
 
 } );
 
 test( 'script URL points at the js/statistics-variation.js file', function (): void {
 
-	$captured_url = null;
+	$captured_urls = [];
 
 	Functions\when( 'wp_enqueue_script' )->alias(
-		static function ( string $handle, string $url ) use ( &$captured_url ): void {
-			$captured_url = $url;
+		static function ( string $handle, string $url ) use ( &$captured_urls ): void {
+			$captured_urls[ $handle ] = $url;
 		}
 	);
 	Functions\when( 'wp_set_script_translations' )->justReturn( true );
+	Functions\when( 'wp_enqueue_style' )->justReturn( true );
 
 	$registrar = new Variation_Registrar( __DIR__ . '/../../..' );
 	$registrar->enqueue();
 
-	expect( $captured_url )->toContain( '/js/statistics-variation.js' );
+	expect( $captured_urls['kntnt-gpx-blocks-statistics-variation'] ?? '' )->toContain( '/js/statistics-variation.js' );
+	expect( $captured_urls['kntnt-gpx-blocks-statistics-preview'] ?? '' )->toContain( '/js/statistics-preview.js' );
 
 } );
 
 // ---------------------------------------------------------------------------
-// Defensive guard: missing script file
+// Defensive guard: missing assets
 // ---------------------------------------------------------------------------
 
-test( 'logs a warning and skips enqueue when the script file is missing', function (): void {
+test( 'logs a warning and skips every enqueue when the plugin root is missing', function (): void {
 
 	Functions\expect( 'wp_enqueue_script' )->never();
 	Functions\expect( 'wp_set_script_translations' )->never();
+	Functions\expect( 'wp_enqueue_style' )->never();
 
 	$registrar = new Variation_Registrar( '/tmp/kntnt-gpx-blocks-nonexistent-' . uniqid() );
 	$registrar->enqueue();

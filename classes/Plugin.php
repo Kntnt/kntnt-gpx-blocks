@@ -116,6 +116,17 @@ final class Plugin {
 	private ?Rest\Preview_Controller $preview_controller = null;
 
 	/**
+	 * The Statistics_Preview_Controller instance bound to rest_api_init.
+	 *
+	 * Held as a property so the array callable passed to add_action() keeps a
+	 * strong reference to the object for the lifetime of the request.
+	 *
+	 * @since 1.0.0
+	 * @var Rest\Statistics_Preview_Controller|null
+	 */
+	private ?Rest\Statistics_Preview_Controller $statistics_preview_controller = null;
+
+	/**
 	 * The Statistics_Source instance bound to init.
 	 *
 	 * Held as a property so the array callable passed to add_action() keeps a
@@ -376,6 +387,13 @@ final class Plugin {
 		// React useEffect against this endpoint.
 		$this->preview_controller = new Rest\Preview_Controller( $attachment_cache );
 		add_action( 'rest_api_init', [ $this->preview_controller, 'register_routes' ] );
+
+		// Register the editor-only statistics preview REST endpoint so the
+		// editor JS can replace the bindings-source label ("GPX statistics")
+		// with the real resolved values for each bound paragraph. The
+		// front-end render path uses Bindings\Statistics_Source directly.
+		$this->statistics_preview_controller = new Rest\Statistics_Preview_Controller( $attachment_cache );
+		add_action( 'rest_api_init', [ $this->statistics_preview_controller, 'register_routes' ] );
 
 		// Register the Block Bindings source that exposes the cached GPX
 		// statistics to bound paragraphs in the bundled GPX Statistics

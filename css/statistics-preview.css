@@ -1,0 +1,32 @@
+/*
+ * Editor-only styles for the GPX Statistics preview.
+ *
+ * The preview text is wrapped in a span by js/statistics-preview.js and
+ * displayed inside a bound core/paragraph in the editor. The colour matches
+ * --wp-block-synced-color, the same purple Gutenberg uses for the
+ * "connected/bound attribute" indicator chip in the block toolbar — reusing
+ * that token makes the visual contract self-evident: the purple text is a
+ * dynamic, source-resolved value, not something the builder typed.
+ *
+ * The styles never reach the front end. The bound paragraphs render through
+ * their Block Bindings source on the frontend with the theme's normal text
+ * colour and no plugin-specific markup.
+ *
+ * @since 1.0.0
+ */
+
+.kntnt-gpx-blocks-statistics-preview {
+	color: var(--wp-block-synced-color, #7a00df);
+}
+
+.kntnt-gpx-blocks-statistics-preview--hint {
+	font-style: italic;
+}
+
+.kntnt-gpx-blocks-statistics-preview--null {
+	font-style: normal;
+}
+
+.kntnt-gpx-blocks-statistics-preview--value {
+	font-style: normal;
+}

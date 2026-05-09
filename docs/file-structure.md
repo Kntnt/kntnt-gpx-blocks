@@ -34,7 +34,7 @@ PHP classes under the `\Kntnt\Gpx_Blocks` namespace, mapped one-to-one to filena
 | `Format/` | `\Kntnt\Gpx_Blocks\Format` | `Value_Formatter`. Locale-aware metric formatting via `number_format_i18n()`. |
 | `Rendering/` | `\Kntnt\Gpx_Blocks\Rendering` | `Render_Map`, `Render_Elevation`, `Render_Error`, `Error_Renderer`, `Resolve_Map_Id`, `Douglas_Peucker`, `Lttb`. Server-side render of each block plus shared simplification/downsampling/lookup helpers. |
 | `Bindings/` | `\Kntnt\Gpx_Blocks\Bindings` | `Statistics_Source`. The Block Bindings source `kntnt-gpx-blocks/statistics` that powers the bound paragraphs inside the GPX Statistics block-variation. |
-| `Rest/` | `\Kntnt\Gpx_Blocks\Rest` | `Preview_Controller`. The editor-only REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` consumed by the Map block's React-based editor preview. |
+| `Rest/` | `\Kntnt\Gpx_Blocks\Rest` | `Preview_Controller` (the editor-only REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` consumed by the Map block's React-based editor preview) and `Statistics_Preview_Controller` (the editor-only REST endpoint `kntnt-gpx-blocks/v1/statistics-preview` consumed by the GPX Statistics editor preview). |
 | _(root)_ | `\Kntnt\Gpx_Blocks` | `Plugin` (singleton entry point that wires everything) and `Updater` (GitHub-Releases auto-update). |
 
 ## `src/blocks/` — block source
@@ -77,8 +77,17 @@ Plain ES2022 scripts that are enqueued directly by WordPress without going throu
 
 - `consent-stub.js` — the inline-friendly source for the `kntnt-gpx-blocks-consent-stub` script handle that publishes the `window.kntnt_gpx_blocks` API. The contents are inlined into `<head>` by `Consent\Consent_Stub`. See [`consent.md`](consent.md) for the full contract.
 - `statistics-variation.js` — calls `window.wp.blocks.registerBlockVariation()` to register the GPX Statistics block-variation of `core/group`. Enqueued in the editor by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets`; depends on the `wp-blocks` and `wp-i18n` script handles. `wp_set_script_translations()` makes the `__()` calls inside the file pick up entries from the plugin's text domain.
+- `statistics-preview.js` — registers an `editor.BlockEdit` HOC (via `wp.hooks.addFilter`) that wraps `core/paragraph`'s edit component for paragraphs bound to the `kntnt-gpx-blocks/statistics` source, fetches the resolved values from the editor-only REST endpoint `/kntnt-gpx-blocks/v1/statistics-preview`, and renders the formatted value (or an actionable hint on failure) in the bindings purple. Editor-only; enqueued alongside `statistics-variation.js` by `Bootstrap\Variation_Registrar`. Depends on the `wp-hooks`, `wp-element`, `wp-compose`, `wp-data`, `wp-i18n`, and `wp-api-fetch` script handles. The matching stylesheet lives at `css/statistics-preview.css`.
 
 These files are shipped **un-minified**, both in the repo and in the release ZIP. `build-release-zip.sh` copies them verbatim. The decision is deliberate: `consent-stub.js` is part of the public integration contract documented in [`consent.md`](consent.md), so site builders writing CMP glue read the source directly in DevTools without needing source maps; the files are tiny (a few kB each, gzipped to ~2–3 kB combined over the wire) so the bandwidth gain from minification is below the noise floor; and adding a minifier just for these two files would drag a build step (`terser`/`esbuild`) into a directory whose entire point is "no build". The block code under `src/blocks/` is a separate matter — `@wordpress/scripts` minifies it in production mode, and the minified output in `build/` is what ships.
+
+## `css/` — non-bundled CSS
+
+Plain CSS files that are enqueued directly by WordPress. Currently holds:
+
+- `statistics-preview.css` — editor-only stylesheet that styles the resolved-value spans the GPX Statistics editor preview (`js/statistics-preview.js`) injects into bound paragraphs. Reuses `--wp-block-synced-color` (with a `#7a00df` fallback) so the preview text matches the purple Gutenberg uses for synced/bound attribute indicators. Enqueued by `Bootstrap\Variation_Registrar`.
+
+Same shipping policy as `js/` — un-minified, copied verbatim by `build-release-zip.sh`.
 
 ## `tests/`
 
