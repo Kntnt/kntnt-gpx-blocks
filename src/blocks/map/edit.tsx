@@ -20,6 +20,11 @@ import {
 	InspectorControls,
 	MediaPlaceholder,
 	PanelColorSettings,
+	useSettings,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalFontFamilyControl as FontFamilyControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalFontAppearanceControl as FontAppearanceControl,
 } from '@wordpress/block-editor';
 import {
 	PanelBody,
@@ -27,6 +32,10 @@ import {
 	ToggleControl,
 	FontSizePicker,
 	SelectControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalToolsPanel as ToolsPanel,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalToolsPanelItem as ToolsPanelItem,
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
@@ -66,28 +75,22 @@ interface MapAttributes {
 }
 
 /**
- * Font family options for the waypoint label typography control.
- *
- * Covers the most common system stacks. The editor can store a theme preset
- * reference (var(--wp--preset--font-family--…)) by typing it into the field,
- * but the SelectControl covers the common case without needing an experimental
- * API.
+ * Theme typography preset entry shape, as returned by the unified theme
+ * settings (`useSettings('typography.fontFamilies')` /
+ * `useSettings('typography.fontSizes')`).
  *
  * @since 1.0.0
  */
-const FONT_FAMILY_OPTIONS = [
-	{ label: __( 'Default (inherit)', 'kntnt-gpx-blocks' ), value: '' },
-	{ label: 'Sans-serif', value: 'sans-serif' },
-	{ label: 'Serif', value: 'serif' },
-	{ label: 'Monospace', value: 'monospace' },
-	{ label: 'Arial', value: 'Arial, sans-serif' },
-	{ label: 'Georgia', value: 'Georgia, serif' },
-	{
-		label: 'Helvetica Neue',
-		value: "'Helvetica Neue', Helvetica, sans-serif",
-	},
-	{ label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
-];
+interface FontFamilyPreset {
+	name: string;
+	slug: string;
+	fontFamily: string;
+}
+interface FontSizePreset {
+	name: string;
+	slug: string;
+	size: string;
+}
 
 /**
  * Preset aspect-ratio options for the Layout panel dropdown.
@@ -132,6 +135,147 @@ interface MediaObject {
 	id: number;
 	url: string;
 	[ key: string ]: unknown;
+}
+
+/**
+ * Per-aspect setter signature passed into the typography panel renderer.
+ *
+ * @since 1.0.0
+ */
+type SetTypography = ( values: {
+	fontFamily?: string;
+	fontSize?: string;
+	fontWeight?: string;
+	fontStyle?: string;
+} ) => void;
+
+/**
+ * Renders a unified Typography ToolsPanel matching the surface used by core
+ * Paragraph/Group blocks: a per-aspect dropdown menu lets the editor enable or
+ * disable each aspect individually, and "Reset all" returns every aspect to
+ * the inherited theme default.
+ *
+ * The panel exposes three aspects — Font (family), Size, and Appearance
+ * (weight + style combined) — because that is the surface persisted in the
+ * block's attribute schema. Adding more aspects (line height, letter spacing,
+ * etc.) would require new attributes and is out of scope here.
+ *
+ * @since 1.0.0
+ *
+ * @param {Object}             props               Component props.
+ * @param {string}             props.label         Localised panel title.
+ * @param {string}             props.fontFamily    Current font-family value.
+ * @param {string}             props.fontSize      Current font-size value.
+ * @param {string}             props.fontWeight    Current font-weight value.
+ * @param {string}             props.fontStyle     Current font-style value.
+ * @param {FontFamilyPreset[]} props.fontFamilies  Theme font-family presets.
+ * @param {FontSizePreset[]}   props.fontSizes     Theme font-size presets.
+ * @param {SetTypography}      props.setTypography Setter callback.
+ */
+function TypographyToolsPanel( {
+	label,
+	fontFamily,
+	fontSize,
+	fontWeight,
+	fontStyle,
+	fontFamilies,
+	fontSizes,
+	setTypography,
+}: {
+	label: string;
+	fontFamily: string;
+	fontSize: string;
+	fontWeight: string;
+	fontStyle: string;
+	fontFamilies: FontFamilyPreset[];
+	fontSizes: FontSizePreset[];
+	setTypography: SetTypography;
+} ): JSX.Element {
+	const hasAppearance = fontWeight !== '' || fontStyle !== '';
+
+	return (
+		// @ts-ignore — ToolsPanel's typings lag the runtime API.
+		<ToolsPanel
+			label={ label }
+			resetAll={ () =>
+				setTypography( {
+					fontFamily: '',
+					fontSize: '',
+					fontWeight: '',
+					fontStyle: '',
+				} )
+			}
+		>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => fontFamily !== '' }
+				label={ __( 'Font', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { fontFamily: '' } ) }
+				isShownByDefault
+			>
+				<FontFamilyControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					value={ fontFamily }
+					fontFamilies={ fontFamilies }
+					onChange={ ( value: string | undefined ) =>
+						setTypography( { fontFamily: value ?? '' } )
+					}
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => fontSize !== '' }
+				label={ __( 'Size', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { fontSize: '' } ) }
+				isShownByDefault
+			>
+				<FontSizePicker
+					__next40pxDefaultSize
+					value={ fontSize || undefined }
+					fontSizes={ fontSizes }
+					onChange={ ( value: number | string | undefined ) =>
+						setTypography( {
+							fontSize:
+								value !== undefined && value !== ''
+									? String( value )
+									: '',
+						} )
+					}
+					withReset={ false }
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => hasAppearance }
+				label={ __( 'Appearance', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () =>
+					setTypography( { fontWeight: '', fontStyle: '' } )
+				}
+				isShownByDefault
+			>
+				<FontAppearanceControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					hasFontWeights
+					hasFontStyles
+					value={ {
+						fontWeight: fontWeight || undefined,
+						fontStyle: fontStyle || undefined,
+					} }
+					onChange={ ( value: {
+						fontWeight?: string;
+						fontStyle?: string;
+					} ) =>
+						setTypography( {
+							fontWeight: value?.fontWeight ?? '',
+							fontStyle: value?.fontStyle ?? '',
+						} )
+					}
+				/>
+			</ToolsPanelItem>
+		</ToolsPanel>
+	);
 }
 
 /**
@@ -183,6 +327,15 @@ export const MapEdit = ( {
 		waypointLabelFontWeight,
 		waypointLabelFontStyle,
 	} = attributes;
+
+	// Pull the merged theme typography presets so the unified Typography
+	// panel exposes the same Standard/preset choices as core Paragraph/Group.
+	const [ themeFontFamilies, themeFontSizes ] = useSettings(
+		'typography.fontFamilies',
+		'typography.fontSizes'
+	) as [ FontFamilyPreset[] | undefined, FontSizePreset[] | undefined ];
+	const fontFamilies = themeFontFamilies ?? [];
+	const fontSizes = themeFontSizes ?? [];
 
 	// Inject CSS variables onto the block wrapper. The MapEditorPreview reads
 	// trackColor and waypointColor directly from props and applies them to
@@ -405,66 +558,35 @@ export const MapEdit = ( {
 							),
 						},
 					] }
-				>
-					<SelectControl
-						label={ __( 'Label font family', 'kntnt-gpx-blocks' ) }
-						value={ waypointLabelFontFamily }
-						options={ FONT_FAMILY_OPTIONS }
-						onChange={ ( value ) =>
-							setAttributes( { waypointLabelFontFamily: value } )
+				/>
+				<TypographyToolsPanel
+					label={ __(
+						'Waypoint label typography',
+						'kntnt-gpx-blocks'
+					) }
+					fontFamily={ waypointLabelFontFamily }
+					fontSize={ waypointLabelFontSize }
+					fontWeight={ waypointLabelFontWeight }
+					fontStyle={ waypointLabelFontStyle }
+					fontFamilies={ fontFamilies }
+					fontSizes={ fontSizes }
+					setTypography={ ( values ) => {
+						const next: Partial< MapAttributes > = {};
+						if ( values.fontFamily !== undefined ) {
+							next.waypointLabelFontFamily = values.fontFamily;
 						}
-					/>
-					<FontSizePicker
-						value={ waypointLabelFontSize || undefined }
-						onChange={ ( value ) =>
-							setAttributes( {
-								waypointLabelFontSize:
-									value !== undefined ? String( value ) : '',
-							} )
+						if ( values.fontSize !== undefined ) {
+							next.waypointLabelFontSize = values.fontSize;
 						}
-						withReset={ true }
-					/>
-					<SelectControl
-						label={ __( 'Label font weight', 'kntnt-gpx-blocks' ) }
-						value={ waypointLabelFontWeight || 'normal' }
-						options={ [
-							{
-								label: __( 'Normal', 'kntnt-gpx-blocks' ),
-								value: 'normal',
-							},
-							{
-								label: __( 'Bold', 'kntnt-gpx-blocks' ),
-								value: 'bold',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( {
-								waypointLabelFontWeight:
-									value === 'normal' ? '' : value,
-							} )
+						if ( values.fontWeight !== undefined ) {
+							next.waypointLabelFontWeight = values.fontWeight;
 						}
-					/>
-					<SelectControl
-						label={ __( 'Label font style', 'kntnt-gpx-blocks' ) }
-						value={ waypointLabelFontStyle || 'normal' }
-						options={ [
-							{
-								label: __( 'Normal', 'kntnt-gpx-blocks' ),
-								value: 'normal',
-							},
-							{
-								label: __( 'Italic', 'kntnt-gpx-blocks' ),
-								value: 'italic',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( {
-								waypointLabelFontStyle:
-									value === 'normal' ? '' : value,
-							} )
+						if ( values.fontStyle !== undefined ) {
+							next.waypointLabelFontStyle = values.fontStyle;
 						}
-					/>
-				</PanelColorSettings>
+						setAttributes( next );
+					} }
+				/>
 			</InspectorControls>
 			<div { ...blockProps }>
 				<MapEditorPreview

@@ -55,7 +55,8 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 3. **Controls** — toggles for the four control overlays.
 4. **Interactions** — toggles for the four interaction modes (drag, pinch zoom, double-click zoom, keyboard). Scroll-wheel and box zoom are not toggles: the wheel handler is fixed (modifier-or-pinch zooms, two-finger pan pans, mouse wheel surfaces a hint), and box zoom is removed.
 5. **Track** — `PanelColorSettings` for `trackColor` and `trackCursorColor`.
-6. **Waypoints** — `PanelColorSettings` for marker colour, label colours, and a typography group for the label font.
+6. **Waypoints** — `PanelColorSettings` for marker colour and the two label colours.
+7. **Waypoint label typography** — the unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern used by core Paragraph and Group), exposing three aspects through the per-aspect dropdown menu: **Font** (`FontFamilyControl`, fed by `useSettings('typography.fontFamilies')`), **Size** (`FontSizePicker`, fed by `useSettings('typography.fontSizes')`), and **Appearance** (`FontAppearanceControl`, which writes to the `waypointLabelFontWeight` and `waypointLabelFontStyle` attributes as a single combined control). Each aspect can be enabled or disabled individually; an unset aspect reads as "Standard" and inherits from the theme. "Reset all" clears every aspect at once. The four `waypointLabelFont*` attribute names and types are unchanged from earlier versions of the plugin, so existing posts keep rendering with their stored values.
 
 ### Render output
 
@@ -162,8 +163,8 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
 1. **Data source** — `SelectControl` listing "Auto" and every GPX Map on the page (label = `"Karta {n}: {filename}"`). Open by default.
 2. **Layout** — aspect-ratio + min-height.
 3. **Colours** — `PanelColorSettings` for the seven colours.
-4. **Axis typography** — `FontFamilyControl`, `FontSizePicker`, weight, style.
-5. **Tooltip typography** — same group, separate values.
+4. **Axis typography** — the unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern used by core Paragraph and Group), exposing three aspects through the per-aspect dropdown menu: **Font** (`FontFamilyControl`, fed by `useSettings('typography.fontFamilies')`), **Size** (`FontSizePicker`, fed by `useSettings('typography.fontSizes')`), and **Appearance** (`FontAppearanceControl`, which writes to `axisFontWeight` and `axisFontStyle` as a single combined control). Each aspect can be enabled or disabled individually; an unset aspect reads as "Standard" and inherits from the theme. "Reset all" clears every aspect at once.
+5. **Tooltip typography** — the same `ToolsPanel` shape, writing into the `tooltipFont*` attribute group instead of the `axisFont*` group. The four `axisFont*` and four `tooltipFont*` attribute names and types are unchanged from earlier versions of the plugin, so existing posts keep rendering with their stored values.
 
 ### Render output
 

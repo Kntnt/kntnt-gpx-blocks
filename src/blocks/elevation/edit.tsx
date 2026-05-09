@@ -15,6 +15,11 @@ import {
 	InspectorControls,
 	PanelColorSettings,
 	useBlockProps,
+	useSettings,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalFontFamilyControl as FontFamilyControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalFontAppearanceControl as FontAppearanceControl,
 } from '@wordpress/block-editor';
 import type { BlockEditProps } from '@wordpress/blocks';
 import {
@@ -23,6 +28,10 @@ import {
 	PanelBody,
 	SelectControl,
 	TextControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalToolsPanel as ToolsPanel,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalToolsPanelItem as ToolsPanelItem,
 } from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
 import { useSelect } from '@wordpress/data';
@@ -74,28 +83,22 @@ interface EditorBlock {
 }
 
 /**
- * Font family options for axis and tooltip typography controls.
- *
- * Covers the most common system stacks. The editor can store a theme preset
- * reference (var(--wp--preset--font-family--…)) by typing it into the field,
- * but the SelectControl covers the common case without needing an experimental
- * API.
+ * Theme typography preset entry shape, as returned by the unified theme
+ * settings (`useSettings('typography.fontFamilies')` /
+ * `useSettings('typography.fontSizes')`).
  *
  * @since 1.0.0
  */
-const FONT_FAMILY_OPTIONS = [
-	{ label: __( 'Default (inherit)', 'kntnt-gpx-blocks' ), value: '' },
-	{ label: 'Sans-serif', value: 'sans-serif' },
-	{ label: 'Serif', value: 'serif' },
-	{ label: 'Monospace', value: 'monospace' },
-	{ label: 'Arial', value: 'Arial, sans-serif' },
-	{ label: 'Georgia', value: 'Georgia, serif' },
-	{
-		label: 'Helvetica Neue',
-		value: "'Helvetica Neue', Helvetica, sans-serif",
-	},
-	{ label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
-];
+interface FontFamilyPreset {
+	name: string;
+	slug: string;
+	fontFamily: string;
+}
+interface FontSizePreset {
+	name: string;
+	slug: string;
+	size: string;
+}
 
 /**
  * Preset aspect-ratio options for the Layout panel dropdown.
@@ -158,6 +161,147 @@ function collectMapBlocks( blocks: EditorBlock[] ): EditorBlock[] {
 }
 
 /**
+ * Per-aspect setter signature passed into the typography panel renderer.
+ *
+ * @since 1.0.0
+ */
+type SetTypography = ( values: {
+	fontFamily?: string;
+	fontSize?: string;
+	fontWeight?: string;
+	fontStyle?: string;
+} ) => void;
+
+/**
+ * Renders a unified Typography ToolsPanel matching the surface used by core
+ * Paragraph/Group blocks: a per-aspect dropdown menu lets the editor enable or
+ * disable each aspect individually, and "Reset all" returns every aspect to
+ * the inherited theme default.
+ *
+ * The panel exposes three aspects — Font (family), Size, and Appearance
+ * (weight + style combined) — because that is the surface persisted in the
+ * block's attribute schema. Adding more aspects (line height, letter spacing,
+ * etc.) would require new attributes and is out of scope here.
+ *
+ * @since 1.0.0
+ *
+ * @param {Object}             props               Component props.
+ * @param {string}             props.label         Localised panel title.
+ * @param {string}             props.fontFamily    Current font-family value.
+ * @param {string}             props.fontSize      Current font-size value.
+ * @param {string}             props.fontWeight    Current font-weight value.
+ * @param {string}             props.fontStyle     Current font-style value.
+ * @param {FontFamilyPreset[]} props.fontFamilies  Theme font-family presets.
+ * @param {FontSizePreset[]}   props.fontSizes     Theme font-size presets.
+ * @param {SetTypography}      props.setTypography Setter callback.
+ */
+function TypographyToolsPanel( {
+	label,
+	fontFamily,
+	fontSize,
+	fontWeight,
+	fontStyle,
+	fontFamilies,
+	fontSizes,
+	setTypography,
+}: {
+	label: string;
+	fontFamily: string;
+	fontSize: string;
+	fontWeight: string;
+	fontStyle: string;
+	fontFamilies: FontFamilyPreset[];
+	fontSizes: FontSizePreset[];
+	setTypography: SetTypography;
+} ): JSX.Element {
+	const hasAppearance = fontWeight !== '' || fontStyle !== '';
+
+	return (
+		// @ts-ignore — ToolsPanel's typings lag the runtime API.
+		<ToolsPanel
+			label={ label }
+			resetAll={ () =>
+				setTypography( {
+					fontFamily: '',
+					fontSize: '',
+					fontWeight: '',
+					fontStyle: '',
+				} )
+			}
+		>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => fontFamily !== '' }
+				label={ __( 'Font', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { fontFamily: '' } ) }
+				isShownByDefault
+			>
+				<FontFamilyControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					value={ fontFamily }
+					fontFamilies={ fontFamilies }
+					onChange={ ( value: string | undefined ) =>
+						setTypography( { fontFamily: value ?? '' } )
+					}
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => fontSize !== '' }
+				label={ __( 'Size', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { fontSize: '' } ) }
+				isShownByDefault
+			>
+				<FontSizePicker
+					__next40pxDefaultSize
+					value={ fontSize || undefined }
+					fontSizes={ fontSizes }
+					onChange={ ( value: number | string | undefined ) =>
+						setTypography( {
+							fontSize:
+								value !== undefined && value !== ''
+									? String( value )
+									: '',
+						} )
+					}
+					withReset={ false }
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => hasAppearance }
+				label={ __( 'Appearance', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () =>
+					setTypography( { fontWeight: '', fontStyle: '' } )
+				}
+				isShownByDefault
+			>
+				<FontAppearanceControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					hasFontWeights
+					hasFontStyles
+					value={ {
+						fontWeight: fontWeight || undefined,
+						fontStyle: fontStyle || undefined,
+					} }
+					onChange={ ( value: {
+						fontWeight?: string;
+						fontStyle?: string;
+					} ) =>
+						setTypography( {
+							fontWeight: value?.fontWeight ?? '',
+							fontStyle: value?.fontStyle ?? '',
+						} )
+					}
+				/>
+			</ToolsPanelItem>
+		</ToolsPanel>
+	);
+}
+
+/**
  * Editor preview for the GPX Elevation block.
  *
  * Shows an InspectorControls sidebar with panels for data source, layout,
@@ -195,6 +339,15 @@ export const ElevationEdit = ( {
 		tooltipFontWeight,
 		tooltipFontStyle,
 	} = attributes;
+
+	// Pull the merged theme typography presets so the unified Typography
+	// panels expose the same Standard/preset choices as core Paragraph/Group.
+	const [ themeFontFamilies, themeFontSizes ] = useSettings(
+		'typography.fontFamilies',
+		'typography.fontSizes'
+	) as [ FontFamilyPreset[] | undefined, FontSizePreset[] | undefined ];
+	const fontFamilies = themeFontFamilies ?? [];
+	const fontSizes = themeFontSizes ?? [];
 
 	// Build a style object carrying every non-empty theming attribute as a CSS
 	// custom property so the editor preview updates instantly.
@@ -465,129 +618,57 @@ export const ElevationEdit = ( {
 					] }
 				/>
 
-				<PanelBody
-					title={ __( 'Axis typography', 'kntnt-gpx-blocks' ) }
-				>
-					<SelectControl
-						label={ __( 'Font family', 'kntnt-gpx-blocks' ) }
-						value={ axisFontFamily }
-						options={ FONT_FAMILY_OPTIONS }
-						onChange={ ( value ) =>
-							setAttributes( { axisFontFamily: value } )
+				<TypographyToolsPanel
+					label={ __( 'Axis typography', 'kntnt-gpx-blocks' ) }
+					fontFamily={ axisFontFamily }
+					fontSize={ axisFontSize }
+					fontWeight={ axisFontWeight }
+					fontStyle={ axisFontStyle }
+					fontFamilies={ fontFamilies }
+					fontSizes={ fontSizes }
+					setTypography={ ( values ) => {
+						const next: Partial< ElevationAttributes > = {};
+						if ( values.fontFamily !== undefined ) {
+							next.axisFontFamily = values.fontFamily;
 						}
-					/>
-					<FontSizePicker
-						value={ axisFontSize || undefined }
-						onChange={ ( value ) =>
-							setAttributes( {
-								axisFontSize:
-									value !== undefined ? String( value ) : '',
-							} )
+						if ( values.fontSize !== undefined ) {
+							next.axisFontSize = values.fontSize;
 						}
-						withReset={ true }
-					/>
-					<SelectControl
-						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
-						value={ axisFontWeight || 'normal' }
-						options={ [
-							{
-								label: __( 'Normal', 'kntnt-gpx-blocks' ),
-								value: 'normal',
-							},
-							{
-								label: __( 'Bold', 'kntnt-gpx-blocks' ),
-								value: 'bold',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( {
-								axisFontWeight: value === 'normal' ? '' : value,
-							} )
+						if ( values.fontWeight !== undefined ) {
+							next.axisFontWeight = values.fontWeight;
 						}
-					/>
-					<SelectControl
-						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
-						value={ axisFontStyle || 'normal' }
-						options={ [
-							{
-								label: __( 'Normal', 'kntnt-gpx-blocks' ),
-								value: 'normal',
-							},
-							{
-								label: __( 'Italic', 'kntnt-gpx-blocks' ),
-								value: 'italic',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( {
-								axisFontStyle: value === 'normal' ? '' : value,
-							} )
+						if ( values.fontStyle !== undefined ) {
+							next.axisFontStyle = values.fontStyle;
 						}
-					/>
-				</PanelBody>
+						setAttributes( next );
+					} }
+				/>
 
-				<PanelBody
-					title={ __( 'Tooltip typography', 'kntnt-gpx-blocks' ) }
-				>
-					<SelectControl
-						label={ __( 'Font family', 'kntnt-gpx-blocks' ) }
-						value={ tooltipFontFamily }
-						options={ FONT_FAMILY_OPTIONS }
-						onChange={ ( value ) =>
-							setAttributes( { tooltipFontFamily: value } )
+				<TypographyToolsPanel
+					label={ __( 'Tooltip typography', 'kntnt-gpx-blocks' ) }
+					fontFamily={ tooltipFontFamily }
+					fontSize={ tooltipFontSize }
+					fontWeight={ tooltipFontWeight }
+					fontStyle={ tooltipFontStyle }
+					fontFamilies={ fontFamilies }
+					fontSizes={ fontSizes }
+					setTypography={ ( values ) => {
+						const next: Partial< ElevationAttributes > = {};
+						if ( values.fontFamily !== undefined ) {
+							next.tooltipFontFamily = values.fontFamily;
 						}
-					/>
-					<FontSizePicker
-						value={ tooltipFontSize || undefined }
-						onChange={ ( value ) =>
-							setAttributes( {
-								tooltipFontSize:
-									value !== undefined ? String( value ) : '',
-							} )
+						if ( values.fontSize !== undefined ) {
+							next.tooltipFontSize = values.fontSize;
 						}
-						withReset={ true }
-					/>
-					<SelectControl
-						label={ __( 'Font weight', 'kntnt-gpx-blocks' ) }
-						value={ tooltipFontWeight || 'normal' }
-						options={ [
-							{
-								label: __( 'Normal', 'kntnt-gpx-blocks' ),
-								value: 'normal',
-							},
-							{
-								label: __( 'Bold', 'kntnt-gpx-blocks' ),
-								value: 'bold',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( {
-								tooltipFontWeight:
-									value === 'normal' ? '' : value,
-							} )
+						if ( values.fontWeight !== undefined ) {
+							next.tooltipFontWeight = values.fontWeight;
 						}
-					/>
-					<SelectControl
-						label={ __( 'Font style', 'kntnt-gpx-blocks' ) }
-						value={ tooltipFontStyle || 'normal' }
-						options={ [
-							{
-								label: __( 'Normal', 'kntnt-gpx-blocks' ),
-								value: 'normal',
-							},
-							{
-								label: __( 'Italic', 'kntnt-gpx-blocks' ),
-								value: 'italic',
-							},
-						] }
-						onChange={ ( value ) =>
-							setAttributes( {
-								tooltipFontStyle:
-									value === 'normal' ? '' : value,
-							} )
+						if ( values.fontStyle !== undefined ) {
+							next.tooltipFontStyle = values.fontStyle;
 						}
-					/>
-				</PanelBody>
+						setAttributes( next );
+					} }
+				/>
 			</InspectorControls>
 
 			<div { ...blockProps }>
