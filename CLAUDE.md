@@ -20,11 +20,12 @@ The `docs/` directory holds deep specs. Don't read all of them every time — lo
 | Looking up a public filter | [`docs/hooks.md`](docs/hooks.md) |
 | Writing or running tests | [`docs/testing-strategy.md`](docs/testing-strategy.md) |
 | Modifying the GitHub-Releases auto-updater or cutting a release | [`docs/updater.md`](docs/updater.md) |
+| Locating where a kind of file lives in the repo | [`docs/file-structure.md`](docs/file-structure.md) |
 | The original design brief, before architectural decisions were made | [`docs/design.md`](docs/design.md) |
 
 ## Working in this repo
 
-- The plugin is in active design. Implementation has not begun. The `classes/` directory contains only `Updater.php` so far. Block source under `src/blocks/` is a placeholder.
+- All three blocks are implemented. `classes/` is organised under the `Kntnt\Gpx_Blocks\` namespace into `Bootstrap\`, `Cache\`, `Cli\`, `Consent\`, `Conversion\`, `Format\`, `Rendering\`, and `Rest\`, plus the `Plugin` singleton and the `Updater` at the namespace root. Block source lives in `src/blocks/{map,elevation,statistics}/` and compiles to `build/blocks/<slug>/`. The plugin's own ES2022 scripts that don't go through `@wordpress/scripts` (currently just the consent stub) live in `js/`. See [`docs/file-structure.md`](docs/file-structure.md) for the full layout.
 - Decisions made during the design phase are captured in `docs/architecture.md` and supersede `docs/design.md` where the two differ.
 - When asked to implement a piece of the plugin, check `docs/architecture.md` first to understand how it fits the whole, then the specific doc for that area.
 - All identifiers and comments in source code are English. User-facing strings are translated via `.po`/`.mo` to Swedish (and possibly other languages) using the `kntnt-gpx-blocks` text domain.

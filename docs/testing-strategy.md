@@ -72,7 +72,7 @@ The XXE tests use a fixture that includes an external entity reference. The expe
 
 ## What is integration-tested
 
-**Not yet wired up in v1.0.0.** The `tests/Integration/` directory does not exist yet. The intended scope — when the integration layer is added — is:
+**Not yet wired up.** The `tests/Integration/` directory does not exist yet. The intended scope — when the integration layer is added — is:
 
 WordPress Playground spins up a full WP instance in a browser-WASM sandbox. The plugin is installed, an editor user is logged in, and a fixture GPX file is uploaded through the media REST endpoint. Then:
 
@@ -87,7 +87,7 @@ Playground integration tests will live in `tests/Integration/` as PHP files and 
 
 ## What is JS-unit-tested
 
-**Not yet wired up in v1.0.0.** No `*.test.tsx` co-located test files exist in `src/blocks/` and `npm run test:js` is not defined in `package.json`. The intended scope — when the JS unit layer is added — is:
+**Not yet wired up.** No `*.test.tsx` co-located test files exist in `src/blocks/` and `npm run test:js` is not defined in `package.json`. The intended scope — when the JS unit layer is added — is:
 
 `wp-scripts test-unit-js` runs Jest with the WordPress preset. Co-located `*.test.tsx` files exercise:
 
@@ -100,7 +100,7 @@ The tests mock `@wordpress/block-editor`, `@wordpress/data`, and `@wordpress/ser
 
 ## What is end-to-end-tested
 
-**Not yet wired up in v1.0.0.** No `tests/e2e/` directory exists and `npm run test:e2e` is not defined in `package.json`. The intended scope — when the E2E layer is added — is:
+**Not yet wired up.** No `tests/e2e/` directory exists and `npm run test:e2e` is not defined in `package.json`. The intended scope — when the E2E layer is added — is:
 
 Playwright drives a WordPress Playground instance with the plugin installed:
 
@@ -132,7 +132,7 @@ JavaScript coverage will focus on the Edit components and `useEnsureUniqueMapId`
 
 ## Running the suite
 
-The commands below reflect what is wired up as of v1.0.0. Integration, JS unit, and E2E layers are planned but not yet configured.
+The commands below reflect what is currently wired up. Integration, JS unit, and E2E layers are planned but not yet configured.
 
 | Layer | Command | Status |
 |---|---|---|

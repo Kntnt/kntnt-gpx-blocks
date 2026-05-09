@@ -257,14 +257,14 @@ npm run build
 ### Running tests
 
 ```bash
-composer test          # Pest unit tests (207 tests as of v1.0.0)
+composer test          # Pest unit tests
 composer phpstan       # Static analysis (PHPStan, max level)
 composer phpcs         # WordPress Coding Standards lint
 npm run lint:js        # ESLint via wp-scripts
 npm run lint:css       # Stylelint via wp-scripts
 ```
 
-Integration tests against WordPress Playground and block JS unit tests via `wp-scripts test-unit-js` are planned but not yet wired up in v1.0.0. See `docs/testing-strategy.md` for the intended scope.
+Block JS unit tests via `wp-scripts test-unit-js`, integration tests against WordPress Playground, and end-to-end tests via Playwright are planned but not yet wired up. See `docs/testing-strategy.md` for the intended scope.
 
 ### Building a Release ZIP
 
