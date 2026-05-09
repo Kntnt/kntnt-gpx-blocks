@@ -37,6 +37,7 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
 import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
+import { classifyWheel } from './wheel';
 
 // ─── Global type augmentation ────────────────────────────────────────────────
 
@@ -433,32 +434,6 @@ function attachScrubHandlers(
 }
 
 /**
- * Classify a wheel event into the action it should trigger on the map.
- *
- * On macOS, trackpad pinch gestures are delivered as wheel events with
- * `ctrlKey: true` regardless of whether Ctrl is physically pressed; the same
- * shortcut is used by mouse-wheel zoom on every other platform. Trackpad
- * two-finger pan delivers wheel events with `deltaMode === 0` (pixel deltas)
- * and no modifier. Mouse wheels deliver `deltaMode === 1` (line deltas) on
- * most browsers; even when they emit pixel deltas, the per-tick delta is
- * coarse and not paired with the small horizontal pans a trackpad emits.
- *
- * @since 1.0.0
- *
- * @param event - The wheel event.
- * @return One of `'zoom'`, `'pan'`, or `'hint'`.
- */
-function classifyWheel( event: WheelEvent ): 'zoom' | 'pan' | 'hint' {
-	if ( event.ctrlKey || event.metaKey ) {
-		return 'zoom';
-	}
-	if ( event.deltaMode === 0 ) {
-		return 'pan';
-	}
-	return 'hint';
-}
-
-/**
  * Pick the platform-appropriate scroll-zoom hint string from the pre-translated
  * pair carried on the state slice.
  *
@@ -488,17 +463,23 @@ function pickScrollHintMessage( hint: MapState[ 'scrollHint' ] ): string {
  * normally. The hint overlay is created lazily and reused; a single timer
  * ensures the overlay disappears after roughly one second of wheel idleness.
  *
+ * `enableDrag` is forwarded to `classifyWheel` so the trackpad two-finger
+ * pan modality respects the same toggle that gates mouse and single-touch
+ * drag — see issue #66.
+ *
  * @since 1.0.0
  *
- * @param map     - Leaflet map instance.
- * @param blockEl - Block wrapper element receiving wheel events.
- * @param hint    - Pre-translated `{ apple, other }` hint pair.
- * @param signal  - AbortSignal that releases listeners on tear-down.
+ * @param map        - Leaflet map instance.
+ * @param blockEl    - Block wrapper element receiving wheel events.
+ * @param hint       - Pre-translated `{ apple, other }` hint pair.
+ * @param enableDrag - Whether drag-to-pan is enabled. Gates the `'pan'` branch.
+ * @param signal     - AbortSignal that releases listeners on tear-down.
  */
 function attachWheelHandler(
 	map: L.Map,
 	blockEl: HTMLElement,
 	hint: MapState[ 'scrollHint' ],
+	enableDrag: boolean,
 	signal: AbortSignal
 ): void {
 	let hintEl: HTMLElement | null = null;
@@ -531,7 +512,7 @@ function attachWheelHandler(
 	blockEl.addEventListener(
 		'wheel',
 		( event: WheelEvent ) => {
-			const action = classifyWheel( event );
+			const action = classifyWheel( event, { enableDrag } );
 
 			if ( action === 'zoom' ) {
 				event.preventDefault();
@@ -776,12 +757,15 @@ function bootMount(
 
 			// Replace Leaflet's scrollWheelZoom with a wheel handler that
 			// distinguishes pinch / Cmd / Ctrl (zoom), trackpad two-finger
-			// pan (deltaMode 0, no modifier), and mouse wheel (deltaMode 1+,
-			// no modifier — show a hint and let the page scroll).
+			// pan (deltaMode 0, no modifier — only when enableDrag is true),
+			// and mouse wheel (deltaMode 1+, no modifier — show a hint and
+			// let the page scroll). Forwarding enableDrag here is what makes
+			// the trackpad-pan gesture honour the "Drag to pan" toggle.
 			attachWheelHandler(
 				map,
 				blockEl,
 				mapState.scrollHint,
+				settings.enableDrag,
 				disposer.signal
 			);
 
