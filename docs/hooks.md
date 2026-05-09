@@ -8,49 +8,7 @@ All filter names start with `kntnt_gpx_blocks_`.
 
 ## Consent
 
-### `kntnt_gpx_blocks_has_consent`
-
-The single PHP filter for the consent contract. Tristate. Default `null` (absent signal — permitted by default-allow). Read [`consent.md`](consent.md) for the full normative contract.
-
-```php
-$signal = apply_filters(
-    'kntnt_gpx_blocks_has_consent',
-    null,                  // Default — always null (absent signal).
-    string $category,      // Always 'external_media' in this plugin.
-    array  $context = []   // Reserved for future use; plugin currently passes [].
-);
-```
-
-**Return value contract.** The filter callback returns one of three values:
-
-| Returned | Meaning | Effect |
-|---|---|---|
-| `true` | Granting | Consent has been given. The map mounts. |
-| `false` | Denying | Consent has been denied or withdrawn. The map does not mount; if already mounted, it is torn down. |
-| `null` (or anything not strictly `true` or `false`) | Absent | No signal. Default-allow applies — the map mounts. |
-
-**The asymmetry is deliberate.** Only the literal value `false` is treated as denying. Any other return — `null`, an empty string, `0`, an unexpected string — is treated as permitted. This makes the default-allow rule robust against malformed builder glue.
-
-**The plugin uses one category and only one: `'external_media'`.** The plugin *MUST NOT* expose a filter that lets the site builder rename it on the plugin side; remapping happens on the builder side, in their glue (see [`consent.md`](consent.md) section *Builder glue templates*).
-
-**Site-builder glue example.** This is the kind of code the *site builder* writes in their theme's `functions.php` or in a site-specific must-use plugin — it is not part of the plugin itself:
-
-```php
-add_filter( 'kntnt_gpx_blocks_has_consent', function ( $default, $category, $context ) {
-    if ( 'external_media' !== $category ) {
-        return $default;
-    }
-    if ( ! function_exists( 'my_cmp_has_consent' ) ) {
-        return $default;
-    }
-    $cmp = my_cmp_has_consent( 'external-media' );
-    return true === $cmp ? true : ( false === $cmp ? false : $default );
-}, 10, 3 );
-```
-
-**The filter is not the only consent surface.** A parallel JS-side contract exposes `window.kntnt_gpx_blocks.mayProceed( 'external_media' )` and the inbound event `kntnt_gpx_blocks:consent`. Mid-session consent transitions go through the JS event, not the PHP filter, because PHP cannot synchronously observe a mid-request consent change. See [`consent.md`](consent.md) for the JS API.
-
-**Editor bypass.** When the render context is the WordPress block editor (REST `block-renderer` request with `edit_posts` capability), the plugin bypasses the consent contract entirely — the filter is *not* invoked. Editors always see a working map. This is implemented in `Render_Map` and is not configurable.
+The plugin exposes **no PHP filter for consent.** The consent contract is JavaScript-only — site builders integrate by dispatching a `kntnt_gpx_blocks:consent` event on `window` from their CMP's opt-in/opt-out hooks. See [`consent.md`](consent.md) for the full normative contract and the rationale (section *Why no PHP filter*).
 
 ## Conversion limits
 

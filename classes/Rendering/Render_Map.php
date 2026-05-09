@@ -66,10 +66,10 @@ final class Render_Map {
 	 * container, embedding the GeoJSON in wp_interactivity_state(), and drawing
 	 * the polyline on a canvas are not third-party requests and do not require
 	 * consent. Tile loading is the only consent-requiring action; it is gated
-	 * client-side by the contract documented in docs/consent.md. The PHP filter
-	 * `kntnt_gpx_blocks_has_consent` exists for builders who want server-side
-	 * consent introspection from their own code, but Render_Map itself does not
-	 * consult it.
+	 * client-side by the JS contract documented in docs/consent.md
+	 * (`window.kntnt_gpx_blocks.mayProceed` plus the `kntnt_gpx_blocks:consent`
+	 * event). The plugin exposes no PHP-side consent filter — see the rationale
+	 * in docs/consent.md (section "Why no PHP filter").
 	 *
 	 * Editor render context is detected (REST `block-renderer` requests with
 	 * `edit_posts` capability) and surfaced as `bypassConsent` in the per-map

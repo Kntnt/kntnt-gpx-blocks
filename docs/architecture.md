@@ -80,9 +80,11 @@ Per design — confirmed and refined:
 
 ## Privacy
 
-Map tiles are loaded from OpenStreetMap, which means visitor IPs reach a third party. Tile loading is gated by a CMP-neutral consent contract that the plugin itself defines: a PHP filter `kntnt_gpx_blocks_has_consent` (tristate — `true`/`false`/`null` with default-allow on absent), a JS global `window.kntnt_gpx_blocks` exposing `getConsent`/`mayProceed`/`onConsentChanged`, and an inbound JS event `kntnt_gpx_blocks:consent`. The plugin's own code makes *no* reference to any specific CMP — no `wp_has_consent()`, no `wp_listen_for_consent_change`, no Real-Cookie-Banner or Complianz hooks. The site builder writes a small glue snippet that bridges their CMP to this contract. The plugin renders no consent UI of its own; the CMP's content blocker is expected to reclaim the visual area when consent is denied. The plugin works fully — including loading tiles — when no CMP and no glue exist, because absent signal means permitted. In the WordPress block editor the consent contract is bypassed entirely: the editor always shows a working map. See [`consent.md`](consent.md) for the full normative contract.
+Map tiles are loaded from OpenStreetMap, which means visitor IPs reach a third party. Tile loading is gated by a CMP-neutral consent contract that the plugin itself defines. The contract is **JavaScript-only**: a JS global `window.kntnt_gpx_blocks` exposing `getConsent`/`mayProceed`/`onConsentChanged`, and an inbound JS event `kntnt_gpx_blocks:consent`. There is no PHP filter — the only consent-requiring action (Leaflet tile mount) happens client-side, so the gate lives where the action is. Earlier drafts of the contract documented a `kntnt_gpx_blocks_has_consent` PHP filter; it was removed in the resolution of issue #54 because the plugin never invoked it and there is no compelling server-side use case. See [`consent.md`](consent.md) section *Why no PHP filter* for the full rationale.
 
-The Elevation block and the Statistics variation's bound paragraphs load no third-party resources and never invoke the consent filter. They render unconditionally.
+The plugin's own code makes *no* reference to any specific CMP — no `wp_has_consent()`, no `wp_listen_for_consent_change`, no Real-Cookie-Banner or Complianz hooks. The site builder writes a small JS glue snippet that bridges their CMP to the contract by dispatching the `kntnt_gpx_blocks:consent` event. The plugin renders no consent UI of its own; the CMP's content blocker is expected to reclaim the visual area when consent is denied. The plugin works fully — including loading tiles — when no CMP and no glue exist, because absent signal means permitted. In the WordPress block editor the consent contract is bypassed entirely: the editor always shows a working map. See [`consent.md`](consent.md) for the full normative contract.
+
+The Elevation block and the Statistics variation's bound paragraphs load no third-party resources and consult no consent surface. They render unconditionally.
 
 ## Error handling
 
@@ -110,7 +112,7 @@ The major classes in `classes/` (PSR-4 namespaced under `Kntnt\Gpx_Blocks`):
 | `Rendering\Render_Map` | Server-side render of GPX Map. |
 | `Rendering\Render_Elevation` | Server-side render of GPX Elevation. |
 | `Bindings\Statistics_Source` | Block Bindings source `kntnt-gpx-blocks/statistics`. Resolves a `(postId, mapId)` pair to a single formatted statistic per call; memoizes resolve+fetch across the five binding-key calls per pattern instance. |
-| `Consent\Consent_Stub` | Builds the inline JS stub and the enqueue handle. The PHP filter `kntnt_gpx_blocks_has_consent` has no PHP-side resolver class — it is a plain `apply_filters()` call from `Render_Map`. |
+| `Consent\Consent_Stub` | Builds the inline JS stub and the enqueue handle. There is no PHP-side consent surface — see [`consent.md`](consent.md) section *Why no PHP filter*. |
 | `Rest\Preview_Controller` | Editor-only REST endpoint (`kntnt-gpx-blocks/v1/preview/<id>`) that returns the cached GeoJSON for the Map block's React-based editor preview. Auth-gated to `edit_posts`. |
 | `Format\Value_Formatter` | Locale-aware number formatting and unit selection (m vs km). |
 | `Cli\Regenerate_Command` | `wp kntnt-gpx regenerate` WP-CLI command. |

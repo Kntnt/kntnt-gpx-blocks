@@ -130,5 +130,5 @@ The plugin is hardened against:
 The plugin is **not** designed to defend against:
 
 - Malicious editors who upload GPX files revealing other people's locations. This is a content-policy issue, not a technical one — see the "Don'ts" guidance in [`README.md`](../README.md).
-- Malicious admins who hook `kntnt_gpx_blocks_has_consent` and force-return `true`, bypassing the CMP. Admins control filter values; if the policy needs to be tamper-proof, deploy the plugin to an environment where filter overrides require code review.
+- Malicious admins who add JavaScript to the site that dispatches a forged `kntnt_gpx_blocks:consent` event with `granted: true`, bypassing the CMP. Admins can run arbitrary JavaScript on a WordPress site; if the policy needs to be tamper-proof, deploy the plugin to an environment where script changes require code review.
 - The OpenStreetMap tile servers themselves. They are an external service and out of scope.

@@ -1,6 +1,6 @@
 # Consent integration
 
-This document specifies how Kntnt GPX Blocks integrates with cookie-consent management. It is the normative contract between the plugin and any consent management platform (CMP) the site builder may be running. Read it when working on the Map block's bootstrap, on the inline consent stub, on the PHP filter, or on anything that touches OpenStreetMap tile loading. For the user-facing summary in plain English, see the **For Builders** section in [`README.md`](../README.md). For the security model, see [`security.md`](security.md).
+This document specifies how Kntnt GPX Blocks integrates with cookie-consent management. It is the normative contract between the plugin and any consent management platform (CMP) the site builder may be running. Read it when working on the Map block's bootstrap, on the inline consent stub, or on anything that touches OpenStreetMap tile loading. For the user-facing summary in plain English, see the **For Builders** section in [`README.md`](../README.md). For the security model, see [`security.md`](security.md).
 
 This document is a project-specific adaptation of the generic CMP integration pattern that Kntnt uses across its plugins. The terms *MUST*, *MUST NOT*, *SHOULD*, *SHOULD NOT* and *MAY* are used in the RFC 2119 sense.
 
@@ -20,7 +20,7 @@ The plugin declares **one** category and only one:
 |---|---|
 | `external_media` | OpenStreetMap tile loading |
 
-`external_media` is the standard CMP category for embedded third-party content (YouTube, Google Maps, OSM, Vimeo). It is not `functional` (which is reserved for cookies/processing strictly necessary for a service the visitor explicitly requested, and is exempt from consent under ePrivacy Art. 5(3)). It is not `marketing` (OSM does not profile visitors). The site builder remaps this name to whatever their CMP calls the equivalent group — see the glue templates further down.
+`external_media` is the standard CMP category for embedded third-party content (YouTube, Google Maps, OSM, Vimeo). It is not `functional` (which is reserved for cookies/processing strictly necessary for a service the visitor explicitly requested, and is exempt from consent under ePrivacy Art. 5(3)). It is not `marketing` (OSM does not profile visitors). The site builder remaps this name to whatever their CMP calls the equivalent group — see the glue template further down.
 
 The plugin *MUST* use the same category name (`'external_media'`) consistently in every PHP and JavaScript call site. The plugin *MUST NOT* read or accept a filter that lets the site builder rename the category on the plugin side; remapping happens on the builder side, in their glue.
 
@@ -36,32 +36,15 @@ The default in the absence of a signal is **permitted**. This is the spec's defa
 
 The plugin *MUST NOT* introduce a strict mode in which absent is treated as denying. The plugin *MUST NOT* offer a setting that flips this default. A site that wants strict gating installs a CMP and configures its glue to return `false` when consent has not yet been given.
 
-## The PHP API
+## Why no PHP filter
 
-### `kntnt_gpx_blocks_has_consent`
+The contract is **JavaScript-only.** The plugin does *not* expose a PHP filter for consent — historical drafts of this contract documented a `kntnt_gpx_blocks_has_consent` filter, but the plugin never invoked it and the filter was removed from the public API in the resolution of issue #54.
 
-```php
-$signal = apply_filters(
-    'kntnt_gpx_blocks_has_consent',
-    null,                  // Default — MUST always be null (absent signal).
-    string $category,      // Always 'external_media' in this plugin.
-    array  $context = []   // Optional. Plugin currently passes [].
-);
-```
+The reasoning is mechanical: the only consent-requiring action in the entire plugin is mounting the Leaflet tile layer, and that action happens in the visitor's browser. A PHP-side gate would have to translate a server-side decision into a client-side action, which means either (a) emitting the decision into Interactivity state and letting JS read it — adding a round-trip through PHP for a value JS already has access to via the local CMP — or (b) refusing to emit the block container at all, which would defeat lazy-mount on consent grant and force a full page reload after every consent change.
 
-**Return value contract:**
+Both of those are worse than the present design, where `view.ts` consults `window.kntnt_gpx_blocks` directly and reacts to `kntnt_gpx_blocks:consent` events without a server round-trip. The plugin therefore exposes a single integration surface — the JavaScript one — and site builders integrate by dispatching events from their CMP's opt-in/opt-out hooks. See [`hooks.md`](hooks.md) for the full filter inventory; consent is intentionally absent from it.
 
-- `true` — granting.
-- `false` — denying.
-- `null` (or any non-`true`, non-`false` value, including missing return) — absent.
-
-The plugin *MUST* treat `false` as the only "denying" value and every other value as "permitted". The asymmetry is deliberate: malformed glue that returns `0`, `''`, `'no'`, or anything else will not accidentally block the plugin's primary functionality.
-
-The filter is the *only* PHP-side primitive. The plugin *MUST NOT* read CMP cookies directly, *MUST NOT* call functions from any specific CMP plugin's namespace, and *MUST NOT* inspect WordPress options that belong to a CMP. All such logic lives in the site builder's glue.
-
-### Filter naming — note on the `_has_consent` form
-
-The project's general naming convention is the `kntnt_gpx_blocks_<purpose>` form (see [`coding-standards.md`](coding-standards.md)). The consent filter follows that exact form: `kntnt_gpx_blocks_has_consent`. This is a deliberate deviation from the generic CMP integration pattern, which uses a slash-namespaced form (`kntnt_example/has_consent`). The slash form would force plugin- and theme-side code to write a non-WordPress-idiomatic filter name and breaks tooling that assumes underscore-only hook names. We keep the project convention.
+A site builder who wants server-side introspection of their own CMP's state should call their CMP's API directly from PHP (`wp_has_consent()`, `cmplz_has_service_consent()`, etc.) — the plugin does not need to mediate that.
 
 ## The JavaScript API
 
@@ -160,10 +143,9 @@ The stub *MUST NOT* perform any consent-requiring action itself. It only registe
 
 When no CMP is installed and no builder glue exists:
 
-1. The PHP filter `kntnt_gpx_blocks_has_consent` has no listener and `apply_filters()` returns the default (`null`).
-2. The JS event `kntnt_gpx_blocks:consent` is never dispatched.
-3. `window.kntnt_gpx_blocks.mayProceed( 'external_media' )` returns `true` because the internal state has no entry for the category.
-4. The Map block mounts Leaflet normally and tiles load.
+1. The JS event `kntnt_gpx_blocks:consent` is never dispatched.
+2. `window.kntnt_gpx_blocks.mayProceed( 'external_media' )` returns `true` because the internal state has no entry for the category.
+3. The Map block mounts Leaflet normally and tiles load.
 
 This is correct and intentional. The plugin *MUST* be fully functional out of the box. The plugin *MUST NOT* emit errors, warnings, or log entries when no glue is present. A site that needs gating installs a CMP; a site that does not need gating uses the plugin as-is.
 
@@ -171,7 +153,7 @@ This is correct and intentional. The plugin *MUST* be fully functional out of th
 
 The plugin *MUST* always render a working map inside the WordPress block editor (Gutenberg, Site Editor) regardless of consent state. The editor is an authoring surface, not a visitor-facing surface — the editor needs to see the actual map to set up colours, inspect waypoints, and verify the file resolved correctly.
 
-**Implementation.** The Map block's editor preview is a parallel React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) that mounts Leaflet directly inside the editor iframe via `useEffect`, using GeoJSON fetched from the plugin's auth-gated REST endpoint `kntnt-gpx-blocks/v1/preview/<id>`. It does not consult the consent contract at all — neither the PHP filter nor `window.kntnt_gpx_blocks.mayProceed`. The editor never goes through `view.ts`, so the consent contract simply does not apply.
+**Implementation.** The Map block's editor preview is a parallel React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) that mounts Leaflet directly inside the editor iframe via `useEffect`, using GeoJSON fetched from the plugin's auth-gated REST endpoint `kntnt-gpx-blocks/v1/preview/<id>`. It does not consult the consent contract at all. The editor never goes through `view.ts`, so the consent contract simply does not apply.
 
 The PHP render path also sets `bypassConsent: true` in the per-map state slice when invoked under a `REST_REQUEST` with `edit_posts`. That flag is documented for completeness but is currently a vestigial signal — `view.ts` would honour it, but `view.ts` is not actually run for the editor preview because the Interactivity API runtime does not bootstrap inside ServerSideRender's injected DOM. The flag survives in case a future iteration restores the SSR + Interactivity editor path.
 
@@ -195,39 +177,11 @@ After tear-down, the block element stays in the DOM. The CMP's content blocker (
 
 Nothing. The block element is emitted with its inline-style dimensions (so the layout does not jump), with the `data-wp-*` Interactivity directives, and with the GeoJSON hydrated in `wp_interactivity_state()`. The view module reads `mayProceed` and either mounts Leaflet (granting/absent) or skips the mount and leaves the container empty (denying). The CMP owns the visitor-facing UX.
 
-## Builder glue templates
+## Builder glue template
 
-The site builder is expected to add two snippets — one in PHP, one in JavaScript — that translate their CMP's state into the plugin's tristate. The exact CMP API call is the builder's choice; the plugin does not care which CMP is in use.
+The site builder is expected to add a single JavaScript snippet — there is no PHP-side glue — that translates their CMP's state into the plugin's tristate by dispatching events. The exact CMP API call is the builder's choice; the plugin does not care which CMP is in use.
 
-### PHP template
-
-Place in the theme's `functions.php`, in a site-specific must-use plugin, or anywhere `add_filter` runs early enough:
-
-```php
-add_filter( 'kntnt_gpx_blocks_has_consent', function ( $default, $category, $context ) {
-
-    // The plugin only uses one category. Bail for anything else.
-    if ( 'external_media' !== $category ) {
-        return $default;
-    }
-
-    // Defer to the CMP only when its API is actually available.
-    if ( ! function_exists( '<cmp_consent_check_function>' ) ) {
-        return $default;
-    }
-    $cmp_result = <cmp_consent_check_function>( '<cmp_category_for_external_media>' );
-
-    // Translate the CMP's answer to the plugin's tristate.
-    return true === $cmp_result ? true : ( false === $cmp_result ? false : $default );
-
-}, 10, 3 );
-```
-
-Replace `<cmp_consent_check_function>` and `<cmp_category_for_external_media>` with the values appropriate for the CMP in use. The plugin documents two examples for the most common WordPress CMPs in [`README.md`](../README.md).
-
-### JavaScript template
-
-Place in the CMP plugin's "code on opt-in" and "code on opt-out" fields. CMPs replay these snippets on page load when the consent is still in force, so the dispatch happens both at the moment of the click *and* on every subsequent page load — which is what the plugin's stub needs.
+Place the snippets in the CMP plugin's "code on opt-in" and "code on opt-out" fields. CMPs replay these snippets on page load when the consent is still in force, so the dispatch happens both at the moment of the click *and* on every subsequent page load — which is what the plugin's stub needs.
 
 On opt-in:
 
@@ -269,19 +223,19 @@ Reflecting the contract above as prohibitions:
 1. *MUST NOT* read cookies, options, or transients belonging to a specific CMP plugin.
 2. *MUST NOT* call functions from any specific CMP's namespace.
 3. *MUST NOT* mention any specific CMP plugin in the plugin's own code (only in documentation, where examples are useful).
-4. *MUST NOT* support the WordPress Consent API as the only mechanism. The Consent API *MAY* be supported as a parallel channel via builder glue, but the plugin's own code *MUST NOT* call `wp_has_consent()` or listen for `wp_listen_for_consent_change`.
-5. *MUST NOT* hard-require any CMP in order to function.
-6. *MUST NOT* treat an absent signal as denying.
-7. *MUST NOT* offer a configuration setting, filter, or constant that flips the default from permitted to denying.
-8. *MUST NOT* emit errors or warnings when no builder glue is present.
-9. *MUST NOT* perform any consent-requiring action server-side. The plugin's PHP renders only the container HTML, which is not a third-party request.
-10. *MUST NOT* perform consent-requiring actions from `wp_cron`, REST callbacks, or any other user-less context. The plugin currently has no such code paths and *MUST NOT* introduce them.
+4. *MUST NOT* call `wp_has_consent()` or listen for `wp_listen_for_consent_change` from the plugin's own code. The WordPress Consent API *MAY* be supported as a parallel channel via builder glue (the JS event from the builder's snippet can be wired to either the WP Consent API or any other CMP), but the plugin itself does not consume it.
+5. *MUST NOT* expose a PHP filter as part of the consent contract. The contract is JavaScript-only; see *Why no PHP filter* above.
+6. *MUST NOT* hard-require any CMP in order to function.
+7. *MUST NOT* treat an absent signal as denying.
+8. *MUST NOT* offer a configuration setting, filter, or constant that flips the default from permitted to denying.
+9. *MUST NOT* emit errors or warnings when no builder glue is present.
+10. *MUST NOT* perform any consent-requiring action server-side. The plugin's PHP renders only the container HTML, which is not a third-party request.
+11. *MUST NOT* perform consent-requiring actions from `wp_cron`, REST callbacks, or any other user-less context. The plugin currently has no such code paths and *MUST NOT* introduce them.
 
 ## Naming summary
 
 | Element | Convention |
 |---|---|
-| PHP filter (query) | `kntnt_gpx_blocks_has_consent` |
 | JavaScript global | `window.kntnt_gpx_blocks` |
 | JavaScript inbound event | `kntnt_gpx_blocks:consent` |
 | Stub script handle | `kntnt-gpx-blocks-consent-stub` |
@@ -291,17 +245,18 @@ Reflecting the contract above as prohibitions:
 
 The implementation conforms to this contract if and only if all of the following hold:
 
-- [ ] The plugin calls `apply_filters( 'kntnt_gpx_blocks_has_consent', null, 'external_media' )` (or its JS counterpart `mayProceed`) before mounting the Leaflet tile layer.
+- [ ] The Map block's view module calls `window.kntnt_gpx_blocks.mayProceed( 'external_media' )` before mounting the Leaflet tile layer.
 - [ ] The plugin treats `false` as the *only* denying value and every other return as permitted.
 - [ ] `window.kntnt_gpx_blocks` exposes `getConsent`, `mayProceed`, and `onConsentChanged` exactly as specified in the stub above.
 - [ ] The plugin listens for `kntnt_gpx_blocks:consent` on `window` and updates its internal state accordingly.
 - [ ] The stub is enqueued as an inline script in `<head>` before any block view module that depends on the consent state.
 - [ ] When a `'denying'` signal is received after Leaflet has mounted, the map is torn down via `map.remove()`.
 - [ ] The plugin works with no errors and a fully functional Map block when no CMP and no glue are present.
+- [ ] The plugin exposes no PHP filter for consent — neither `apply_filters()` nor `do_action()` for any consent-related hook appears anywhere in the plugin's PHP source.
 - [ ] The plugin's PHP and JS code contain no references to `wp_has_consent`, `wp_listen_for_consent_change`, Real Cookie Banner, Complianz, CookieYes, or any other CMP-specific identifier.
 - [ ] In the WordPress block editor, the Map block always mounts Leaflet via the parallel React preview, regardless of consent state.
-- [ ] The Statistics and Elevation blocks render unconditionally and never invoke the consent filter.
-- [ ] [`README.md`](../README.md) contains the PHP and JavaScript glue templates under **For Builders**, with the optimisation-plugin exclusion list.
+- [ ] The Statistics and Elevation blocks render unconditionally and consult no consent surface.
+- [ ] [`README.md`](../README.md) contains the JavaScript glue template under **For Builders**, with the optimisation-plugin exclusion list.
 
 ## References
 

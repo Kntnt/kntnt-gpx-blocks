@@ -20,7 +20,7 @@ The blocks talk to each other when they're on the same page, but you choose the 
 
 ### Privacy by default
 
-Map tiles come from OpenStreetMap, which means visitor IPs are sent to a third party. The plugin exposes a small, CMP-neutral consent contract — a PHP filter, a JavaScript global, and one inbound event — that any cookie-consent plugin can be wired up to with a short glue snippet. Once the glue is in place, no tile request leaves the browser until the visitor has given consent. The plugin renders no consent UI of its own — your cookie-consent plugin handles the visitor-facing flow exactly the way it handles every other third-party service. Out of the box, with no consent plugin installed and no glue written, the map works fully (default-allow on absent signal). Activate the gate by installing a CMP and adding the templates in the **For Builders** section.
+Map tiles come from OpenStreetMap, which means visitor IPs are sent to a third party. The plugin exposes a small, CMP-neutral consent contract — a JavaScript global and one inbound event — that any cookie-consent plugin can be wired up to with a short glue snippet. Once the glue is in place, no tile request leaves the browser until the visitor has given consent. The plugin renders no consent UI of its own — your cookie-consent plugin handles the visitor-facing flow exactly the way it handles every other third-party service. Out of the box, with no consent plugin installed and no glue written, the map works fully (default-allow on absent signal). Activate the gate by installing a CMP and adding the template in the **For Builders** section.
 
 ### Performance you don't have to think about
 
@@ -116,56 +116,11 @@ This section is for developers who want to integrate the plugin with consent plu
 
 ### Connecting a cookie-consent plugin
 
-The plugin's only consent-requiring action is loading OpenStreetMap tiles in the visitor's browser. To gate that, the plugin exposes a small CMP-neutral consent contract: a PHP filter, a JavaScript global, and a JavaScript inbound event. The plugin's own code references no specific cookie-consent plugin — *you* write a short glue snippet that bridges your CMP to this contract. The contract is the same regardless of which CMP you use (Real Cookie Banner, Complianz, CookieYes, Borlabs, Cookiebot, a homegrown solution, or anything else). The full normative contract lives in [`docs/consent.md`](docs/consent.md); this section gives you the working glue.
+The plugin's only consent-requiring action is loading OpenStreetMap tiles in the visitor's browser. To gate that, the plugin exposes a small CMP-neutral consent contract: a JavaScript global and a JavaScript inbound event. The plugin's own code references no specific cookie-consent plugin — *you* write a short JavaScript glue snippet that bridges your CMP to this contract. The contract is the same regardless of which CMP you use (Real Cookie Banner, Complianz, CookieYes, Borlabs, Cookiebot, a homegrown solution, or anything else). The full normative contract lives in [`docs/consent.md`](docs/consent.md); this section gives you the working glue.
 
 The contract uses three values: **`true`** (granting), **`false`** (denying), and **`null`** (absent — no signal yet). The default in the absence of any signal is *permitted*, which is why the plugin works fully without any CMP or glue installed. Only the literal value `false` blocks tile loading. The plugin uses one category — **`external_media`** — and only one. Your glue maps that name to whatever your CMP calls the equivalent group.
 
-#### The PHP glue (functions.php or a site-specific must-use plugin)
-
-Hook the `kntnt_gpx_blocks_has_consent` filter and translate your CMP's state to the contract's tristate:
-
-```php
-add_filter( 'kntnt_gpx_blocks_has_consent', function ( $default, $category, $context ) {
-
-    if ( 'external_media' !== $category ) {
-        return $default;
-    }
-
-    if ( ! function_exists( '<cmp_consent_check_function>' ) ) {
-        return $default;
-    }
-    $cmp_result = <cmp_consent_check_function>( '<cmp_category_for_external_media>' );
-
-    return true === $cmp_result ? true : ( false === $cmp_result ? false : $default );
-
-}, 10, 3 );
-```
-
-Two concrete examples for the most common CMPs in the WordPress ecosystem follow. In each case, replace the placeholders verbatim:
-
-**Real Cookie Banner.** RCB exposes `wp_has_consent( $service )` and stores its consent in cookies named after the configured service:
-
-```php
-add_filter( 'kntnt_gpx_blocks_has_consent', function ( $default, $category, $context ) {
-    if ( 'external_media' !== $category || ! function_exists( 'wp_has_consent' ) ) {
-        return $default;
-    }
-    $cmp = wp_has_consent( 'openstreetmap' );
-    return true === $cmp ? true : ( false === $cmp ? false : $default );
-}, 10, 3 );
-```
-
-**Complianz.** Complianz exposes `cmplz_has_service_consent( $service )` and groups OSM under the *Marketing* purpose by default:
-
-```php
-add_filter( 'kntnt_gpx_blocks_has_consent', function ( $default, $category, $context ) {
-    if ( 'external_media' !== $category || ! function_exists( 'cmplz_has_service_consent' ) ) {
-        return $default;
-    }
-    $cmp = cmplz_has_service_consent( 'openstreetmap' );
-    return true === $cmp ? true : ( false === $cmp ? false : $default );
-}, 10, 3 );
-```
+The contract is **JavaScript-only.** There is no PHP filter to hook — the only consent-requiring action (Leaflet tile mount) happens in the browser, so the gate lives where the action is. See [`docs/consent.md`](docs/consent.md) section *Why no PHP filter* for the rationale.
 
 #### The JavaScript glue (CMP plugin's "code on opt-in" / "code on opt-out" fields)
 
@@ -214,7 +169,7 @@ If your optimisation plugin identifies inline scripts by content rather than by 
 
 #### Bypassing the gate entirely
 
-If you do not need consent gating — for example you self-host tiles, your jurisdiction does not require consent for embedded maps, or it is an internal tool — simply do not install the PHP glue. With no listener on `kntnt_gpx_blocks_has_consent` and no event ever dispatched, the plugin's default-allow rule keeps the map loading on every page. There is *no* setting on the plugin side that turns the gate "on" — the gate is opt-in via your glue, not opt-out via configuration.
+If you do not need consent gating — for example you self-host tiles, your jurisdiction does not require consent for embedded maps, or it is an internal tool — simply do not install the JavaScript glue. With no `kntnt_gpx_blocks:consent` event ever dispatched, the plugin's default-allow rule keeps the map loading on every page. There is *no* setting on the plugin side that turns the gate "on" — the gate is opt-in via your glue, not opt-out via configuration.
 
 ### Developer Hooks
 
@@ -222,7 +177,6 @@ If you do not need consent gating — for example you self-host tiles, your juri
 
 | Filter | Default | Purpose |
 |---|---|---|
-| `kntnt_gpx_blocks_has_consent` | `null` (absent) | Tristate consent query. Return `true` to grant, `false` to deny, anything else (including `null`) for absent. The single consent contract — see the *Connecting a cookie-consent plugin* section above and [`docs/consent.md`](docs/consent.md). |
 | `kntnt_gpx_blocks_max_file_size_bytes` | `10485760` (10 MB) | Hard cap on uploaded GPX size. |
 | `kntnt_gpx_blocks_max_track_points` | `50000` | Maximum number of trackpoints accepted. |
 | `kntnt_gpx_blocks_track_simplification_meters` | `5.0` | Douglas-Peucker tolerance for the rendered polyline. |
@@ -230,6 +184,8 @@ If you do not need consent gating — for example you self-host tiles, your juri
 | `kntnt_gpx_blocks_climb_threshold_meters` | `3.0` | Hysteresis threshold for ascent/descent calculation. |
 | `kntnt_gpx_blocks_format_distance` | — | Override the formatted distance string. |
 | `kntnt_gpx_blocks_format_elevation` | — | Override the formatted elevation string. |
+
+Consent integration is JavaScript-only — see the *Connecting a cookie-consent plugin* section above and [`docs/consent.md`](docs/consent.md).
 
 ## For Contributors
 
@@ -276,7 +232,7 @@ The script runs a fresh `composer install --no-dev --optimize-autoloader`, runs 
 
 ### Architecture Overview
 
-The plugin parses the uploaded GPX file once on the server, converts it to GeoJSON plus a small bundle of pre-computed statistics, and caches both on the attachment as post-meta. The two blocks render dynamically (server-side, via the `render` field in `block.json`) and pass their data to the client through the WordPress Interactivity API. The map and the elevation chart synchronise their cursor through a shared interactivity state keyed by a per-map identifier. The GPX Statistics layout is a `core/group` block-variation whose inner `core/paragraph` blocks have a `content` attribute bound to the `kntnt-gpx-blocks/statistics` Block Bindings source; the source resolves the page's GPX Map, reads the cached statistics, and returns the locale-formatted value. OpenStreetMap tile loading is gated by a CMP-neutral consent contract that the plugin defines (PHP filter, JS global, JS event); the plugin's own code references no specific cookie-consent plugin. The plugin checks for new versions on GitHub via a built-in `Updater` class that hooks into the WordPress plugin update system.
+The plugin parses the uploaded GPX file once on the server, converts it to GeoJSON plus a small bundle of pre-computed statistics, and caches both on the attachment as post-meta. The two blocks render dynamically (server-side, via the `render` field in `block.json`) and pass their data to the client through the WordPress Interactivity API. The map and the elevation chart synchronise their cursor through a shared interactivity state keyed by a per-map identifier. The GPX Statistics layout is a `core/group` block-variation whose inner `core/paragraph` blocks have a `content` attribute bound to the `kntnt-gpx-blocks/statistics` Block Bindings source; the source resolves the page's GPX Map, reads the cached statistics, and returns the locale-formatted value. OpenStreetMap tile loading is gated by a CMP-neutral, JavaScript-only consent contract that the plugin defines (JS global, JS event); the plugin's own code references no specific cookie-consent plugin. The plugin checks for new versions on GitHub via a built-in `Updater` class that hooks into the WordPress plugin update system.
 
 The detailed specs live in `docs/`:
 
