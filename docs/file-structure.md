@@ -32,13 +32,14 @@ PHP classes under the `\Kntnt\Gpx_Blocks` namespace, mapped one-to-one to filena
 | `Consent/` | `\Kntnt\Gpx_Blocks\Consent` | `Consent_Stub`. Builds the inline JS stub that publishes the `window.kntnt_gpx_blocks` API. |
 | `Conversion/` | `\Kntnt\Gpx_Blocks\Conversion` | `Gpx_Parser`, `Geo_Json_Converter`, `Statistics_Calculator`, `Track_Data`, `Track_Point`, `Waypoint`, `Parser_Exception`. The streaming GPX → GeoJSON + statistics pipeline. |
 | `Format/` | `\Kntnt\Gpx_Blocks\Format` | `Value_Formatter`. Locale-aware metric formatting via `number_format_i18n()`. |
-| `Rendering/` | `\Kntnt\Gpx_Blocks\Rendering` | `Render_Map`, `Render_Elevation`, `Render_Statistics`, `Render_Error`, `Error_Renderer`, `Resolve_Map_Id`, `Douglas_Peucker`, `Lttb`. Server-side render of each block plus shared simplification/downsampling/lookup helpers. |
+| `Rendering/` | `\Kntnt\Gpx_Blocks\Rendering` | `Render_Map`, `Render_Elevation`, `Render_Error`, `Error_Renderer`, `Resolve_Map_Id`, `Douglas_Peucker`, `Lttb`. Server-side render of each block plus shared simplification/downsampling/lookup helpers. |
+| `Bindings/` | `\Kntnt\Gpx_Blocks\Bindings` | `Statistics_Source`. The Block Bindings source `kntnt-gpx-blocks/statistics` that powers the bound paragraphs in the GPX Statistics pattern. |
 | `Rest/` | `\Kntnt\Gpx_Blocks\Rest` | `Preview_Controller`. The editor-only REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` consumed by the Map block's React-based editor preview. |
 | _(root)_ | `\Kntnt\Gpx_Blocks` | `Plugin` (singleton entry point that wires everything) and `Updater` (GitHub-Releases auto-update). |
 
 ## `src/blocks/` — block source
 
-TypeScript and SCSS source for the three blocks, compiled by `@wordpress/scripts`. One folder per block:
+TypeScript and SCSS source for the two blocks, compiled by `@wordpress/scripts`. One folder per block:
 
 ```
 src/blocks/
@@ -52,24 +53,23 @@ src/blocks/
 │   ├── use-ensure-unique-map-id.ts  # Custom hook: 6-char base36 mapId per Map block
 │   ├── style.scss          # Frontend + editor styles
 │   └── editor.scss         # Editor-only style overrides
-├── elevation/
-│   ├── block.json
-│   ├── index.tsx
-│   ├── edit.tsx
-│   ├── render.php          # Server-side render — proxies to Render_Elevation
-│   ├── view.ts             # Frontend Interactivity-API mount path
-│   ├── style.scss
-│   └── editor.scss
-└── statistics/
+└── elevation/
     ├── block.json
     ├── index.tsx
     ├── edit.tsx
-    ├── render.php          # Server-side render — proxies to Render_Statistics
-    ├── style.scss          # No view.ts — block has no frontend JS
+    ├── render.php          # Server-side render — proxies to Render_Elevation
+    ├── view.ts             # Frontend Interactivity-API mount path
+    ├── style.scss
     └── editor.scss
 ```
 
-Each block is dynamic (`render` field in `block.json`) and uses `viewScriptModule` (Map and Elevation only) to load `view.ts` as an ES module that imports `@wordpress/interactivity`.
+Each block is dynamic (`render` field in `block.json`) and uses `viewScriptModule` to load `view.ts` as an ES module that imports `@wordpress/interactivity`.
+
+## `patterns/` — block patterns
+
+WordPress-canonical pattern files. One file per pattern, with header comments parsed by `Bootstrap\Pattern_Registrar` via `get_file_data()` and the body captured via `ob_start`/`include`. Currently holds:
+
+- `statistics.php` — the GPX Statistics pattern. Plain `core/group` + `core/paragraph` markup; each value paragraph's `content` attribute is bound to the `kntnt-gpx-blocks/statistics` Block Bindings source. Static labels are wrapped in `<?php echo esc_html__( ... ) ?>` so they extract to the project's `.po` file.
 
 ## `build/` — compiled bundles
 

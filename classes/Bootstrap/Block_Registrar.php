@@ -18,7 +18,7 @@ namespace Kntnt\Gpx_Blocks\Bootstrap;
 /**
  * Handles block and block-category registration for the plugin.
  *
- * All three blocks are dynamic (server-side rendered); their block.json files
+ * Both blocks are dynamic (server-side rendered); their block.json files
  * live in the build output directory produced by @wordpress/scripts.
  *
  * @package Kntnt\Gpx_Blocks
@@ -35,7 +35,7 @@ final class Block_Registrar {
 	 * @since 1.0.0
 	 * @var string[]
 	 */
-	private const BLOCK_SLUGS = [ 'map', 'elevation', 'statistics' ];
+	private const BLOCK_SLUGS = [ 'map', 'elevation' ];
 
 	/**
 	 * Registers all blocks by pointing register_block_type() at the build dir.

@@ -6,8 +6,8 @@ This document specifies what is tested, with what tooling, and what is deliberat
 
 | Layer | Tooling | Where | What it covers |
 |---|---|---|---|
-| PHP unit | Pest + Brain Monkey + Mockery | `tests/Unit/` | Conversion (parser, GeoJSON converter, statistics calculator), cache (read/write/version/hash), rendering algorithms (Douglas-Peucker, LTTB, climb hysteresis), value formatters, the `Resolve_Map_Id` algorithm |
-| PHP integration | WordPress Playground + Pest | `tests/Integration/` | The plugin actually loads in WordPress, the three blocks register, an end-to-end "upload GPX → block renders" flow works |
+| PHP unit | Pest + Brain Monkey + Mockery | `tests/Unit/` | Conversion (parser, GeoJSON converter, statistics calculator), cache (read/write/version/hash), rendering algorithms (Douglas-Peucker, LTTB, climb hysteresis), value formatters, the `Resolve_Map_Id` algorithm, the `Statistics_Source` bindings dispatch, the `Pattern_Registrar` registration |
+| PHP integration | WordPress Playground + Pest | `tests/Integration/` | The plugin actually loads in WordPress, the two blocks register, the bindings source and the pattern register, an end-to-end "upload GPX → block renders / pattern values resolve" flow works |
 | Block JS unit | Jest via `wp-scripts test-unit-js` | `src/blocks/<slug>/*.test.ts(x)` (co-located) | Pure geometry helpers behind the cursor sync; Edit-component coverage is the next target |
 | Block end-to-end | Playwright + `@wordpress/e2e-test-utils-playwright` | `tests/e2e/` | The block can be inserted in the editor, the editor preview matches the frontend, cursor sync between Map and Elevation works |
 
@@ -70,14 +70,31 @@ The XXE tests use a fixture that includes an external entity reference. The expe
 - Distance ≥1000 m formats as kilometres (one decimal).
 - Locale switching changes thousands separator and decimal mark via `number_format_i18n`.
 
+### `Bindings\Statistics_Source`
+
+- Each of the five binding keys (`distance`, `min_elevation`, `max_elevation`, `ascent`, `descent`) returns a correctly formatted value for the resolved track.
+- Returns the empty string when the track has no elevation data (the four elevation keys) but distance still formats correctly.
+- Auto-resolves to the single Map on the page when `mapId` is absent or `'auto'`; honours an explicit `mapId` arg.
+- Returns the empty string for every error path: no map, multiple maps with `'auto'`, mapId not found, cache parse error, unknown key, missing `postId` context.
+- The per-request memo collapses five binding-key calls into one `parse_blocks()` call and one `Attachment_Cache::get()` call (verified via `Functions\expect( 'parse_blocks' )->once()`).
+- Separate `(postId, mapId)` pairs are memoized independently — different posts on the same request do not collide.
+
+### `Bootstrap\Pattern_Registrar`
+
+- Registers the `kntnt` pattern category exactly once with the `Kntnt` label.
+- Registers the bundled pattern with title, description, keywords, and viewport-width pulled from the file headers, all routed through `__()`.
+- Logs a warning and skips registration when the pattern file is missing.
+- Including the pattern file at registration time captures the body and resolves each `<?php echo esc_html__( ... ) ?>` label, so the registered content carries the localized labels.
+
 ## What is integration-tested
 
 **Not yet wired up.** The `tests/Integration/` directory does not exist yet. The intended scope — when the integration layer is added — is:
 
 WordPress Playground spins up a full WP instance in a browser-WASM sandbox. The plugin is installed, an editor user is logged in, and a fixture GPX file is uploaded through the media REST endpoint. Then:
 
-- The three blocks are insertable in a post.
-- A post containing all three blocks renders without PHP errors.
+- The two blocks are insertable in a post.
+- The bundled GPX Statistics pattern is insertable from the inserter under the `kntnt` category.
+- A post containing both blocks plus the pattern renders without PHP errors and the bound paragraphs resolve to the cached statistics.
 - The cached meta is written after upload.
 - The MIME registration accepts `.gpx` uploads (without it, this fails).
 - Bumping `Cache_Version::CURRENT` triggers regeneration on next render.
@@ -98,7 +115,7 @@ The geometry helpers are pure functions — no DOM, no Leaflet — so the tests 
 
 What is not yet covered (intended future scope):
 
-- `MapEdit`, `ElevationEdit`, `StatisticsEdit` render with various attribute combinations.
+- `MapEdit` and `ElevationEdit` render with various attribute combinations.
 - The `useEnsureUniqueMapId` hook generates an ID when missing and regenerates on collision.
 - The data-source picker enumerates GPX Map blocks correctly given a mocked block tree.
 - Error states (no map, multiple maps, no attachment) render the expected notices.
@@ -115,7 +132,7 @@ Playwright drives a WordPress Playground instance with the plugin installed:
 - Insert GPX Elevation, verify the chart appears and shares data with the Map.
 - Hover the chart, verify the cursor moves on the Map.
 - Hover the Map, verify the cursor moves on the chart.
-- Insert GPX Statistics, verify the values match the fixture's known totals.
+- Insert the GPX Statistics pattern, verify the bound paragraph values match the fixture's known totals.
 - Simulate a "denying" consent state by dispatching `window.dispatchEvent(new CustomEvent('kntnt_gpx_blocks:consent', { detail: { category: 'external_media', granted: false } }))` before the map renders, and verify no tile request reaches `tile.openstreetmap.org`. Then dispatch the same event with `granted: true` and verify the map mounts. Verify that the default state (no event dispatched) loads tiles — the spec's default-allow rule.
 - Verify the editor bypass: in a `block-renderer` REST request, the map mounts regardless of consent state.
 

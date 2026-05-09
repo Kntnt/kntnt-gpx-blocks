@@ -116,6 +116,30 @@ final class Plugin {
 	private ?Rest\Preview_Controller $preview_controller = null;
 
 	/**
+	 * The Statistics_Source instance bound to init.
+	 *
+	 * Held as a property so the array callable passed to add_action() keeps a
+	 * strong reference to the object for the lifetime of the request — and
+	 * so the source's per-request memo of resolved (post, map) pairs survives
+	 * across the five binding-key calls per pattern instance.
+	 *
+	 * @since 1.0.0
+	 * @var Bindings\Statistics_Source|null
+	 */
+	private ?Bindings\Statistics_Source $statistics_source = null;
+
+	/**
+	 * The Pattern_Registrar instance bound to init.
+	 *
+	 * Held as a property so the array callable passed to add_action() keeps a
+	 * strong reference to the object for the lifetime of the request.
+	 *
+	 * @since 1.0.0
+	 * @var Bootstrap\Pattern_Registrar|null
+	 */
+	private ?Bootstrap\Pattern_Registrar $pattern_registrar = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -352,6 +376,19 @@ final class Plugin {
 		// React useEffect against this endpoint.
 		$this->preview_controller = new Rest\Preview_Controller( $attachment_cache );
 		add_action( 'rest_api_init', [ $this->preview_controller, 'register_routes' ] );
+
+		// Register the Block Bindings source that exposes the cached GPX
+		// statistics to bound paragraphs in the bundled GPX Statistics
+		// pattern. Pattern + bindings together carry distance, elevation
+		// extremes, and ascent/descent into ordinary core paragraphs.
+		$this->statistics_source = new Bindings\Statistics_Source( $attachment_cache );
+		add_action( 'init', [ $this->statistics_source, 'register' ] );
+
+		// Register the bundled GPX Statistics pattern and its custom
+		// "kntnt" pattern category. Must run on init like Block_Registrar
+		// because both core registries are initialised on that hook.
+		$this->pattern_registrar = new Bootstrap\Pattern_Registrar();
+		add_action( 'init', [ $this->pattern_registrar, 'register' ] );
 
 	}
 

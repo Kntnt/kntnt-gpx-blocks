@@ -1,7 +1,7 @@
 {
 	"name": "kntnt-gpx-blocks",
-	"version": "0.2.0",
-	"description": "WordPress plugin that registers three Gutenberg blocks for visualising GPX tracks.",
+	"version": "0.3.0",
+	"description": "WordPress plugin that registers two Gutenberg blocks plus a Block Bindings source and pattern for visualising GPX tracks.",
 	"private": true,
 	"scripts": {
 		"build": "cross-env WP_EXPERIMENTAL_MODULES=true wp-scripts build",

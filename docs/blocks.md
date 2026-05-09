@@ -1,17 +1,19 @@
 # Block specifications
 
-This document specifies each of the three blocks: attributes, editor UI, render output, interactivity behaviour, accessibility. Read it when implementing or modifying a block. For the data flow that feeds the blocks, see [`architecture.md`](architecture.md). For the cache the blocks read from, see [`caching.md`](caching.md).
+This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and the GPX Statistics pattern + bindings source: attributes, editor UI, render output, interactivity behaviour, accessibility. Read it when implementing or modifying any of the three. For the data flow that feeds them, see [`architecture.md`](architecture.md). For the cache they read from, see [`caching.md`](caching.md).
 
-## Common to all three blocks
+## Common to both blocks
 
 - **Block API:** v3.
-- **Namespace:** `kntnt-gpx-blocks/<slug>` — concrete names are `kntnt-gpx-blocks/map`, `kntnt-gpx-blocks/elevation`, `kntnt-gpx-blocks/statistics`.
+- **Namespace:** `kntnt-gpx-blocks/<slug>` — concrete names are `kntnt-gpx-blocks/map` and `kntnt-gpx-blocks/elevation`.
 - **Category:** `kntnt` (display name "Kntnt"), registered by `Bootstrap\Block_Registrar`.
 - **Text domain:** `kntnt-gpx-blocks`.
 - **Rendering:** dynamic. `block.json` declares `"render": "file:./render.php"` and the `save` callback returns `null`.
 - **Frontend interactivity:** `viewScriptModule` (ES module) imports `@wordpress/interactivity`.
-- **Editor preview:** for the Map block, a React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) mounts Leaflet directly using GeoJSON fetched from the plugin's REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` — `view.ts` is frontend-only. For Elevation and Statistics, `<ServerSideRender>` is used (their server-rendered SVG / `<dl>` is visible without any client-side runtime).
+- **Editor preview:** for the Map block, a React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) mounts Leaflet directly using GeoJSON fetched from the plugin's REST endpoint `kntnt-gpx-blocks/v1/preview/<id>` — `view.ts` is frontend-only. For Elevation, `<ServerSideRender>` is used (its server-rendered SVG is visible without any client-side runtime).
 - **Persistence:** every attribute that is a colour or a font reference stores whatever the WordPress editor component delivers — typically a hex string for colours and a `var(--wp--preset--…)` reference for typography presets. Empty/null falls back to a hardcoded default in CSS.
+
+The GPX Statistics pattern and its bindings source follow a different model — see *GPX Statistics pattern* at the bottom of this doc. Pattern markup is registered by `Bootstrap\Pattern_Registrar` from `patterns/statistics.php`; the bindings source is `kntnt-gpx-blocks/statistics`, registered by `Bindings\Statistics_Source` with `uses_context: ['postId']`.
 
 ## GPX Map
 
@@ -48,7 +50,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 
 `InspectorControls` panels, in order:
 
-1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips the editor preview (`MapEditorPreview` for Map; `<ServerSideRender>` for Elevation and Statistics).
+1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips the editor preview (`MapEditorPreview` for Map; `<ServerSideRender>` for Elevation).
 2. **Layout** — aspect-ratio dropdown (`1/1`, `4/3`, `3/2`, `16/9`, `21/9`, custom), min-height, optional max-height.
 3. **Controls** — toggles for the four control overlays.
 4. **Interactions** — toggles for the four interaction modes (drag, pinch zoom, double-click zoom, keyboard). Scroll-wheel and box zoom are not toggles: the wheel handler is fixed (modifier-or-pinch zooms, two-finger pan pans, mouse wheel surfaces a hint), and box zoom is removed.
@@ -203,56 +205,50 @@ The screen-reader summary in `<desc>` reads (translated): `"Elevation profile fr
 
 The Map's own errors propagate up if the underlying attachment is broken — Elevation shows the same error.
 
-## GPX Statistics
+## GPX Statistics pattern
 
-Server-rendered HTML summary. No JavaScript required for this block on the frontend. Cursor sync is not applicable.
+The GPX Statistics summary is **not** a block. It is a *block pattern* + a *Block Bindings source*. The pattern provides the layout (a 2×3 grid of label/value paragraph pairs, first row spanning both columns); the bindings source provides the data (one formatted statistic per binding key). All theming is whatever the user's theme + the standard core paragraph controls give — there is no plugin-specific theming surface.
 
-### Attributes
+### Pattern
 
-| Attribute | Type | Default | Notes |
-|---|---|---|---|
-| `mapId` | string | `"auto"` | Same picker logic as Elevation. |
-| `headerBackground` | string | `""` | Background for the `<dt>` part. |
-| `headerColor` | string | `""` | Text colour for headers. |
-| `headerFontFamily` | string | `""` | |
-| `headerFontSize` | string | `""` | |
-| `headerFontWeight` | string | `""` | |
-| `headerFontStyle` | string | `""` | |
-| `valueBackground` | string | `""` | Background for the `<dd>` part. |
-| `valueColor` | string | `""` | |
-| `valueFontFamily` | string | `""` | |
-| `valueFontSize` | string | `""` | |
-| `valueFontWeight` | string | `""` | |
-| `valueFontStyle` | string | `""` | |
+- **Slug:** `kntnt-gpx-blocks/statistics`.
+- **Title / description:** translated via `__()` from the pattern file's headers.
+- **Categories:** `kntnt` (a custom pattern category registered by `Bootstrap\Pattern_Registrar`, mirroring the `kntnt` block category).
+- **Source file:** `patterns/statistics.php`. WP-canonical pattern format with header comments + a PHP body that emits the block markup. Each label paragraph wraps its text in `<?php echo esc_html__( 'Total length', 'kntnt-gpx-blocks' ); ?>` so labels extract to `.po` and translate at insertion time.
+- **Markup shape:**
 
-### Editor UI
+```html
+<!-- wp:group {"layout":{"type":"grid","columnCount":2}} -->
+  <!-- wp:group {"style":{"layout":{"columnSpan":2}},"layout":{"type":"flex"}} -->
+    <!-- wp:paragraph --><p><strong>Total length:</strong></p><!-- /wp:paragraph -->
+    <!-- wp:paragraph {"metadata":{"bindings":{"content":{"source":"kntnt-gpx-blocks/statistics","args":{"key":"distance"}}}}} -->
+      <p>40 km</p>
+    <!-- /wp:paragraph -->
+  <!-- /wp:group -->
+  <!-- ... four more rows for min_elevation, max_elevation, ascent, descent ... -->
+<!-- /wp:group -->
+```
 
-`InspectorControls`:
+The placeholder text inside each bound paragraph (`40 km`, `-8 m`, etc.) is what shows in the inserter preview; on render, the bindings overwrite it.
 
-1. **Data source** — same `SelectControl` as Elevation.
-2. **Headers** — `PanelColorSettings` for header colours, typography group.
-3. **Values** — same panels for the value typography.
+### Bindings source
+
+- **Source name:** `kntnt-gpx-blocks/statistics`.
+- **Class:** `Bindings\Statistics_Source` (held as a private property on `Plugin`, registered on `init`).
+- **`uses_context`:** `['postId']`. Required because `core/paragraph` does not declare `postId` in its own context.
+- **Args schema:**
+  - `key` (required) — one of `'distance'`, `'min_elevation'`, `'max_elevation'`, `'ascent'`, `'descent'`. Other values resolve to an empty string + `Plugin::warning()`.
+  - `mapId` (optional) — defaults to `'auto'`. Forwarded to `Resolve_Map_Id::resolve()` along with the host post ID.
+- **Return value:** a string, locale-formatted via `Format\Value_Formatter` (the same formatter the plugin uses elsewhere). Distance gets auto-metric units (m below 1000, km above); elevations are always whole metres. Both go through the existing `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
+- **Error contract:** every error path (no map, multiple maps with `'auto'`, mapId not found, cache parse error, missing file, unknown key, missing postId) returns the empty string. The misconfiguration is logged once per render via `Plugin::error()` (resolve/cache errors) or `Plugin::warning()` (unknown key) — bindings cannot return HTML, so the editor's only signal is the visible empty values in the editor preview.
+- **Per-request memoization:** an instance-level array keyed by `"$post_id|$map_id"` collapses the five binding-key calls per pattern instance into one map resolve + one cache fetch + one log line. The memo lives for the request only; cleared by PHP shutdown.
 
 ### Render output
 
-```html
-<dl class="wp-block-kntnt-gpx-blocks-statistics kntnt-gpx-blocks-statistics" style="--kntnt-gpx-blocks-header-color: #1e1e1e;">
-    <div class="kntnt-gpx-blocks-statistics-item">
-        <dt>Total length</dt>
-        <dd>12.3 km</dd>
-    </div>
-    <div class="kntnt-gpx-blocks-statistics-item">
-        <dt>Lowest elevation</dt>
-        <dd>123 m</dd>
-    </div>
-    <!-- Highest elevation, Total ascent, Total descent -->
-</dl>
-```
+The pattern is plain `core/group` + `core/paragraph` markup. Once inserted, it persists in `post_content` as standard core blocks; only the `metadata.bindings` slot on each value paragraph references the plugin. There is no plugin-specific HTML wrapper, no plugin-specific CSS class, and no plugin-specific JS.
 
-When the track has no elevation data, the four elevation rows are omitted entirely. When the track has too few points, the block renders an error state (visible only to editors). The `<div>` wrapper around `<dt>` / `<dd>` enables CSS Grid layout that wraps to 1–2 items per row in narrow columns and shows all five in a row on wide screens.
+When the track has no elevation data, the four elevation rows render with empty values (the binding callback returns `''` for null statistics). The static label paragraphs still render — the user can delete unwanted rows from the inserted pattern if they want to hide them entirely.
 
-The block has **no** JavaScript on the frontend. Values are formatted server-side via `Format\Value_Formatter`, which uses `number_format_i18n()` for locale-aware decimals and applies the auto-metric unit selection (m below 1000, km above) described in [`architecture.md`](architecture.md).
+### Errors (visitor side)
 
-### Errors
-
-Same set as Elevation: `'no-map'`, `'multiple-maps'`, `'map-not-found'`, plus the upstream Map errors.
+Bound paragraph values render as empty strings on every error path. Visitors see the static label "Lowest elevation:" with a blank value beside it. There is no editor-only `.kntnt-gpx-blocks-error` notice — the bindings API does not allow returning HTML for that purpose. The error is logged once per render via the plugin's logging API for editors who check `error_log`.

@@ -3,11 +3,12 @@
  * Resolves a mapId (or 'auto') to the concrete attachment ID and map ID of
  * the single GPX Map block on the post.
  *
- * Used by Render_Elevation and Render_Statistics to locate the upstream GPX
- * Map when their mapId attribute is '' or 'auto', and to validate explicit
- * mapId values. The algorithm parses post_content via parse_blocks() so it
- * works for any post type and does not require the map block to be at the
- * top level of the block tree.
+ * Used by Render_Elevation and the `kntnt-gpx-blocks/statistics` Block
+ * Bindings source to locate the upstream GPX Map when the consumer's
+ * mapId is '' or 'auto', and to validate explicit mapId values. The
+ * algorithm parses post_content via parse_blocks() so it works for any
+ * post type and does not require the map block to be at the top level
+ * of the block tree.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

@@ -178,12 +178,13 @@ final class Render_Map {
 		// frontend cursor sync uses this to map a fraction-of-total-distance
 		// back to a position between two simplified vertices, so the cursor
 		// glides along the rendered polyline at the same physical point that
-		// Statistics and Elevation refer to.
+		// Elevation and the Statistics bindings refer to.
 		$track_cum_dist = self::cumulative_for_simplified( $track_points, $simplified );
 
-		// Total distance comes from the cache so all three blocks agree on the
-		// canonical figure. Falls back to 0.0 only when the cache lacks it,
-		// which is impossible given the cache contract.
+		// Total distance comes from the cache so the Map polyline, the Elevation
+		// chart, and the Statistics bindings source all agree on the canonical
+		// figure. Falls back to 0.0 only when the cache lacks it, which is
+		// impossible given the cache contract.
 		$raw_total      = $payload['statistics']['distance'] ?? 0.0;
 		$total_distance = is_numeric( $raw_total ) ? (float) $raw_total : 0.0;
 

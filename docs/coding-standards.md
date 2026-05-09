@@ -906,14 +906,17 @@ in this document to the concrete values that apply to the
 | Block category slug | `kntnt` (display name `Kntnt`) |
 | Block JS source root | `src/blocks/<slug>/` |
 | Block build output root | `build/blocks/<slug>/` |
-| Block names | `kntnt-gpx-blocks/map`, `kntnt-gpx-blocks/elevation`, `kntnt-gpx-blocks/statistics` |
+| Block names | `kntnt-gpx-blocks/map`, `kntnt-gpx-blocks/elevation` |
+| Block Bindings source name | `kntnt-gpx-blocks/statistics` |
+| Block pattern slug | `kntnt-gpx-blocks/statistics` |
+| Pattern category slug | `kntnt` (display name `Kntnt`) |
 
 ### Versions and platform targets
 
 | Dimension | Value |
 |---|---|
 | PHP minimum (runtime + plugin header) | 8.4 |
-| WordPress minimum | 6.5 (Interactivity API in core) |
+| WordPress minimum | 6.7 (Block Bindings `uses_context` argument) |
 | WordPress tested up to | matches latest stable at release |
 | Block API version | 3 |
 | TypeScript target | ES2022 |
@@ -966,11 +969,11 @@ kntnt-gpx-blocks/
 ├── languages/
 ├── classes/                     # PSR-4 source (Kntnt\Gpx_Blocks)
 ├── migrations/                  # Empty in v1
+├── patterns/                    # Block patterns (e.g. statistics.php)
 ├── src/
 │   └── blocks/
 │       ├── map/
-│       ├── elevation/
-│       └── statistics/
+│       └── elevation/
 ├── build/                       # @wordpress/scripts output (committed)
 ├── vendor/                      # Composer (gitignored)
 └── tests/
@@ -980,8 +983,9 @@ kntnt-gpx-blocks/
 
 ### Block frontend interactivity
 
-All three blocks use the WordPress Interactivity API. In `block.json`,
+Both blocks use the WordPress Interactivity API. In `block.json`,
 this means `viewScriptModule` (not `viewScript`) so that the entry
 file is loaded as an ES module and can `import { store, getContext }
-from '@wordpress/interactivity'`.
+from '@wordpress/interactivity'`. The GPX Statistics pattern needs no
+view script — its bound paragraphs are server-rendered text.
 

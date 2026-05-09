@@ -53,7 +53,7 @@ The plugin never constructs file paths from user input. All file access goes thr
 | Action | Capability |
 |---|---|
 | Upload a `.gpx` file | `upload_files` (Author and above by WordPress default) |
-| Insert any of the three blocks in a post | `edit_posts` (transitively, via the block editor) |
+| Insert either block or the GPX Statistics pattern in a post | `edit_posts` (transitively, via the block editor) |
 | See error renderings | `edit_posts` — visitors without it see an empty block |
 | Run `wp kntnt-gpx regenerate` | Shell access to the host (no web exposure) |
 
