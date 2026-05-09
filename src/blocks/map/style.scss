@@ -26,13 +26,26 @@
 	--kntnt-gpx-blocks-waypoint-label-font-weight: 500;
 	--kntnt-gpx-blocks-waypoint-label-font-style: normal;
 
-	// Crosshair cursor over the invisible fat hit-polyline overlay so the
-	// pointer signals interactivity across the whole hit band, not only over
-	// the visible 4 px stroke. Without this rule the cursor reverts to the
-	// default tile cursor whenever the pointer is inside the band but outside
-	// the visible line, which is confusing.
+	// Hit-zone overlay sitting above the visible 4 px stroke as a transparent
+	// SVG `<path>`. `pointer-events: stroke` makes the path receive events on
+	// the stroke band even though stroke-opacity is 0; without it, the SVG
+	// default `visiblePainted` would skip the fully-transparent stroke in
+	// some browsers. `touch-action: none` makes the browser hand a touch
+	// that begins on the band to our `pointerdown` listener instead of
+	// claiming it for page scroll or map pan — without this the gesture is
+	// lost before any JS runs. `cursor: crosshair` signals interactivity
+	// across the whole band rather than only the visible 4 px line. The
+	// three `-webkit-*` properties suppress Safari mobile defaults that
+	// `touch-action` alone does not cover: the long-press image-callout
+	// menu, text selection during drag, and the grey tap highlight overlay.
 	.kntnt-gpx-blocks-track-hit {
 		cursor: crosshair;
+		pointer-events: stroke;
+		touch-action: none;
+		-webkit-touch-callout: none;
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	// Style Leaflet tooltips that appear over waypoint markers. The Leaflet

@@ -311,31 +311,46 @@ function nearestFraction(
 }
 
 /**
- * Wire pointer tracking on the GeoJSON polyline.
+ * Wire pointer tracking on the SVG hit-layer `<path>`.
  *
- * Hover over the polyline writes `state[mapId].fraction` so the cursor follows
- * the pointer without any click. A press on the polyline begins a scrub: the
- * map's drag handler is suspended for the duration of the press, and a
- * map-level mousemove listener follows the pointer (even if it leaves the
- * polyline) to update fraction continuously. A document-level pointerup ends
- * the scrub and re-enables drag.
+ * Native Pointer Events fire directly on the path element, sidestepping
+ * Leaflet's mouse-event emulation. `pointerdown` claims the gesture as a
+ * scrub: it disables map dragging, calls `setPointerCapture` so the path
+ * keeps receiving `pointermove` even when the finger drifts off it, and
+ * writes `state[mapId].fraction` immediately so the cursor jumps under the
+ * finger on first touch. `pointermove` updates the fraction continuously —
+ * during a scrub by virtue of capture, and on plain mouse hover by virtue of
+ * the path receiving the event when the mouse is over the stroke.
+ * `pointerup` and `pointercancel` end the scrub and release capture.
  *
- * Pointerleave on the block element nulls the fraction so both cursors hide,
- * unless a scrub is in progress — in that case the cursor stays visible and
- * tracks the pointer until release.
+ * On the path, `touch-action: none` (CSS) prevents the browser from
+ * interpreting a touch on the track as scroll or pan; on the rest of the
+ * map, the browser default is preserved so two-finger pan and pinch still
+ * pan and pinch the map.
+ *
+ * Two dismissal paths null the fraction so the cursor disappears:
+ * - `map.on('click')` fires on a tap or click outside the hit-layer that
+ *   is not part of a drag (Leaflet's click event filters drags out). Same
+ *   gesture for mouse and touch.
+ * - `pointerleave` on the block fires when a mouse leaves the block area;
+ *   on touch it fires automatically when the finger lifts (the touch
+ *   pointer ceases), and we deliberately skip it there so the cursor stays
+ *   at its last position — touch users have no hover and need the cursor
+ *   to persist after the gesture so they can read the elevation profile.
  *
  * @since 1.0.0
  *
- * @param map     - Leaflet map instance.
- * @param layer   - GeoJSON polyline layer with hit-testable mouse events.
- * @param blockEl - Block wrapper element used for the leave handler.
- * @param coords  - Flat [lat, lng] array shared with the cursor sync.
- * @param mapId   - Interactivity store key for this map.
- * @param signal  - AbortSignal that releases document-level listeners on tear-down.
+ * @param map      - Leaflet map instance.
+ * @param hitLayer - SVG-rendered GeoJSON layer whose first inner layer
+ *                 exposes the `<path>` we attach pointer events to.
+ * @param blockEl  - Block wrapper element used for the mouse-leave handler.
+ * @param coords   - Flat [lat, lng] array shared with the cursor sync.
+ * @param mapId    - Interactivity store key for this map.
+ * @param signal   - AbortSignal that releases listeners on tear-down.
  */
 function attachScrubHandlers(
 	map: L.Map,
-	layer: L.GeoJSON,
+	hitLayer: L.GeoJSON,
 	blockEl: HTMLElement,
 	coords: Array< [ number, number ] >,
 	mapId: string,
@@ -345,51 +360,93 @@ function attachScrubHandlers(
 		return;
 	}
 
+	// Resolve the underlying SVG <path>. The hit layer is added to the map
+	// before this call, so the renderer has materialised the element by now.
+	const innerLayer = hitLayer.getLayers()[ 0 ] as L.Polyline | undefined;
+	const pathEl = innerLayer?.getElement() as SVGPathElement | null;
+	if ( ! pathEl ) {
+		return;
+	}
+
+	// Stop the synthesised click on the path from bubbling to the map below;
+	// otherwise the dismissal handler (`map.on('click')`) would null the
+	// fraction we just set during the scrub.
+	L.DomEvent.disableClickPropagation( pathEl );
+
 	let scrubbing = false;
 
-	// Hover (no button pressed) — cursor follows the pointer along the track.
-	layer.on( 'mousemove', ( e: L.LeafletMouseEvent ) => {
-		state[ mapId ].fraction = nearestFraction( coords, e.latlng, map );
-	} );
+	pathEl.addEventListener(
+		'pointerdown',
+		( event: PointerEvent ) => {
+			// Ignore secondary pointers during an active scrub so a stray
+			// second finger cannot hijack capture mid-gesture.
+			if ( scrubbing ) {
+				return;
+			}
 
-	// Press on the polyline — start scrubbing. Disable map drag so the map
-	// stays put and the cursor moves instead.
-	layer.on( 'mousedown', ( e: L.LeafletMouseEvent ) => {
-		scrubbing = true;
-		map.dragging.disable();
-		state[ mapId ].fraction = nearestFraction( coords, e.latlng, map );
-	} );
+			event.preventDefault();
+			scrubbing = true;
+			map.dragging.disable();
+			pathEl.setPointerCapture( event.pointerId );
+			state[ mapId ].fraction = nearestFraction(
+				coords,
+				map.mouseEventToLatLng( event ),
+				map
+			);
+		},
+		{ signal }
+	);
 
-	// While scrubbing, follow the pointer over the entire map — not just the
-	// polyline — so the cursor keeps tracking even if the pointer drifts off.
-	map.on( 'mousemove', ( e: L.LeafletMouseEvent ) => {
-		if ( ! scrubbing ) {
-			return;
-		}
-		state[ mapId ].fraction = nearestFraction( coords, e.latlng, map );
-	} );
+	pathEl.addEventListener(
+		'pointermove',
+		( event: PointerEvent ) => {
+			// Capture during a scrub keeps this firing even when the pointer
+			// is off the path; for plain mouse hover the event also fires
+			// when the mouse is over the stroke. Touch has no hover, so the
+			// `mouse` branch is a no-op for touch in practice.
+			if ( scrubbing || event.pointerType === 'mouse' ) {
+				state[ mapId ].fraction = nearestFraction(
+					coords,
+					map.mouseEventToLatLng( event ),
+					map
+				);
+			}
+		},
+		{ signal }
+	);
 
-	// Release ends the scrub, regardless of where it happens. Document-level
-	// listeners catch releases that occur outside the map element. Both
-	// pointerup and pointercancel are needed: the latter fires on touch when
-	// the OS interrupts the gesture (alert, fullscreen exit, etc.).
-	const endScrub = () => {
+	const endScrub = ( event: PointerEvent ) => {
 		if ( ! scrubbing ) {
 			return;
 		}
 		scrubbing = false;
 		map.dragging.enable();
+		if ( pathEl.hasPointerCapture( event.pointerId ) ) {
+			pathEl.releasePointerCapture( event.pointerId );
+		}
 	};
-	document.addEventListener( 'pointerup', endScrub, { signal } );
-	document.addEventListener( 'pointercancel', endScrub, { signal } );
 
-	// Pointer leaves the block — hide both cursors. Skip while scrubbing so
-	// brief excursions outside the block (e.g., the cursor strays off-map
-	// during a fast scrub) do not flicker the cursor off.
+	pathEl.addEventListener( 'pointerup', endScrub, { signal } );
+	pathEl.addEventListener( 'pointercancel', endScrub, { signal } );
+
+	// Tap or click on the map outside the hit-layer dismisses the cursor.
+	// Symmetric for mouse and touch. Leaflet's `click` event only fires when
+	// there was no significant drag, so a panning gesture on empty map area
+	// does not dismiss.
+	map.on( 'click', () => {
+		state[ mapId ].fraction = null;
+	} );
+
+	// Mouse leaves the block — null the fraction so the cursor disappears.
+	// Skip while scrubbing so brief excursions outside the block during a
+	// fast scrub do not flicker the cursor off. Skip on touch entirely: a
+	// finger lift fires `pointerleave` automatically (the touch pointer
+	// ceases to exist), and we want the cursor to stay at its last position
+	// so the user can read the elevation profile after pointing.
 	blockEl.addEventListener(
 		'pointerleave',
-		() => {
-			if ( scrubbing ) {
+		( event: PointerEvent ) => {
+			if ( scrubbing || event.pointerType === 'touch' ) {
 				return;
 			}
 			state[ mapId ].fraction = null;
@@ -614,25 +671,25 @@ function bootMount(
 			layer.addTo( map );
 
 			// Invisible fat overlay sharing the visible polyline's geometry.
-			// Leaflet's polyline mousemove fires only inside the line's narrow
-			// pixel hit zone (a few pixels at weight 4), which makes hover-driven
-			// cursor sync feel jumpy as the pointer drifts in and out of the
-			// zone. Stacking a transparent weight: 30 layer above the visible
-			// one widens the hit zone to ~15 px on each side without changing
-			// the visible appearance, lets Leaflet's native pixel-space hit
-			// detection handle hairpins (it picks the closer screen segment),
-			// and is more idiomatic than hand-rolled distance thresholding.
-			// pointer-events stays on (interactive: true) so the hit layer
-			// receives mouse events; bubbling stays at Leaflet's default so
-			// popups and controls below it still work.
+			// Stacking a transparent weight: 30 layer above the visible 4 px
+			// stroke widens the pointer hit zone to ~15 px on each side without
+			// changing the visible appearance. The hit layer is forced onto
+			// the SVG renderer (overriding the map's canvas default) so it
+			// renders to a real `<path>` DOM element that native pointer
+			// events can attach to. Canvas-rendered shapes have no per-shape
+			// element, which forces routing through Leaflet's mouse-event
+			// emulation — and on touch that emulation only synthesises
+			// `mousedown` after a tap-detection delay, by which time the
+			// browser has already claimed the gesture for scroll or pan.
 			const hitLayer = L.geoJSON( mapState.geojson, {
 				style: () => ( {
 					weight: 30,
 					opacity: 0,
 					fillOpacity: 0,
+					className: 'kntnt-gpx-blocks-track-hit',
 				} ),
 				interactive: true,
-				className: 'kntnt-gpx-blocks-track-hit',
+				renderer: L.svg(),
 			} );
 			hitLayer.addTo( map );
 
