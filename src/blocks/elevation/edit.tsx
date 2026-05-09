@@ -105,15 +105,22 @@ interface FontSizePreset {
 /**
  * Preset aspect-ratio options for the Layout panel dropdown.
  *
- * Elevation profiles are wider than tall, so the default 4/1 is the first
- * non-custom entry. The "Custom" sentinel causes a TextControl to appear.
+ * Elevation profiles are typically wider than tall (default `4/1`), but the
+ * dropdown exposes the same unified list as GPX Map so editors get a
+ * consistent set of presets across both blocks. The "Custom" sentinel causes
+ * a TextControl to appear.
  *
  * @since 1.0.0
  */
 const ASPECT_RATIO_OPTIONS = [
-	{ label: '4 / 1', value: '4/1' },
-	{ label: '6 / 1', value: '6/1' },
+	{ label: '1 / 1', value: '1/1' },
+	{ label: '4 / 3', value: '4/3' },
+	{ label: '3 / 2', value: '3/2' },
+	{ label: '16 / 9', value: '16/9' },
+	{ label: '2 / 1', value: '2/1' },
+	{ label: '21 / 9', value: '21/9' },
 	{ label: '3 / 1', value: '3/1' },
+	{ label: '4 / 1', value: '4/1' },
 	{ label: __( 'Custom', 'kntnt-gpx-blocks' ), value: 'custom' },
 ];
 

@@ -51,7 +51,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 `InspectorControls` panels, in order:
 
 1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips the editor preview (`MapEditorPreview` for Map; `<ServerSideRender>` for Elevation).
-2. **Layout** — aspect-ratio dropdown (`1/1`, `4/3`, `3/2`, `16/9`, `21/9`, custom), min-height, optional max-height.
+2. **Layout** — aspect-ratio dropdown (`1/1`, `4/3`, `3/2`, `16/9`, `2/1`, `21/9`, `3/1`, `4/1`, custom), min-height, optional max-height. The same eight presets in the same order are exposed by GPX Elevation.
 3. **Controls** — toggles for the four control overlays.
 4. **Interactions** — toggles for the four interaction modes (drag, pinch zoom, double-click zoom, keyboard). Scroll-wheel and box zoom are not toggles: the wheel handler is fixed (modifier-or-pinch zooms, two-finger pan pans, mouse wheel surfaces a hint), and box zoom is removed.
 5. **Track** — `PanelColorSettings` for `trackColor` and `trackCursorColor`.
@@ -204,7 +204,7 @@ The screen-reader summary in `<desc>` reads (translated): `"Elevation profile fr
 3. Defers `pointermove` / `pointerleave` binding on the SVG until the block enters the viewport via `IntersectionObserver`. Pointer events compute `fraction` from the pointer's x-position relative to the plot area and write it to `state[mapId].fraction`.
 4. The `callbacks.onElevationCursorChange` watch updates the cursor line x-position, the dot position, and the tooltip text whenever `state[mapId].fraction` changes (from either Elevation's own pointer events or from GPX Map). Does not write back to fraction (no feedback loop). Named per block so the Map module's watch callback (`onMapCursorChange`) survives the merge into the shared `kntnt-gpx-blocks` store.
 
-The tooltip is rendered as a single SVG `<text>` element with two `<tspan>` children — distance on the first row, elevation on the second — both centred horizontally. The default `--kntnt-gpx-blocks-tooltip-font-size` is `16px` so the two rows stay legible at the chart's default `4/1` aspect ratio and at the narrower aspect-ratio presets (`6/1`, `3/1`); editors can still override it from the *Tooltip typography* panel. Distance switches from metres to kilometres at 1000 m to match the x-axis; elevation is always whole metres.
+The tooltip is rendered as a single SVG `<text>` element with two `<tspan>` children — distance on the first row, elevation on the second — both centred horizontally. The default `--kntnt-gpx-blocks-tooltip-font-size` is `16px` so the two rows stay legible at the chart's default `4/1` aspect ratio and at the other unified aspect-ratio presets; editors can still override it from the *Tooltip typography* panel. Distance switches from metres to kilometres at 1000 m to match the x-axis; elevation is always whole metres.
 
 ### Errors
 
