@@ -12,8 +12,9 @@
  * way any other consumer would.
  *
  * The script lives in `js/statistics-variation.js` as plain ES2022 that
- * uses `window.wp.blocks` and `window.wp.i18n` directly — no bundling via
- * `@wordpress/scripts` is needed for ~90 lines.
+ * uses `window.wp.blocks`, `window.wp.element`, and `window.wp.i18n`
+ * directly — no bundling via `@wordpress/scripts` is needed for ~120
+ * lines. `window.wp.element` is needed to construct the inline SVG icon.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -99,7 +100,7 @@ final class Variation_Registrar {
 		wp_enqueue_script(
 			self::HANDLE,
 			$url,
-			[ 'wp-blocks', 'wp-i18n' ],
+			[ 'wp-blocks', 'wp-element', 'wp-i18n' ],
 			$version,
 			true,
 		);

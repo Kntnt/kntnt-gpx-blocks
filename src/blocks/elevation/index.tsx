@@ -16,14 +16,18 @@
 import { registerBlockType } from '@wordpress/blocks';
 
 import { ElevationEdit } from './edit';
+import { ElevationIcon } from './icon';
 import metadata from './block.json';
 
 // Import stylesheets so webpack extracts them to the build directory.
 import './style.scss';
 import './editor.scss';
 
-// Register the block type, wiring the edit component and a null save.
+// Register the block type, wiring the edit component, the inline SVG icon,
+// and a null save. The icon overrides the default generic-block placeholder
+// in the inserter, List View, breadcrumb, and Document Outline.
 registerBlockType( metadata.name, {
 	edit: ElevationEdit,
+	icon: ElevationIcon,
 	save: () => null,
 } );

@@ -12,8 +12,10 @@
  * placeholder picker — it appears only as a standalone inserter entry, so
  * unrelated `core/group` insertions are unaffected.
  *
- * The script is plain ES2022 and reads `window.wp.blocks` and `window.wp.i18n`
- * directly; no `@wordpress/scripts` build step is needed for ~80 lines.
+ * The script is plain ES2022 and reads `window.wp.blocks`,
+ * `window.wp.element`, and `window.wp.i18n` directly; no `@wordpress/scripts`
+ * build step is needed for ~120 lines. `window.wp.element` is needed to
+ * construct the inline SVG icon as React elements at runtime.
  *
  * @since 1.0.0
  */
@@ -24,6 +26,45 @@
 
 	const { registerBlockVariation } = window.wp.blocks;
 	const { __ } = window.wp.i18n;
+	const { createElement } = window.wp.element;
+
+	/**
+	 * Inline SVG icon for the GPX Statistics variation.
+	 *
+	 * Three vertical bars of varying heights sitting on their own baseline,
+	 * above a short winding track segment — a "metrics about a track" motif
+	 * that distinguishes the variation from the generic `chart-bar` Dashicon.
+	 * Drawn as `currentColor` strokes so the icon adapts to the editor's
+	 * light/dark chrome and to selected/active states. The 24x24 viewBox,
+	 * 1.5 stroke width, round caps/joins, and overall optical density match
+	 * the GPX Map and GPX Elevation icons so the three read as one cohesive
+	 * family in the inserter, List View, breadcrumb, and Document Outline.
+	 *
+	 * Authored as `wp.element.createElement` calls (not JSX) because this
+	 * file ships through `wp_enqueue_script()` without going through the
+	 * `@wordpress/scripts` build pipeline.
+	 */
+	const statisticsIcon = createElement(
+		'svg',
+		{
+			xmlns: 'http://www.w3.org/2000/svg',
+			viewBox: '0 0 24 24',
+			width: 24,
+			height: 24,
+			fill: 'none',
+			stroke: 'currentColor',
+			strokeWidth: 1.5,
+			strokeLinecap: 'round',
+			strokeLinejoin: 'round',
+			'aria-hidden': 'true',
+			focusable: 'false',
+		},
+		createElement( 'path', { d: 'M4 14 H20' } ),
+		createElement( 'path', { d: 'M6 14 V10' } ),
+		createElement( 'path', { d: 'M12 14 V4' } ),
+		createElement( 'path', { d: 'M18 14 V7' } ),
+		createElement( 'path', { d: 'M3 20 C6.5 18.5 9.5 21 13 19 C16 17.5 18.5 19.5 21 18.5' } )
+	);
 
 	/**
 	 * Builds the markup for one label-and-value row.
@@ -91,7 +132,7 @@
 			'kntnt-gpx-blocks'
 		),
 		category: 'kntnt',
-		icon: 'chart-bar',
+		icon: statisticsIcon,
 		scope: [ 'inserter' ],
 		keywords: [ 'gpx', 'statistics', 'distance', 'elevation', 'ascent', 'descent' ],
 		attributes: {

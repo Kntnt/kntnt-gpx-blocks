@@ -45,9 +45,10 @@ TypeScript and SCSS source for the two blocks, compiled by `@wordpress/scripts`.
 src/blocks/
 ├── map/
 │   ├── block.json          # Block metadata; references render.php and view.ts
-│   ├── index.tsx           # Editor entry: imports edit, calls registerBlockType
+│   ├── index.tsx           # Editor entry: imports edit + icon, calls registerBlockType
 │   ├── edit.tsx            # MapEdit — InspectorControls and MediaPlaceholder
 │   ├── editor-preview.tsx  # MapEditorPreview — React + Leaflet preview inside the editor
+│   ├── icon.tsx            # MapIcon — inline SVG block icon (pin over a track segment)
 │   ├── render.php          # Server-side render — proxies to Render_Map
 │   ├── view.ts             # Frontend Interactivity-API mount path
 │   ├── use-ensure-unique-map-id.ts  # Custom hook: 6-char base36 mapId per Map block
@@ -57,6 +58,7 @@ src/blocks/
     ├── block.json
     ├── index.tsx
     ├── edit.tsx
+    ├── icon.tsx            # ElevationIcon — inline SVG block icon (mountain profile)
     ├── render.php          # Server-side render — proxies to Render_Elevation
     ├── view.ts             # Frontend Interactivity-API mount path
     ├── style.scss
