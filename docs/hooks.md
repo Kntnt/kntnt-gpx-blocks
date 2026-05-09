@@ -84,7 +84,7 @@ Douglas-Peucker tolerance for the rendered polyline, in metres. Default `5.0`.
 $tolerance = apply_filters( 'kntnt_gpx_blocks_track_simplification_meters', 5.0 );
 ```
 
-Applied at server render time, not at conversion time. Lowering increases polyline detail at the cost of more SVG/canvas vertices. Raising smooths the line further. Statistics are computed on full-fidelity data and are unaffected.
+Applied at server render time, not at conversion time. The value is a **perpendicular tolerance** — the maximum deviation between the simplified chord and the original arc — not a sample rate. Lowering increases polyline detail at the cost of more SVG/canvas vertices. Raising smooths the line further. The filter affects the rendered polyline only; the cached GeoJSON is never simplified, so Statistics and Elevation continue to read from full-fidelity data and are unaffected.
 
 ### `kntnt_gpx_blocks_elevation_target_points`
 
