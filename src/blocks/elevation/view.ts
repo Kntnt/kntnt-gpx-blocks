@@ -108,8 +108,12 @@ interface ElevationEntry {
 	cursorDot: SVGCircleElement;
 	/** The tooltip rect behind the text. */
 	tooltipRect: SVGRectElement;
-	/** The tooltip text label. */
+	/** The parent <text> element for the two-line tooltip. */
 	tooltipText: SVGTextElement;
+	/** The first <tspan> child — distance row. */
+	tooltipDistance: SVGTSpanElement;
+	/** The second <tspan> child — elevation row. */
+	tooltipElevation: SVGTSpanElement;
 	/** Chart boundaries in SVG viewBox logical units. */
 	chart: ChartBounds;
 	/** The SVG element itself, used for coordinate conversion. */
@@ -182,24 +186,36 @@ function clientXToFraction(
 }
 
 /**
- * Build the tooltip label string for a given point.
+ * Format a distance value for the tooltip's first row.
  *
- * Formats distance in km when >= 1000 m, otherwise in m; elevation always in
- * metres.
+ * Switches from metres to kilometres at the 1000 m threshold, matching the
+ * x-axis tick labels. Kilometres carry one decimal; metres are rounded to
+ * the nearest whole number.
  *
  * @since 1.0.0
  *
- * @param distanceM  - Distance in metres.
- * @param elevationM - Elevation in metres.
- * @return Formatted label, e.g. "3.2 km | 245 m".
+ * @param distanceM - Distance in metres.
+ * @return Formatted label, e.g. "3.2 km" or "245 m".
  */
-function formatTooltip( distanceM: number, elevationM: number ): string {
-	const dist =
-		distanceM >= 1000
-			? `${ ( distanceM / 1000 ).toFixed( 1 ) } km`
-			: `${ Math.round( distanceM ) } m`;
-	const elev = `${ Math.round( elevationM ) } m`;
-	return `${ dist } | ${ elev }`;
+function formatDistance( distanceM: number ): string {
+	return distanceM >= 1000
+		? `${ ( distanceM / 1000 ).toFixed( 1 ) } km`
+		: `${ Math.round( distanceM ) } m`;
+}
+
+/**
+ * Format an elevation value for the tooltip's second row.
+ *
+ * Always rendered in metres rounded to the nearest whole number — the GPX
+ * vertical resolution does not justify decimals here.
+ *
+ * @since 1.0.0
+ *
+ * @param elevationM - Elevation in metres.
+ * @return Formatted label, e.g. "245 m".
+ */
+function formatElevation( elevationM: number ): string {
+	return `${ Math.round( elevationM ) } m`;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -259,13 +275,23 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			const tooltipText = cursorGroup.querySelector< SVGTextElement >(
 				'.kntnt-gpx-blocks-elevation-cursor-tooltip-text'
 			);
+			const tooltipDistance =
+				cursorGroup.querySelector< SVGTSpanElement >(
+					'.kntnt-gpx-blocks-elevation-cursor-tooltip-distance'
+				);
+			const tooltipElevation =
+				cursorGroup.querySelector< SVGTSpanElement >(
+					'.kntnt-gpx-blocks-elevation-cursor-tooltip-elevation'
+				);
 
 			// All cursor children are server-rendered; abort if any are missing.
 			if (
 				! cursorLine ||
 				! cursorDot ||
 				! tooltipRect ||
-				! tooltipText
+				! tooltipText ||
+				! tooltipDistance ||
+				! tooltipElevation
 			) {
 				return;
 			}
@@ -330,6 +356,8 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				cursorDot,
 				tooltipRect,
 				tooltipText,
+				tooltipDistance,
+				tooltipElevation,
 				chart,
 				svg,
 			} );
@@ -506,6 +534,8 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				cursorDot,
 				tooltipRect,
 				tooltipText,
+				tooltipDistance,
+				tooltipElevation,
 				chart,
 			} = entry;
 
@@ -546,8 +576,11 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			cursorDot.setAttribute( 'cy', String( cy ) );
 
 			// Position the tooltip rect and text, keeping the rect within SVG bounds.
-			const tooltipWidth = 120;
-			const tooltipHeight = 28;
+			// Width and height match the values written by Render_Elevation::build_svg
+			// when it server-renders the cursor group; if those change there, change
+			// these constants too.
+			const tooltipWidth = 130;
+			const tooltipHeight = 50;
 			const rectX = clamp(
 				cx - tooltipWidth / 2,
 				chart.left,
@@ -558,10 +591,16 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			tooltipRect.setAttribute( 'width', String( tooltipWidth ) );
 			tooltipRect.setAttribute( 'height', String( tooltipHeight ) );
 
-			// Update tooltip text content.
-			tooltipText.setAttribute( 'x', String( rectX + tooltipWidth / 2 ) );
-			tooltipText.setAttribute( 'y', String( chart.top + 6 ) );
-			tooltipText.textContent = formatTooltip( sample[ 0 ], sample[ 1 ] );
+			// Position the parent <text> centred horizontally inside the rect and
+			// re-anchor each <tspan> to the same x so the two-line label stays
+			// centred as the cursor moves. The y on the parent and the dy on the
+			// second tspan are set once by PHP and need no per-frame update.
+			const textX = rectX + tooltipWidth / 2;
+			tooltipText.setAttribute( 'x', String( textX ) );
+			tooltipDistance.setAttribute( 'x', String( textX ) );
+			tooltipElevation.setAttribute( 'x', String( textX ) );
+			tooltipDistance.textContent = formatDistance( sample[ 0 ] );
+			tooltipElevation.textContent = formatElevation( sample[ 1 ] );
 
 			// Make the cursor group visible.
 			entry.cursorGroup.style.display = '';

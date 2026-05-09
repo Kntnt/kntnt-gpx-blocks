@@ -608,15 +608,34 @@ final class Render_Elevation {
 		$cursor_dot = sprintf(
 			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="0" cy="0" r="5" fill="currentColor" />',
 		);
+		// Tooltip rect sized for two text rows at the SCSS default font-size
+		// (16 viewBox units): ~8 padding-top + ~16 line-height + ~3 line-gap
+		// + ~16 line-height + ~7 padding-bottom = 50 units. Width is bumped
+		// to 130 units so longer formatted distances ("32.4 km") still fit
+		// comfortably with the larger default font.
 		$cursor_tooltip_rect = sprintf(
 			'<rect class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"'
-			. ' x="0" y="%d" width="120" height="28" rx="3" />',
+			. ' x="0" y="%d" width="130" height="50" rx="3" />',
 			$plot_top,
 		);
+
+		// Two-line tooltip text built as a parent <text> with two <tspan>
+		// children: one for the distance row, one for the elevation row.
+		// JS sets the textContent of each tspan and re-points their `x`
+		// attributes to the rect's horizontal centre on every cursor update.
+		// `dominant-baseline="hanging"` anchors the first row to the text
+		// element's `y`; `dy="1.2em"` on the second tspan offsets it onto
+		// the next line in proportion to the (possibly user-overridden)
+		// font-size.
 		$cursor_tooltip_text = sprintf(
 			'<text class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"'
-			. ' x="0" y="%d" text-anchor="middle" dominant-baseline="hanging"></text>',
-			$plot_top + 6,
+			. ' x="0" y="%d" text-anchor="middle" dominant-baseline="hanging">'
+			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"'
+			. ' x="0" dy="0"></tspan>'
+			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"'
+			. ' x="0" dy="1.2em"></tspan>'
+			. '</text>',
+			$plot_top + 8,
 		);
 		$cursor_group = sprintf(
 			'<g class="kntnt-gpx-blocks-elevation-cursor" style="display:none"'
