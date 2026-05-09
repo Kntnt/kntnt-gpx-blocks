@@ -6,9 +6,12 @@
  * Used by Render_Elevation and the `kntnt-gpx-blocks/statistics` Block
  * Bindings source to locate the upstream GPX Map when the consumer's
  * mapId is '' or 'auto', and to validate explicit mapId values. The
- * algorithm parses post_content via parse_blocks() so it works for any
- * post type and does not require the map block to be at the top level
- * of the block tree.
+ * algorithm walks a parsed block tree so it works for any post type and
+ * does not require the map block to be at the top level. Two public
+ * entry points are exposed: `resolve()` looks the tree up by post ID
+ * (the frontend path), `resolve_from_blocks()` accepts an already-parsed
+ * tree (the editor path, where the live block tree from the editor is
+ * the source of truth — see `docs/architecture.md`).
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -19,7 +22,7 @@ declare( strict_types = 1 );
 namespace Kntnt\Gpx_Blocks\Rendering;
 
 /**
- * Locates a GPX Map block within the parsed block tree of a post.
+ * Locates a GPX Map block within a parsed block tree.
  *
  * @package Kntnt\Gpx_Blocks
  * @since 1.0.0
@@ -27,20 +30,18 @@ namespace Kntnt\Gpx_Blocks\Rendering;
 final class Resolve_Map_Id {
 
 	/**
-	 * Resolves a mapId to the attachment ID and canonical mapId of a Map block.
+	 * Resolves a mapId by parsing the post's saved content.
 	 *
-	 * When $map_id is '' or 'auto', the post's block tree is searched for all
-	 * GPX Map blocks that have a non-zero attachmentId. Exactly one must exist;
-	 * zero or two or more are error conditions. When $map_id is an explicit
-	 * string, the tree is searched for the Map whose mapId matches.
-	 *
-	 * Returns an array with 'attachment_id' (int) and 'map_id' (string) on
-	 * success, or a Render_Error on any failure.
+	 * Thin facade that retrieves the post, runs `parse_blocks()` over its
+	 * content, and delegates to `resolve_from_blocks()`. Used on the frontend,
+	 * where saved content is the only available source of truth. Returns a
+	 * `Render_Error` with code `'no-map'` for non-existent posts so the editor
+	 * gets a clear notice and the frontend renders nothing for visitors.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $map_id  The mapId attribute from the consumer block, or ''
-	 *                        or 'auto' to auto-resolve.
+	 * @param string $map_id  Map ID from the consumer block, or `''` / `'auto'`
+	 *                        to auto-resolve.
 	 * @param int    $post_id The post whose block tree to search.
 	 *
 	 * @return array{ attachment_id: int, map_id: string }|Render_Error
@@ -56,11 +57,38 @@ final class Resolve_Map_Id {
 			return new Render_Error( 'no-map', __( 'No GPX Map block on this page.', 'kntnt-gpx-blocks' ) );
 		}
 
-		// Parse the block tree and collect every configured Map block.
-		// collect_maps() accepts array<mixed, mixed> and narrows via is_array()
-		// guards; it is safe to pass the raw parse_blocks() return directly.
-		$blocks = parse_blocks( $post->post_content );
-		$maps   = $this->collect_maps( $blocks );
+		// Delegate the search itself to the block-tree-aware variant so both
+		// the frontend (saved content) and the editor (live snapshot) follow
+		// exactly the same matching logic.
+		return $this->resolve_from_blocks( $map_id, parse_blocks( $post->post_content ) );
+
+	}
+
+	/**
+	 * Resolves a mapId against an already-parsed block tree.
+	 *
+	 * The editor path uses this directly with a snapshot of the current React
+	 * block tree (forwarded over the SSR REST request), since the editor's
+	 * live state can diverge from saved post content while the user is still
+	 * editing. The frontend path reaches the same logic via `resolve()`.
+	 *
+	 * Recurses into innerBlocks so a Map nested inside a `core/group` (or any
+	 * other container) is found at any depth. Auto-resolution requires exactly
+	 * one configured Map; zero and ≥ 2 are explicit error states with distinct
+	 * codes so the consumer can render a precise message.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string              $map_id Map ID, or `''` / `'auto'` to auto-resolve.
+	 * @param array<mixed, mixed> $blocks Parsed block tree (from `parse_blocks()`
+	 *                                    on the frontend, or the editor snapshot
+	 *                                    in the same shape).
+	 *
+	 * @return array{ attachment_id: int, map_id: string }|Render_Error
+	 */
+	public function resolve_from_blocks( string $map_id, array $blocks ): array|Render_Error {
+
+		$maps = $this->collect_maps( $blocks );
 
 		// When the caller supplies '' or 'auto', the only valid state is exactly one Map.
 		if ( '' === $map_id || 'auto' === $map_id ) {

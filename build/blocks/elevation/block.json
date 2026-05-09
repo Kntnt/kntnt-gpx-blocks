@@ -99,6 +99,11 @@
     "tooltipFontStyle": {
       "type": "string",
       "default": ""
+    },
+    "__editorBlockSnapshot": {
+      "type": "array",
+      "default": [],
+      "role": "local"
     }
   }
 }

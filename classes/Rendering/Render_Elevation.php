@@ -192,8 +192,22 @@ final class Render_Elevation {
 		$post_id     = is_numeric( $raw_post_id ) ? (int) $raw_post_id : (int) get_the_ID();
 
 		// Resolve the mapId to a concrete GPX Map block with an attachment.
-		$resolver = new Resolve_Map_Id();
-		$resolved = $resolver->resolve( $map_id, $post_id );
+		// In the editor, ServerSideRender sends the live block tree as
+		// __editorBlockSnapshot — registered with role:local in block.json so
+		// it is never serialised to post_content. Prefer it when present so the
+		// preview reflects the user's current state instead of the last save.
+		// The frontend never sets the snapshot; it falls through to the saved
+		// post_content path. The current_user_can guard is defence-in-depth:
+		// the REST block-renderer endpoint already requires edit_posts, but
+		// limiting trust of the snapshot to that capability keeps the surface
+		// tight against any future caller that bypasses the REST gate.
+		$resolver     = new Resolve_Map_Id();
+		$raw_snapshot = $attributes['__editorBlockSnapshot'] ?? null;
+		if ( is_array( $raw_snapshot ) && current_user_can( 'edit_posts' ) ) {
+			$resolved = $resolver->resolve_from_blocks( $map_id, $raw_snapshot );
+		} else {
+			$resolved = $resolver->resolve( $map_id, $post_id );
+		}
 		if ( $resolved instanceof Render_Error ) {
 			Plugin::error(
 				sprintf( 'Render_Elevation: error resolving map (post %d), code=%s', $post_id, $resolved->code )

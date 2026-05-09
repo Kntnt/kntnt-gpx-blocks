@@ -414,6 +414,111 @@ test( 'returns empty string for visitor when no map block is present', function 
 } );
 
 // ---------------------------------------------------------------------------
+// Editor snapshot path: when ServerSideRender forwards the live block tree
+// via the __editorBlockSnapshot attribute, the renderer prefers it over the
+// saved post content so the preview reflects unsaved edits. The role:local
+// flag in block.json keeps the attribute out of persisted markup; the
+// edit_posts gate keeps a frontend visitor from being able to influence
+// resolution by passing crafted attributes (defence-in-depth — the REST
+// block-renderer endpoint already enforces this capability for its callers).
+// ---------------------------------------------------------------------------
+
+test( 'editor snapshot resolves a Map even when post_content is empty', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 90, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 20 );
+	// Saved post_content has no Map block — the bug condition this fix targets.
+	elev_stub_parse_blocks( [] );
+	elev_stub_attached_file( 90, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 20 );
+	Functions\when( 'current_user_can' )->justReturn( true );
+
+	$attributes = [
+		'mapId'                 => 'auto',
+		'__editorBlockSnapshot' => [ elev_map_block( 90, 'map-snap' ) ],
+	];
+
+	$html = Render_Elevation::render( $attributes, '', elev_fake_block( 20 ) );
+
+	expect( $html )
+		->toContain( '<svg' )
+		->toContain( '<polyline' )
+		->not->toContain( 'kntnt-gpx-blocks-error' );
+
+} );
+
+test( 'editor snapshot is ignored for users without edit_posts (frontend safety)', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 91, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 21 );
+	// Saved post_content has no Map. The visitor should get the empty render
+	// path regardless of whatever the snapshot says, so a hostile attribute
+	// payload cannot trigger a render.
+	elev_stub_parse_blocks( [] );
+	elev_stub_attached_file( 91, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 21 );
+	Functions\when( 'current_user_can' )->justReturn( false );
+
+	$attributes = [
+		'mapId'                 => 'auto',
+		'__editorBlockSnapshot' => [ elev_map_block( 91, 'map-snap' ) ],
+	];
+
+	$html = Render_Elevation::render( $attributes, '', elev_fake_block( 21 ) );
+
+	// Visitor with no edit_posts on a post lacking a Map → empty output.
+	expect( $html )->toBe( '' );
+
+} );
+
+test( 'frontend render still resolves via saved post_content when no snapshot is set', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 92, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 22 );
+	elev_stub_parse_blocks( [ elev_map_block( 92, 'map-saved' ) ] );
+	elev_stub_attached_file( 92, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 22 );
+	Functions\when( 'current_user_can' )->justReturn( false );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 22 ) );
+
+	expect( $html )
+		->toContain( '<svg' )
+		->toContain( '<polyline' );
+
+} );
+
+// ---------------------------------------------------------------------------
 // X-axis unit selection: km when total >= 2000 m, m otherwise
 // ---------------------------------------------------------------------------
 

@@ -325,3 +325,110 @@ test( 'non-existent post returns no-map', function (): void {
 		->and( $result->code )->toBe( 'no-map' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// resolve_from_blocks: matches the same algorithm as resolve() but bypasses
+// post-content parsing. Used by the editor SSR path to feed in the live block
+// tree from the editor — see classes/Rendering/Render_Elevation.php and
+// docs/architecture.md.
+// ---------------------------------------------------------------------------
+
+test( 'resolve_from_blocks auto resolves to the single configured map', function (): void {
+
+	stub_translate_resolve();
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'auto', [ map_block( 42, 'map-abc123' ) ] );
+
+	expect( $result )->toBeArray()
+		->and( $result['attachment_id'] )->toBe( 42 )
+		->and( $result['map_id'] )->toBe( 'map-abc123' );
+
+} );
+
+test( 'resolve_from_blocks returns no-map when the tree contains no Map block', function (): void {
+
+	stub_translate_resolve();
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'auto', [] );
+
+	expect( $result )->toBeInstanceOf( Render_Error::class )
+		->and( $result->code )->toBe( 'no-map' );
+
+} );
+
+test( 'resolve_from_blocks returns multiple-maps when two configured Maps exist', function (): void {
+
+	stub_translate_resolve();
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'auto', [
+		map_block( 10, 'map-aaa' ),
+		map_block( 11, 'map-bbb' ),
+	] );
+
+	expect( $result )->toBeInstanceOf( Render_Error::class )
+		->and( $result->code )->toBe( 'multiple-maps' );
+
+} );
+
+test( 'resolve_from_blocks returns the matching map for an explicit mapId', function (): void {
+
+	stub_translate_resolve();
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'map-bbb', [
+		map_block( 10, 'map-aaa' ),
+		map_block( 11, 'map-bbb' ),
+	] );
+
+	expect( $result )->toBeArray()
+		->and( $result['attachment_id'] )->toBe( 11 );
+
+} );
+
+test( 'resolve_from_blocks returns map-not-found for an unknown explicit mapId', function (): void {
+
+	stub_translate_resolve();
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'map-zzz', [ map_block( 10, 'map-aaa' ) ] );
+
+	expect( $result )->toBeInstanceOf( Render_Error::class )
+		->and( $result->code )->toBe( 'map-not-found' );
+
+} );
+
+test( 'resolve_from_blocks recurses into innerBlocks', function (): void {
+
+	stub_translate_resolve();
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'auto', [
+		group_block( [
+			group_block( [
+				map_block( 77, 'map-deep' ),
+			] ),
+		] ),
+	] );
+
+	expect( $result )->toBeArray()
+		->and( $result['attachment_id'] )->toBe( 77 );
+
+} );
+
+test( 'resolve_from_blocks does not call get_post or parse_blocks', function (): void {
+
+	stub_translate_resolve();
+	// Intentionally do NOT stub get_post() or parse_blocks(). Brain Monkey
+	// throws if a real WordPress function is called without a stub, so this
+	// asserts the editor path is genuinely independent of post lookup.
+
+	$resolver = new Resolve_Map_Id();
+	$result   = $resolver->resolve_from_blocks( 'auto', [ map_block( 42, 'map-abc' ) ] );
+
+	expect( $result )->toBeArray()
+		->and( $result['attachment_id'] )->toBe( 42 );
+
+} );

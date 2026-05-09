@@ -97,7 +97,7 @@ The plugin exposes one REST route of its own: `GET kntnt-gpx-blocks/v1/preview/<
 - **Input validation**: the `id` URL parameter is narrowed to a non-negative integer; the controller verifies the post exists, is an attachment, and has `application/gpx+xml` MIME type before reading the cache.
 - **Output**: the cached GeoJSON FeatureCollection. Already exposed publicly via `wp_interactivity_state()` on every page that contains the Map block, so no new attack surface is introduced — the REST route just provides a different access channel for editors.
 
-The Elevation and Statistics blocks' editor previews go through ServerSideRender, which uses the WordPress core REST endpoint `wp/v2/block-renderer/<name>`. That endpoint validates the editor's nonce and capability automatically.
+The Elevation and Statistics blocks' editor previews go through ServerSideRender, which uses the WordPress core REST endpoint `wp/v2/block-renderer/<name>`. That endpoint validates the editor's nonce and capability automatically. The Elevation block additionally forwards a `__editorBlockSnapshot` attribute carrying the editor's live block tree (registered with `"role": "local"` in `block.json` so it never reaches saved post content). `Render_Elevation::render()` only honours the snapshot when `current_user_can('edit_posts')` returns true — defence-in-depth that matches the REST endpoint's own gate, so the resolver cannot be steered by attribute payloads in any frontend context.
 
 If a future feature adds another custom REST route, it must:
 

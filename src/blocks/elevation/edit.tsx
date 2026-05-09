@@ -458,21 +458,39 @@ export const ElevationEdit = ( {
 
 	// Build picker options: one entry per configured GPX Map block.
 	const mapBlocks = collectMapBlocks( allBlocks );
-	const mapOptions = mapBlocks
-		.filter( ( b ) => ( b.attributes.attachmentId ?? 0 ) > 0 )
-		.map( ( b, index ) => {
-			const attachmentId = b.attributes.attachmentId as number;
-			const blockMapId = b.attributes.mapId as string | undefined;
-			const media = getMedia( attachmentId );
+	const configuredMapBlocks = mapBlocks.filter(
+		( b ) => ( b.attributes.attachmentId ?? 0 ) > 0
+	);
+	const mapOptions = configuredMapBlocks.map( ( b, index ) => {
+		const attachmentId = b.attributes.attachmentId as number;
+		const blockMapId = b.attributes.mapId as string | undefined;
+		const media = getMedia( attachmentId );
 
-			// Use the media slug (filename without extension) when available.
-			const filename = media?.slug ?? String( attachmentId );
-			const label =
-				__( 'Karta', 'kntnt-gpx-blocks' ) +
-				` ${ index + 1 }: ${ filename }`;
+		// Use the media slug (filename without extension) when available.
+		const filename = media?.slug ?? String( attachmentId );
+		const label =
+			__( 'Karta', 'kntnt-gpx-blocks' ) +
+			` ${ index + 1 }: ${ filename }`;
 
-			return { label, value: blockMapId ?? '' };
-		} );
+		return { label, value: blockMapId ?? '' };
+	} );
+
+	// Build the snapshot of configured Map blocks that ServerSideRender
+	// forwards to the PHP renderer. Without it, Render_Elevation falls back
+	// to parse_blocks(post_content) which only sees the last save — so a
+	// freshly inserted Map (or a freshly auto-generated mapId) would resolve
+	// to no-map / map-not-found in the editor preview. The snapshot mirrors
+	// the parse_blocks() shape so Resolve_Map_Id::resolve_from_blocks()
+	// consumes it without translation. The attribute is registered with
+	// role:local in block.json so it never reaches saved post_content.
+	const editorBlockSnapshot = configuredMapBlocks.map( ( b ) => ( {
+		blockName: 'kntnt-gpx-blocks/map',
+		attrs: {
+			mapId: ( b.attributes.mapId as string | undefined ) ?? '',
+			attachmentId: b.attributes.attachmentId as number,
+		},
+		innerBlocks: [],
+	} ) );
 
 	// Prepend the auto option so it is always first in the list.
 	const sourceOptions = [
@@ -701,6 +719,7 @@ export const ElevationEdit = ( {
 							tooltipFontSize,
 							tooltipFontWeight,
 							tooltipFontStyle,
+							__editorBlockSnapshot: editorBlockSnapshot,
 						} }
 					/>
 				</div>
