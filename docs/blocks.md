@@ -115,6 +115,7 @@ The shared `state[mapId].fraction` is also written by the GPX Elevation block. T
 - Keyboard interaction via `L.keyboard` enabled by default.
 - Controls have ARIA labels through Leaflet's defaults.
 - Waypoint markers use `<title>` for screen readers.
+- Focus indicator: the browser-default focus ring around the block container and Leaflet's `.leaflet-container` is suppressed (it would otherwise wrap the whole map on every click because Leaflet's keyboard handler sets `tabindex="0"` on the container). A keyboard-only `:focus-visible` rule restores a 2 px `currentColor` outline so Tab navigation still produces a clearly visible focus indicator (WCAG 2.1 SC 2.4.7). Leaflet's individual control buttons keep their own focus styling.
 
 ### Errors
 

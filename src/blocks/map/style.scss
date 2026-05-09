@@ -48,6 +48,34 @@
 		-webkit-tap-highlight-color: transparent;
 	}
 
+	// Suppress the browser-default focus ring around the block container
+	// and Leaflet's inner `.leaflet-container`. Leaflet sets `tabindex="0"`
+	// on its container whenever its keyboard handler is enabled (the plugin
+	// default), so the heavy default outline otherwise wraps the entire map
+	// on every click — visually noisy on a finished map. A keyboard-only
+	// `:focus-visible` rule below restores a subtler, WCAG SC 2.4.7-compliant
+	// indicator. Leaflet's own control buttons (zoom, fullscreen, download
+	// anchor) are unaffected: they live in `.leaflet-control-*` elements
+	// that do not match these selectors and therefore keep their
+	// browser-default focus styling.
+	&:focus,
+	.leaflet-container:focus {
+		outline: none;
+	}
+
+	// Restore a clearly visible focus indicator for keyboard users.
+	// `:focus-visible` suppresses the indicator on pointer-driven focus
+	// (mouse / touch) but shows it on Tab navigation, satisfying WCAG 2.1
+	// SC 2.4.7 without re-introducing the noisy outline complained about
+	// in the issue. The 2 px solid outline plus 2 px offset gives a clear
+	// high-contrast frame on either light or dark map tiles;
+	// `currentColor` adapts to the surrounding text colour.
+	&:focus-visible,
+	.leaflet-container:focus-visible {
+		outline: 2px solid currentcolor;
+		outline-offset: 2px;
+	}
+
 	// Style Leaflet tooltips that appear over waypoint markers. The Leaflet
 	// tooltip element is positioned outside the block element by default, but
 	// scoped via CSS custom-property inheritance which flows from the block root.
