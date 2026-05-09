@@ -34,11 +34,25 @@
 	--kntnt-gpx-blocks-tooltip-font-style: normal;
 
 	// ─── SVG container ────────────────────────────────────────────────────
+	// `touch-action: none` makes the browser hand a touch starting on the
+	// chart to our `pointerdown` listener instead of claiming it for page
+	// scroll — without this, even a small vertical jitter while scrubbing
+	// horizontally is interpreted as a scroll gesture and the page rolls.
+	// `cursor: crosshair` signals that the chart is a precision-pointing
+	// surface. The three `-webkit-*` properties suppress Safari mobile
+	// defaults (long-press image-callout, drag text selection, grey tap
+	// highlight) the same way as on the Map block's hit-band.
 	svg {
 		width: 100%;
 		height: 100%;
 		display: block;
 		background: var(--kntnt-gpx-blocks-background-color);
+		cursor: crosshair;
+		touch-action: none;
+		-webkit-touch-callout: none;
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	// ─── Axis lines ───────────────────────────────────────────────────────

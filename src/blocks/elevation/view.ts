@@ -6,8 +6,17 @@
  *
  * - `callbacks.initElevation` — locates the server-rendered cursor group in
  *   the SVG, reads the chart dimensions from data attributes on that group,
- *   and attaches `pointermove` / `pointerleave` handlers on the SVG that
- *   write `state[mapId].fraction` from the pointer's x-position.
+ *   and attaches native Pointer Events on the SVG that write
+ *   `state[mapId].fraction` from the pointer's x-position. `pointerdown`
+ *   sets the fraction immediately (so a tap pins the cursor) and calls
+ *   `setPointerCapture` so a drag keeps updating the fraction even when the
+ *   finger drifts off the SVG. The cursor stays at the last position after
+ *   the gesture ends; mouse `pointerleave` on the block element nulls the
+ *   fraction (skipped on touch — touch has no hover, and lifting the finger
+ *   would otherwise dismiss the cursor before the user could read it).
+ *   CSS `touch-action: none` on the SVG suppresses the browser's
+ *   scroll-on-touch behaviour, which would otherwise translate any slight
+ *   vertical jitter during a horizontal scrub into a page scroll.
  * - `callbacks.onElevationCursorChange` — reacts to `state[mapId].fraction`
  *   changes (from Elevation itself or from GPX Map) by updating the cursor
  *   group's vertical line, dot, and tooltip text. Does NOT write back to state
@@ -295,22 +304,92 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			// watch (onElevationCursorChange) is already live because mountedElevations is
 			// set above.
 			const bindPointerHandlers = () => {
-				// Attach pointer tracking on the SVG element. pointermove computes
-				// fraction from the x-position and writes it to shared state.
-				svg.addEventListener( 'pointermove', ( e: PointerEvent ) => {
-					const fraction = clientXToFraction(
-						e.clientX,
-						svg,
-						chart,
-						viewWidth
-					);
-					state[ mapId ].fraction = fraction;
-				} );
+				let scrubbing = false;
 
-				// Null the fraction when the pointer leaves so both cursors hide.
-				svg.addEventListener( 'pointerleave', () => {
+				svg.addEventListener(
+					'pointerdown',
+					( event: PointerEvent ) => {
+						// Ignore secondary pointers during an active scrub so a
+						// stray second finger cannot hijack capture mid-gesture.
+						if ( scrubbing ) {
+							return;
+						}
+
+						event.preventDefault();
+						scrubbing = true;
+						svg.setPointerCapture( event.pointerId );
+						state[ mapId ].fraction = clientXToFraction(
+							event.clientX,
+							svg,
+							chart,
+							viewWidth
+						);
+					}
+				);
+
+				svg.addEventListener(
+					'pointermove',
+					( event: PointerEvent ) => {
+						// Capture during a scrub keeps this firing even when the
+						// pointer is off the SVG; for plain mouse hover the event
+						// also fires when the mouse is over the chart. Touch has
+						// no hover, so the `mouse` branch is a no-op for touch.
+						if ( scrubbing || event.pointerType === 'mouse' ) {
+							state[ mapId ].fraction = clientXToFraction(
+								event.clientX,
+								svg,
+								chart,
+								viewWidth
+							);
+						}
+					}
+				);
+
+				const endScrub = ( event: PointerEvent ) => {
+					if ( ! scrubbing ) {
+						return;
+					}
+					scrubbing = false;
+					if ( svg.hasPointerCapture( event.pointerId ) ) {
+						svg.releasePointerCapture( event.pointerId );
+					}
+				};
+
+				svg.addEventListener( 'pointerup', endScrub );
+				svg.addEventListener( 'pointercancel', endScrub );
+
+				// Belt-and-suspenders against browsers (and touch emulators
+				// like Firefox responsive design mode) where `touch-action:
+				// none` on SVG elements is partially honoured. While
+				// scrubbing, every touchmove on the SVG is preventDefault'd
+				// to guarantee the page does not scroll. `passive: false` is
+				// required for preventDefault to take effect.
+				svg.addEventListener(
+					'touchmove',
+					( event: TouchEvent ) => {
+						if ( scrubbing ) {
+							event.preventDefault();
+						}
+					},
+					{ passive: false }
+				);
+
+				// Mouse leaves the block — null the fraction so the cursor
+				// disappears. Skip while scrubbing so brief excursions out
+				// of the block during a fast mouse scrub do not flicker the
+				// cursor off. Skip on touch entirely: a finger lift fires
+				// `pointerleave` automatically (the touch pointer ceases),
+				// and we want the cursor to stay at its last position so
+				// the user can read it (and the corresponding map cursor)
+				// after pointing.
+				ref.addEventListener( 'pointerleave', ( (
+					event: PointerEvent
+				) => {
+					if ( scrubbing || event.pointerType === 'touch' ) {
+						return;
+					}
 					state[ mapId ].fraction = null;
-				} );
+				} ) as EventListener );
 			};
 
 			// Use IntersectionObserver when available (all evergreen browsers).

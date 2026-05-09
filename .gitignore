@@ -10,6 +10,10 @@ vendor/
 coverage/
 .npm/
 
+# Release artefact emitted by ./build-release-zip.sh — uploaded to the
+# GitHub release as an asset, not committed.
+/kntnt-gpx-blocks.zip
+
 # Editor / OS files
 .DS_Store
 .idea/
