@@ -73,10 +73,8 @@ final class Distance {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array<int, array{0: float, 1: float}> $points List of points; each
-	 *                                                      a `[lat, lon, ...]`
-	 *                                                      tuple with optional
-	 *                                                      trailing dimensions.
+	 * @param float[][] $points List of points; each a `[lat, lon, ...]` tuple
+	 *                          with optional trailing dimensions ignored.
 	 *
 	 * @return array<int, float>
 	 */

@@ -15,6 +15,7 @@ declare( strict_types = 1 );
 namespace Kntnt\Gpx_Blocks\Rendering;
 
 use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
+use Kntnt\Gpx_Blocks\Conversion\Distance;
 use Kntnt\Gpx_Blocks\Plugin;
 
 /**
@@ -172,6 +173,20 @@ final class Render_Map {
 		$simplified     = $simplifier->simplify( $track_points, $tolerance );
 		$simplified_geo = self::points_to_geojson( $simplified );
 
+		// Compute the cumulative-distance array along the *original* full-fidelity
+		// track and pick the value at each surviving simplified vertex. The
+		// frontend cursor sync uses this to map a fraction-of-total-distance
+		// back to a position between two simplified vertices, so the cursor
+		// glides along the rendered polyline at the same physical point that
+		// Statistics and Elevation refer to.
+		$track_cum_dist = self::cumulative_for_simplified( $track_points, $simplified );
+
+		// Total distance comes from the cache so all three blocks agree on the
+		// canonical figure. Falls back to 0.0 only when the cache lacks it,
+		// which is impossible given the cache contract.
+		$raw_total      = $payload['statistics']['distance'] ?? 0.0;
+		$total_distance = is_numeric( $raw_total ) ? (float) $raw_total : 0.0;
+
 		// Resolve the original GPX file URL for the download control; null when unavailable.
 		$gpx_file_url = wp_get_attachment_url( $attachment_id );
 		$gpx_file_url = $gpx_file_url !== false ? $gpx_file_url : null;
@@ -192,6 +207,8 @@ final class Render_Map {
 			$map_id => [
 				'attachmentId'  => $attachment_id,
 				'geojson'       => $simplified_geo,
+				'trackCumDist'  => $track_cum_dist,
+				'totalDistance' => $total_distance,
 				'waypoints'     => $waypoints,
 				'gpxFileUrl'    => $gpx_file_url,
 				'settings'      => [
@@ -369,6 +386,63 @@ final class Render_Map {
 		}
 
 		return [];
+
+	}
+
+	/**
+	 * Picks the original-track cumulative distance for each surviving simplified vertex.
+	 *
+	 * Walks the simplified vertices in source order and advances a monotone
+	 * cursor through the original track until each vertex's `[lat, lon]`
+	 * matches. The output has the same length as `$simplified`: index 0 is
+	 * always 0.0 (the simplifier preserves the start point) and the final
+	 * index is the total distance walked along the original track.
+	 *
+	 * Returns an empty array when either input is empty.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param float[][] $original   Original [lat, lon, ele?] track points;
+	 *                              trailing dimensions are ignored.
+	 * @param float[][] $simplified Simplified [lat, lon, ele?] vertices in
+	 *                              source order.
+	 *
+	 * @return array<int, float>
+	 */
+	private static function cumulative_for_simplified( array $original, array $simplified ): array {
+
+		if ( count( $original ) === 0 || count( $simplified ) === 0 ) {
+			return [];
+		}
+
+		// Cumulative Haversine distance over every original-track vertex.
+		$original_cum = Distance::cumulative( $original );
+
+		// Walk both arrays in lockstep — Douglas-Peucker preserves source order
+		// and references the same lat/lon values, so a monotone cursor matches
+		// each surviving vertex against the originals exactly once.
+		$out        = [];
+		$cursor     = 0;
+		$count_orig = count( $original );
+		foreach ( $simplified as $vertex ) {
+			while ( $cursor < $count_orig
+				&& ( $original[ $cursor ][0] !== $vertex[0]
+					|| $original[ $cursor ][1] !== $vertex[1] ) ) {
+				++$cursor;
+			}
+
+			// Should not be reachable when $simplified is a true subsequence of
+			// $original; defensive fallback keeps the parallel-array contract.
+			if ( $cursor >= $count_orig ) {
+				$out[] = $original_cum[ $count_orig - 1 ] ?? 0.0;
+				continue;
+			}
+
+			$out[] = $original_cum[ $cursor ];
+			++$cursor;
+		}
+
+		return $out;
 
 	}
 

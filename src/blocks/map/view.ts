@@ -36,6 +36,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
+import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
 
 // ─── Global type augmentation ────────────────────────────────────────────────
 
@@ -95,6 +96,14 @@ interface MapSettings {
 interface MapState {
 	attachmentId: number;
 	geojson: GeoJSON.GeoJsonObject;
+	/**
+	 * Cumulative-distance value (metres) at every simplified vertex, aligned
+	 * 1:1 with the LineString's `coordinates`. Source of truth for resolving
+	 * a fraction back to a position on the rendered polyline.
+	 */
+	trackCumDist: number[];
+	/** Total track distance in metres, taken from the cached statistics. */
+	totalDistance: number;
 	waypoints: GeoJSON.GeoJsonObject;
 	/** URL to the original .gpx attachment; null when unavailable. */
 	gpxFileUrl: string | null;
@@ -149,6 +158,10 @@ interface MapEntry {
 	cursor: L.CircleMarker;
 	/** Flat [lat, lng] array extracted from the simplified LineString. */
 	coords: Array< [ number, number ] >;
+	/** Per-vertex cumulative distance (metres) along the original full track. */
+	trackCumDist: number[];
+	/** Total track distance in metres. */
+	totalDistance: number;
 	/** Aborts document-level listeners (scrub end, hint timer) on tear-down. */
 	disposer: AbortController;
 }
@@ -256,61 +269,6 @@ function extractCoords(
 }
 
 /**
- * Return the [lat, lng] position corresponding to a given fraction along a
- * coordinate array using the nearest-vertex approach.
- *
- * Returns null when coords is empty or fraction is null.
- *
- * @since 1.0.0
- *
- * @param coords   - Flat [lat, lng] array.
- * @param fraction - Position in [0, 1].
- * @return Leaflet LatLng or null.
- */
-function fractionToLatLng(
-	coords: Array< [ number, number ] >,
-	fraction: number
-): L.LatLngExpression | null {
-	if ( coords.length === 0 ) {
-		return null;
-	}
-	const index = Math.round( fraction * ( coords.length - 1 ) );
-	const clamped = Math.max( 0, Math.min( coords.length - 1, index ) );
-	return coords[ clamped ] as [ number, number ];
-}
-
-/**
- * Find the fraction along a coordinate array that lies nearest to a given
- * lat/lng using a linear nearest-vertex scan.
- *
- * For typical simplified tracks (~300 vertices) the linear scan is fast enough
- * to run on every pointermove without throttling.
- *
- * @since 1.0.0
- *
- * @param coords - Flat [lat, lng] array.
- * @param latlng - Pointer position.
- * @param map    - Leaflet map used for haversine distance.
- * @return Fraction in [0, 1].
- */
-function nearestFraction(
-	coords: Array< [ number, number ] >,
-	latlng: L.LatLng,
-	map: L.Map
-): number {
-	let nearest = 0;
-	let best = Infinity;
-	for ( let i = 0; i < coords.length; i++ ) {
-		const d = map.distance( latlng, coords[ i ] as [ number, number ] );
-		if ( d < best ) {
-			best = d;
-			nearest = i;
-		}
-	}
-	return nearest / ( coords.length - 1 );
-}
-
-/**
  * Wire pointer tracking on the SVG hit-layer `<path>`.
  *
  * Native Pointer Events fire directly on the path element, sidestepping
@@ -340,23 +298,30 @@ function nearestFraction(
  *
  * @since 1.0.0
  *
- * @param map          - Leaflet map instance.
- * @param hitLayer     - SVG-rendered GeoJSON layer whose first inner layer
- *                     exposes the `<path>` we attach pointer events to.
- * @param blockEl      - Block wrapper element used for the mouse-leave handler.
- * @param coords       - Flat [lat, lng] array shared with the cursor sync.
- * @param mapId        - Interactivity store key for this map.
- * @param onOutsideTap - Fired at the start of a track scrub and on a map click
- *                     outside the hit-layer. Used to dismiss any sticky
- *                     waypoint tooltip when the user's attention moves to
- *                     the track or to empty map area.
- * @param signal       - AbortSignal that releases listeners on tear-down.
+ * @param map           - Leaflet map instance.
+ * @param hitLayer      - SVG-rendered GeoJSON layer whose first inner layer
+ *                      exposes the `<path>` we attach pointer events to.
+ * @param blockEl       - Block wrapper element used for the mouse-leave handler.
+ * @param coords        - Flat [lat, lng] array shared with the cursor sync.
+ * @param trackCumDist  - Per-vertex original-cumulative distances aligned 1:1
+ *                      with `coords`; used to project a click onto the track
+ *                      and translate the projection back to fraction.
+ * @param totalDistance - Total track distance in metres, used as the divisor
+ *                      when converting projected distance to fraction.
+ * @param mapId         - Interactivity store key for this map.
+ * @param onOutsideTap  - Fired at the start of a track scrub and on a map
+ *                      click outside the hit-layer. Used to dismiss any
+ *                      sticky waypoint tooltip when the user's attention
+ *                      moves to the track or to empty map area.
+ * @param signal        - AbortSignal that releases listeners on tear-down.
  */
 function attachScrubHandlers(
 	map: L.Map,
 	hitLayer: L.GeoJSON,
 	blockEl: HTMLElement,
 	coords: Array< [ number, number ] >,
+	trackCumDist: number[],
+	totalDistance: number,
 	mapId: string,
 	onOutsideTap: () => void,
 	signal: AbortSignal
@@ -378,6 +343,17 @@ function attachScrubHandlers(
 	// fraction we just set during the scrub.
 	L.DomEvent.disableClickPropagation( pathEl );
 
+	// Project a pointer event onto the polyline using the geometry helper.
+	// Lat/lng come from the map's pixel→geographic projection; the helper
+	// then runs the segment-projection in flat-Cartesian space, which is
+	// accurate enough at the metre scales involved.
+	const fractionForEvent = ( event: PointerEvent ): number => {
+		const latlng = map.mouseEventToLatLng( event );
+		const click: LatLng = [ latlng.lat, latlng.lng ];
+		return clickToFraction( coords, trackCumDist, totalDistance, click )
+			.fraction;
+	};
+
 	let scrubbing = false;
 
 	pathEl.addEventListener(
@@ -394,11 +370,7 @@ function attachScrubHandlers(
 			scrubbing = true;
 			map.dragging.disable();
 			pathEl.setPointerCapture( event.pointerId );
-			state[ mapId ].fraction = nearestFraction(
-				coords,
-				map.mouseEventToLatLng( event ),
-				map
-			);
+			state[ mapId ].fraction = fractionForEvent( event );
 		},
 		{ signal }
 	);
@@ -411,11 +383,7 @@ function attachScrubHandlers(
 			// when the mouse is over the stroke. Touch has no hover, so the
 			// `mouse` branch is a no-op for touch in practice.
 			if ( scrubbing || event.pointerType === 'mouse' ) {
-				state[ mapId ].fraction = nearestFraction(
-					coords,
-					map.mouseEventToLatLng( event ),
-					map
-				);
+				state[ mapId ].fraction = fractionForEvent( event );
 			}
 		},
 		{ signal }
@@ -821,6 +789,20 @@ function bootMount(
 			// fraction→position resolution in onMapCursorChange.
 			const coords = extractCoords( mapState.geojson );
 
+			// Snapshot the per-vertex cumulative-distance array and total
+			// distance PHP put on state. Both are consumed by
+			// onMapCursorChange and the scrub handlers below; keeping them
+			// on the MapEntry avoids re-reading state during every
+			// pointermove. Defensive defaults handle a stale frontend
+			// running against pre-0.2.0 state.
+			const trackCumDist = Array.isArray( mapState.trackCumDist )
+				? ( mapState.trackCumDist as number[] )
+				: [];
+			const totalDistance =
+				typeof mapState.totalDistance === 'number'
+					? mapState.totalDistance
+					: 0;
+
 			// Read the remaining colour CSS variables once at mount time.
 			const trackCursorColor = getCssVar(
 				blockEl,
@@ -835,7 +817,12 @@ function bootMount(
 
 			// Create the cursor marker at the track midpoint, initially
 			// invisible. Opacity is set to 1 on the first non-null fraction.
-			const midLatLng = fractionToLatLng( coords, 0.5 ) ?? [ 0, 0 ];
+			const midLatLng = fractionToLatLng(
+				coords as ReadonlyArray< LatLng >,
+				trackCumDist,
+				totalDistance,
+				0.5
+			) ?? [ 0, 0 ];
 			const cursor = L.circleMarker( midLatLng, {
 				radius: 6,
 				color: trackCursorColor,
@@ -979,8 +966,16 @@ function bootMount(
 			}
 
 			// Record the instance so subsequent init calls are no-ops and
-			// onMapCursorChange can access the cursor and coords.
-			mountedMaps.set( blockEl, { map, cursor, coords, disposer } );
+			// onMapCursorChange can access the cursor, coords, and the
+			// distance arrays needed to glide the cursor between vertices.
+			mountedMaps.set( blockEl, {
+				map,
+				cursor,
+				coords,
+				trackCumDist,
+				totalDistance,
+				disposer,
+			} );
 
 			// Wire pointer tracking on the invisible fat overlay so the hit
 			// zone for hover and press is wide enough to feel smooth. Hover
@@ -995,6 +990,8 @@ function bootMount(
 				hitLayer,
 				blockEl,
 				coords,
+				trackCumDist,
+				totalDistance,
 				mapId,
 				closeSticky,
 				disposer.signal
@@ -1161,8 +1158,17 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Resolve fraction to a lat/lng and move the marker.
-			const latLng = fractionToLatLng( entry.coords, fraction );
+			// Resolve fraction to a lat/lng on the rendered polyline by
+			// binary-searching the per-vertex cumulative-distance array PHP
+			// emitted, then linearly interpolating between adjacent vertices.
+			// The cursor therefore glides smoothly along the track instead of
+			// jumping from one simplified vertex to the next.
+			const latLng = fractionToLatLng(
+				entry.coords as ReadonlyArray< LatLng >,
+				entry.trackCumDist,
+				entry.totalDistance,
+				fraction
+			);
 			if ( ! latLng ) {
 				return;
 			}

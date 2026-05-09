@@ -33,6 +33,7 @@
  */
 
 import { getContext, getElement, store } from '@wordpress/interactivity';
+import { interpolateSample, sampleToSvg, type ChartBounds } from './geometry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,19 @@ interface ElevationState {
 	fraction: number | null;
 	/** Downsampled (distance, elevation) pairs from LTTB, hydrated by PHP. */
 	elevation: Array< [ number, number ] >;
+	/**
+	 * Padded y-axis lower bound (metres) — matches the value PHP used to
+	 * render the polyline. Required so the cursor sits on the curve rather
+	 * than on the raw LTTB min/max range.
+	 */
+	yMin: number;
+	/** Padded y-axis upper bound (metres). */
+	yMax: number;
+	/**
+	 * Total track distance (metres). The Map block writes this; the
+	 * Elevation block reads it to map fraction → distance in metres.
+	 */
+	totalDistance?: number;
 }
 
 /**
@@ -75,6 +89,17 @@ interface ElevationContext {
 interface ElevationEntry {
 	/** Downsampled (distance, elevation) pairs from state at mount time. */
 	points: Array< [ number, number ] >;
+	/**
+	 * Total track distance (metres) snapshotted at mount time. Falls back
+	 * to the LTTB series's last x-value when PHP did not supply one (e.g.
+	 * when only Elevation is on the page); same physical meaning either
+	 * way because LTTB preserves the track endpoints.
+	 */
+	totalDistance: number;
+	/** Padded y-axis lower bound (metres) — matches the rendered polyline. */
+	yMin: number;
+	/** Padded y-axis upper bound (metres). */
+	yMax: number;
 	/** The server-rendered <g> cursor group element. */
 	cursorGroup: SVGGElement;
 	/** The vertical cursor line inside the group. */
@@ -86,12 +111,7 @@ interface ElevationEntry {
 	/** The tooltip text label. */
 	tooltipText: SVGTextElement;
 	/** Chart boundaries in SVG viewBox logical units. */
-	chart: {
-		left: number;
-		right: number;
-		top: number;
-		bottom: number;
-	};
+	chart: ChartBounds;
 	/** The SVG element itself, used for coordinate conversion. */
 	svg: SVGSVGElement;
 }
@@ -272,7 +292,23 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				[ number, number ]
 			>;
 
-			const chart = {
+			// Snapshot the padded y-bounds and total distance from state. yMin
+			// and yMax must come from PHP (they were used to render the
+			// polyline); falling back to the LTTB raw min/max would put the
+			// cursor off the curve. totalDistance falls back to the LTTB
+			// series's last x — same physical end-point because LTTB
+			// preserves track endpoints.
+			const lastPoint = points[ points.length - 1 ];
+			const fallbackTotal = lastPoint !== undefined ? lastPoint[ 0 ] : 0;
+			const totalDistance =
+				typeof mapState.totalDistance === 'number' &&
+				mapState.totalDistance > 0
+					? mapState.totalDistance
+					: fallbackTotal;
+			const yMin = typeof mapState.yMin === 'number' ? mapState.yMin : 0;
+			const yMax = typeof mapState.yMax === 'number' ? mapState.yMax : 1;
+
+			const chart: ChartBounds = {
 				left: plotLeft,
 				right: plotRight,
 				top: plotTop,
@@ -286,6 +322,9 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			// right away.
 			mountedElevations.set( ref, {
 				points,
+				totalDistance,
+				yMin,
+				yMax,
 				cursorGroup,
 				cursorLine,
 				cursorDot,
@@ -460,6 +499,9 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 
 			const {
 				points,
+				totalDistance,
+				yMin,
+				yMax,
 				cursorLine,
 				cursorDot,
 				tooltipRect,
@@ -473,33 +515,27 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Map fraction to the nearest downsampled elevation point.
-			const index = Math.round( fraction * ( points.length - 1 ) );
-			const clamped = clamp( index, 0, points.length - 1 );
-			const pt = points[ clamped ] as [ number, number ];
+			// Interpolate a (distance, elevation) sample at the requested
+			// fraction by binary-searching the LTTB distance array. The
+			// tooltip continues to display these LTTB-interpolated values —
+			// see docs/architecture.md § Decided behavior for the migration
+			// path to full-fidelity tooltip values.
+			const sample = interpolateSample( points, totalDistance, fraction );
+			if ( ! sample ) {
+				entry.cursorGroup.style.display = 'none';
+				return;
+			}
 
-			const totalDistance = (
-				points[ points.length - 1 ] as [ number, number ]
-			 )[ 0 ];
-			const yMin = Math.min( ...points.map( ( p ) => p[ 1 ] ) );
-			const yMax = Math.max( ...points.map( ( p ) => p[ 1 ] ) );
-
-			const chartWidth = chart.right - chart.left;
-			const chartHeight = chart.bottom - chart.top;
-
-			// X position from fraction directly — close enough because LTTB
-			// preserves endpoints and the fraction is in distance space.
-			const cx =
-				chart.left +
-				( totalDistance > 0
-					? ( pt[ 0 ] / totalDistance ) * chartWidth
-					: 0 );
-
-			// Y position: scale elevation within [yMin, yMax] to chart height;
-			// SVG y grows downward so invert the ratio.
-			const ySpan = yMax > yMin ? yMax - yMin : 1;
-			const cy =
-				chart.bottom - ( ( pt[ 1 ] - yMin ) / ySpan ) * chartHeight;
+			// Project the sample into SVG-space using the padded yMin/yMax
+			// PHP also rendered the polyline with, so the cursor sits exactly
+			// on the curve at every fraction.
+			const { cx, cy } = sampleToSvg(
+				sample,
+				totalDistance,
+				yMin,
+				yMax,
+				chart
+			);
 
 			// Update the vertical cursor line.
 			cursorLine.setAttribute( 'x1', String( cx ) );
@@ -525,7 +561,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			// Update tooltip text content.
 			tooltipText.setAttribute( 'x', String( rectX + tooltipWidth / 2 ) );
 			tooltipText.setAttribute( 'y', String( chart.top + 6 ) );
-			tooltipText.textContent = formatTooltip( pt[ 0 ], pt[ 1 ] );
+			tooltipText.textContent = formatTooltip( sample[ 0 ], sample[ 1 ] );
 
 			// Make the cursor group visible.
 			entry.cursorGroup.style.display = '';

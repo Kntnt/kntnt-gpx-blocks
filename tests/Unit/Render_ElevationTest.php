@@ -647,3 +647,89 @@ test( 'does not emit --kntnt-gpx-blocks-axis-font-weight when font weight is inv
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-axis-font-weight' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Cursor-sync state — yMin / yMax bounds match the rendered polyline
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state includes padded yMin and yMax matching the polyline', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 70, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 20 );
+	elev_stub_parse_blocks( [ elev_map_block( 70, 'map-bounds' ) ] );
+	elev_stub_attached_file( 70, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 20 );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 20 ) );
+
+	$slice = $captured_state['map-bounds'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice )->toHaveKey( 'yMin' );
+	expect( $slice )->toHaveKey( 'yMax' );
+
+	// The synthetic series spans 100 m → 200 m; the padded bounds must enclose
+	// that range strictly so the polyline never sits flush against the chart edges.
+	expect( $slice['yMin'] )->toBeFloat();
+	expect( $slice['yMax'] )->toBeFloat();
+	expect( $slice['yMin'] )->toBeLessThan( 100.0 );
+	expect( $slice['yMax'] )->toBeGreaterThan( 200.0 );
+	expect( $slice['yMax'] )->toBeGreaterThan( $slice['yMin'] );
+
+} );
+
+test( 'yMin and yMax are present even when the elevation series is flat', function (): void {
+
+	// A perfectly flat track exercises the zero-span fallback in padded_y_bounds.
+	$coords = [];
+	for ( $i = 0; $i < 100; $i++ ) {
+		$ratio = $i / 99.0;
+		$coords[] = [ 18.0 + 0.05 * $ratio, 59.0 + 0.05 * $ratio, 150.0 ];
+	}
+	$stats = [
+		'distance'      => 5500.0,
+		'min_elevation' => 150.0,
+		'max_elevation' => 150.0,
+		'ascent'        => 0.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 71, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 21 );
+	elev_stub_parse_blocks( [ elev_map_block( 71, 'map-flat' ) ] );
+	elev_stub_attached_file( 71, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 21 );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 21 ) );
+
+	$slice = $captured_state['map-flat'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['yMax'] )->toBeGreaterThan( $slice['yMin'] );
+
+} );

@@ -728,6 +728,91 @@ test( 'render output omits waypoint-label-font-weight CSS variable when weight i
 } );
 
 // ---------------------------------------------------------------------------
+// Cursor sync — trackCumDist[] and totalDistance are emitted in state
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state includes trackCumDist[] aligned with simplified vertices', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 90, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 90, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 90,
+			'mapId'        => 'map-cursor',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-cursor'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice )->toHaveKey( 'trackCumDist' );
+	expect( $slice )->toHaveKey( 'totalDistance' );
+
+	$cum_dist = $slice['trackCumDist'];
+	expect( $cum_dist )->toBeArray();
+
+	// First entry is 0; sequence is monotonically non-decreasing.
+	expect( $cum_dist[0] )->toBe( 0.0 );
+	$len = count( $cum_dist );
+	for ( $i = 1; $i < $len; $i++ ) {
+		expect( $cum_dist[ $i ] )->toBeGreaterThanOrEqual( $cum_dist[ $i - 1 ] );
+	}
+
+	// Length aligns with the simplified GeoJSON LineString's coordinate count.
+	$features = $slice['geojson']['features'] ?? [];
+	$line     = $features[0]['geometry']['coordinates'] ?? [];
+	expect( $cum_dist )->toHaveCount( count( $line ) );
+
+} );
+
+test( 'totalDistance equals the cached statistics distance', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 91, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 91, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 91,
+			'mapId'        => 'map-total',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-total'] ?? null;
+	expect( $slice )->not->toBeNull();
+
+	// map_seeded_store seeds statistics.distance = 5500.0.
+	expect( $slice['totalDistance'] )->toBe( 5500.0 );
+
+} );
+
+// ---------------------------------------------------------------------------
 // Consent contract — bypassConsent defaults to false on the frontend
 // ---------------------------------------------------------------------------
 

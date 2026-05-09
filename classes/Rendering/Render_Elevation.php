@@ -235,6 +235,11 @@ final class Render_Elevation {
 		$lttb           = new Lttb();
 		$downsampled    = $lttb->downsample( $series, $target );
 
+		// Compute the padded y-range used for the polyline. The same bounds
+		// are sent to JS so the cursor sits exactly on the rendered polyline
+		// rather than on the LTTB raw min/max range.
+		[ $y_min, $y_max ] = self::padded_y_bounds( $downsampled );
+
 		// Hydrate the per-map state slice. Render_Map and Render_Elevation may
 		// both target the same mapId; wp_interactivity_state merges the
 		// per-call payload into the namespaced store, so we send only the
@@ -243,6 +248,8 @@ final class Render_Elevation {
 		wp_interactivity_state( 'kntnt-gpx-blocks', [
 			$resolved_map_id => [
 				'elevation' => $downsampled,
+				'yMin'      => $y_min,
+				'yMax'      => $y_max,
 			],
 		] );
 
@@ -252,7 +259,7 @@ final class Render_Elevation {
 		$desc_id = 'kntnt-gpx-blocks-elevation-desc-' . esc_attr( $resolved_map_id );
 
 		// Build the SVG and wrap it in the Interactivity-API-annotated container.
-		$svg          = self::build_svg( $downsampled, $payload['statistics'], $desc_id );
+		$svg          = self::build_svg( $downsampled, $payload['statistics'], $desc_id, $y_min, $y_max );
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
 
 		// Assemble the inline style: layout dimensions first, then any non-empty
@@ -437,6 +444,59 @@ final class Render_Elevation {
 	}
 
 	/**
+	 * Returns the padded `[y_min, y_max]` bounds used to render the polyline.
+	 *
+	 * Pads the raw min/max by 5 % of the span (1 m when the span is zero) so
+	 * the line never sits flush against the chart edges, then snaps the bounds
+	 * outward via `floor` / `ceil` so the y-axis ticks land on whole metres.
+	 * The same bounds are sent to JS so the cursor placement uses an identical
+	 * scale.
+	 *
+	 * The caller must pass at least two points; an empty input returns
+	 * `[ 0.0, 1.0 ]` defensively.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<int, array{0: float, 1: float}> $series Downsampled
+	 *                                                      (distance, elevation)
+	 *                                                      pairs.
+	 *
+	 * @return array{0: float, 1: float}
+	 */
+	private static function padded_y_bounds( array $series ): array {
+
+		if ( count( $series ) === 0 ) {
+			return [ 0.0, 1.0 ];
+		}
+
+		// Find the raw min and max via a direct walk; cheaper than array_map
+		// and easier for PHPStan to type.
+		$y_min_raw = $series[0][1];
+		$y_max_raw = $series[0][1];
+		foreach ( $series as $point ) {
+			if ( $point[1] < $y_min_raw ) {
+				$y_min_raw = $point[1];
+			}
+			if ( $point[1] > $y_max_raw ) {
+				$y_max_raw = $point[1];
+			}
+		}
+
+		// Pad by 5 % of the span (1 m for a flat track) and snap outward to
+		// whole metres so the rendered tick labels are integer-valued.
+		$y_span_raw = $y_max_raw - $y_min_raw;
+		$pad        = $y_span_raw > 0.0 ? $y_span_raw * 0.05 : 1.0;
+		$y_min      = floor( $y_min_raw - $pad );
+		$y_max      = ceil( $y_max_raw + $pad );
+		if ( $y_max <= $y_min ) {
+			$y_max = $y_min + 1.0;
+		}
+
+		return [ $y_min, $y_max ];
+
+	}
+
+	/**
 	 * Builds the inline SVG chart with axes, polyline, and screen-reader desc.
 	 *
 	 * The `$desc_id` is set on the `<desc>` element so the SVG's `aria-labelledby`
@@ -454,35 +514,23 @@ final class Render_Elevation {
 	 * @param string                                $desc_id    HTML id for the <desc>
 	 *                                                          element; referenced via
 	 *                                                          aria-labelledby on the svg.
+	 * @param float                                 $y_min      Padded y-axis lower bound.
+	 * @param float                                 $y_max      Padded y-axis upper bound.
 	 *
 	 * @return string SVG markup.
 	 */
-	private static function build_svg( array $series, array $statistics, string $desc_id ): string {
+	private static function build_svg(
+		array $series,
+		array $statistics,
+		string $desc_id,
+		float $y_min,
+		float $y_max,
+	): string {
 
-		// Compute the data domain and pad the y-range with 5% of its span so
-		// the polyline never sits flush against the top or bottom of the chart.
-		// The caller guarantees count($series) >= 2; walk it directly so
-		// PHPStan does not have to infer non-emptiness through array_map.
-		$x_min     = $series[0][0];
-		$x_max     = $series[ count( $series ) - 1 ][0];
-		$y_min_raw = $series[0][1];
-		$y_max_raw = $series[0][1];
-		foreach ( $series as $point ) {
-			if ( $point[1] < $y_min_raw ) {
-				$y_min_raw = $point[1];
-			}
-			if ( $point[1] > $y_max_raw ) {
-				$y_max_raw = $point[1];
-			}
-		}
-
-		$y_span_raw = $y_max_raw - $y_min_raw;
-		$pad        = $y_span_raw > 0.0 ? $y_span_raw * 0.05 : 1.0;
-		$y_min      = floor( $y_min_raw - $pad );
-		$y_max      = ceil( $y_max_raw + $pad );
-		if ( $y_max <= $y_min ) {
-			$y_max = $y_min + 1.0;
-		}
+		// The caller guarantees count($series) >= 2; walk the x-domain directly
+		// so PHPStan does not have to infer non-emptiness through array_map.
+		$x_min = $series[0][0];
+		$x_max = $series[ count( $series ) - 1 ][0];
 
 		// Compute the SVG plot rectangle (the inner box the line actually maps into).
 		$plot_left   = self::MARGIN_LEFT;
