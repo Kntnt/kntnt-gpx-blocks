@@ -38,6 +38,8 @@ import { useSelect } from '@wordpress/data';
 import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
 
+import { flattenPresets } from '../shared/flatten-presets';
+
 /**
  * Attributes for the GPX Elevation block.
  *
@@ -342,12 +344,16 @@ export const ElevationEdit = ( {
 
 	// Pull the merged theme typography presets so the unified Typography
 	// panels expose the same Standard/preset choices as core Paragraph/Group.
+	// useSettings returns the origin-keyed `{ default, theme, custom }` shape
+	// for multi-origin settings, which the underlying controls iterate with
+	// `.map()` — flatten to a plain array before forwarding.
 	const [ themeFontFamilies, themeFontSizes ] = useSettings(
 		'typography.fontFamilies',
 		'typography.fontSizes'
-	) as [ FontFamilyPreset[] | undefined, FontSizePreset[] | undefined ];
-	const fontFamilies = themeFontFamilies ?? [];
-	const fontSizes = themeFontSizes ?? [];
+	);
+	const fontFamilies =
+		flattenPresets< FontFamilyPreset >( themeFontFamilies );
+	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
 
 	// Build a style object carrying every non-empty theming attribute as a CSS
 	// custom property so the editor preview updates instantly.

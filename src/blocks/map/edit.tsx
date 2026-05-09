@@ -42,6 +42,7 @@ import type { BlockEditProps } from '@wordpress/blocks';
 
 import { useEnsureUniqueMapId } from './use-ensure-unique-map-id';
 import { MapEditorPreview } from './editor-preview';
+import { flattenPresets } from '../shared/flatten-presets';
 
 /**
  * Attributes for the GPX Map block.
@@ -330,12 +331,16 @@ export const MapEdit = ( {
 
 	// Pull the merged theme typography presets so the unified Typography
 	// panel exposes the same Standard/preset choices as core Paragraph/Group.
+	// useSettings returns the origin-keyed `{ default, theme, custom }` shape
+	// for multi-origin settings, which the underlying controls iterate with
+	// `.map()` — flatten to a plain array before forwarding.
 	const [ themeFontFamilies, themeFontSizes ] = useSettings(
 		'typography.fontFamilies',
 		'typography.fontSizes'
-	) as [ FontFamilyPreset[] | undefined, FontSizePreset[] | undefined ];
-	const fontFamilies = themeFontFamilies ?? [];
-	const fontSizes = themeFontSizes ?? [];
+	);
+	const fontFamilies =
+		flattenPresets< FontFamilyPreset >( themeFontFamilies );
+	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
 
 	// Inject CSS variables onto the block wrapper. The MapEditorPreview reads
 	// trackColor and waypointColor directly from props and applies them to
