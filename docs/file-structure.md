@@ -76,6 +76,8 @@ Plain ES2022 scripts that are enqueued directly by WordPress without going throu
 - `consent-stub.js` — the inline-friendly source for the `kntnt-gpx-blocks-consent-stub` script handle that publishes the `window.kntnt_gpx_blocks` API. The contents are inlined into `<head>` by `Consent\Consent_Stub`. See [`consent.md`](consent.md) for the full contract.
 - `statistics-variation.js` — calls `window.wp.blocks.registerBlockVariation()` to register the GPX Statistics block-variation of `core/group`. Enqueued in the editor by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets`; depends on the `wp-blocks` and `wp-i18n` script handles. `wp_set_script_translations()` makes the `__()` calls inside the file pick up entries from the plugin's text domain.
 
+These files are shipped **un-minified**, both in the repo and in the release ZIP. `build-release-zip.sh` copies them verbatim. The decision is deliberate: `consent-stub.js` is part of the public integration contract documented in [`consent.md`](consent.md), so site builders writing CMP glue read the source directly in DevTools without needing source maps; the files are tiny (a few kB each, gzipped to ~2–3 kB combined over the wire) so the bandwidth gain from minification is below the noise floor; and adding a minifier just for these two files would drag a build step (`terser`/`esbuild`) into a directory whose entire point is "no build". The block code under `src/blocks/` is a separate matter — `@wordpress/scripts` minifies it in production mode, and the minified output in `build/` is what ships.
+
 ## `tests/`
 
 Pest-based PHP test suite.
