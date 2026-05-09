@@ -20,6 +20,13 @@
   "usesContext": [
     "postId"
   ],
+  "supports": {
+    "align": [
+      "wide",
+      "full"
+    ],
+    "anchor": true
+  },
   "attributes": {
     "mapId": {
       "type": "string",

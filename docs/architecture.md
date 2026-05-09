@@ -22,6 +22,10 @@ Both blocks are **dynamic**. Each `block.json` declares `"render": "file:./rende
 
 Static rendering (a `save.tsx` returning HTML) was rejected because GPX-derived HTML must reflect the current cached GeoJSON: if the GPX file is replaced, every saved post that referenced it must show the new track without the editor opening and re-saving each post. Static rendering would freeze the GeoJSON in `post_content` and require a manual re-save on every content change.
 
+## Block wrapper attributes
+
+Both blocks emit their server-rendered root element through `get_block_wrapper_attributes()`, so the editor-UI affordances declared in `block.json` reach the frontend HTML: `supports.align: [ "wide", "full" ]` produces `alignwide` / `alignfull` classes, `supports.anchor: true` produces an `id` attribute from the editor's HTML-anchor field, and the default `customClassName` support produces any "Additional CSS class(es)" the editor set in the Advanced panel. Third-party `render_block_data` filters that inject extra wrapper attributes flow through the same helper and reach the output unchanged. Behavioural attributes that the plugin owns (`role="application"` on the Map, `data-wp-interactive`, `data-wp-context`, `data-wp-init`, the `data-wp-watch*` directives) are appended to the wrapper element by the render callbacks and are not part of the editor-UI surface.
+
 ## Hydration via Interactivity API
 
 Client-side data — GeoJSON, waypoints, settings, statistics — reaches the browser through `wp_interactivity_state()`. The PHP render function calls `wp_interactivity_state( 'kntnt-gpx-blocks', [ $map_id => [ ... ] ] )` and emits a block element annotated with `data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'` and a `data-wp-context` carrying the `mapId`. The block's `viewScriptModule` (an ES module that imports `@wordpress/interactivity`) registers a store with `actions`, `callbacks`, and reactive state. On hydration, `data-wp-init` runs the block's mount callback (build the Leaflet map, build the SVG chart, etc.), and `data-wp-watch` keeps the cursor marker in sync with the shared state.

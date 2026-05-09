@@ -313,6 +313,38 @@ export const MapEditorPreview = ( {
 		} );
 	}, [ trackColor ] );
 
+	// Keep Leaflet's internal size in sync with the wrapper's actual size.
+	// Toggling alignwide/alignfull (and any other layout change that resizes
+	// the wrapper) does not trigger a payload re-mount, so without this
+	// observer Leaflet keeps its stale dimensions and the map renders
+	// cropped or with stale tile coverage. invalidateSize is debounced to
+	// coalesce the burst of resize events that fire during a layout change.
+	useEffect( () => {
+		const container = containerRef.current;
+		if ( ! container ) {
+			return;
+		}
+
+		let timeoutId: ReturnType< typeof setTimeout > | null = null;
+		const observer = new ResizeObserver( () => {
+			if ( timeoutId !== null ) {
+				clearTimeout( timeoutId );
+			}
+			timeoutId = setTimeout( () => {
+				timeoutId = null;
+				mapRef.current?.invalidateSize( false );
+			}, 100 );
+		} );
+		observer.observe( container );
+
+		return () => {
+			if ( timeoutId !== null ) {
+				clearTimeout( timeoutId );
+			}
+			observer.disconnect();
+		};
+	}, [] );
+
 	// Build the wrapper style once per render so attribute changes (aspect
 	// ratio, min-height, max-height) take effect immediately.
 	const wrapperStyle = buildWrapperStyle( attributes );

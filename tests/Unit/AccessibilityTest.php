@@ -243,6 +243,29 @@ beforeEach( function (): void {
 	);
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 
+	// Minimal get_block_wrapper_attributes stub: emits the class+style passed
+	// in plus the namespaced wp-block class, mirroring core's wrapper output.
+	// The accessibility tests do not exercise alignment, anchor, or
+	// className, so the stub does not need to read any global attribute
+	// context — those branches are covered by Render_MapTest /
+	// Render_ElevationTest.
+	Functions\when( 'get_block_wrapper_attributes' )->alias(
+		static function ( array $extras = [] ): string {
+			$class_parts = [];
+			if ( isset( $extras['class'] ) && '' !== $extras['class'] ) {
+				$class_parts[] = $extras['class'];
+			}
+			$out = '';
+			if ( count( $class_parts ) > 0 ) {
+				$out .= sprintf( 'class="%s"', implode( ' ', $class_parts ) );
+			}
+			if ( isset( $extras['style'] ) && '' !== $extras['style'] ) {
+				$out .= ( '' !== $out ? ' ' : '' ) . sprintf( 'style="%s"', $extras['style'] );
+			}
+			return $out;
+		}
+	);
+
 } );
 
 // ---------------------------------------------------------------------------

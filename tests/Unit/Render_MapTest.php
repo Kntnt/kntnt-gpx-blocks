@@ -199,6 +199,41 @@ beforeEach( function (): void {
 	Functions\when( 'current_user_can' )->justReturn( false );
 	Functions\when( 'is_admin' )->justReturn( false );
 
+	// Reset the per-test attribute capture and install a default
+	// get_block_wrapper_attributes mock that mirrors core's behaviour for the
+	// fields the production code passes in (class + style) and additionally
+	// honours the editor-UI fields the wrapper-contract tests inject via
+	// $GLOBALS['kntnt_map_test_attrs'].
+	$GLOBALS['kntnt_map_test_attrs'] = [];
+	Functions\when( 'get_block_wrapper_attributes' )->alias(
+		static function ( array $extras = [] ): string {
+			$attrs       = is_array( $GLOBALS['kntnt_map_test_attrs'] ?? null )
+				? $GLOBALS['kntnt_map_test_attrs']
+				: [];
+			$class_parts = [ 'wp-block-kntnt-gpx-blocks-map' ];
+			if ( isset( $extras['class'] ) && '' !== $extras['class'] ) {
+				$class_parts[] = $extras['class'];
+			}
+			$align = $attrs['align'] ?? '';
+			if ( is_string( $align ) && '' !== $align ) {
+				$class_parts[] = 'align' . $align;
+			}
+			$class_name = $attrs['className'] ?? '';
+			if ( is_string( $class_name ) && '' !== $class_name ) {
+				$class_parts[] = $class_name;
+			}
+			$out = sprintf( 'class="%s"', implode( ' ', $class_parts ) );
+			if ( isset( $extras['style'] ) && '' !== $extras['style'] ) {
+				$out .= sprintf( ' style="%s"', $extras['style'] );
+			}
+			$anchor = $attrs['anchor'] ?? '';
+			if ( is_string( $anchor ) && '' !== $anchor ) {
+				$out .= sprintf( ' id="%s"', $anchor );
+			}
+			return $out;
+		}
+	);
+
 } );
 
 // ---------------------------------------------------------------------------
@@ -907,5 +942,114 @@ test( 'bypassConsent is true in state when REST_REQUEST is true and user can edi
 
 	expect( $slice )->not->toBeNull();
 	expect( $slice['bypassConsent'] )->toBeTrue();
+
+} );
+
+// ---------------------------------------------------------------------------
+// Wrapper contract — get_block_wrapper_attributes propagates editor-UI
+// affordances (alignwide / alignfull, HTML anchor, additional className).
+// ---------------------------------------------------------------------------
+
+test( 'wrapper carries alignwide when align attribute is "wide"', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 110, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 110, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$GLOBALS['kntnt_map_test_attrs'] = [ 'align' => 'wide' ];
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 110,
+			'mapId'        => 'map-wide',
+			'align'        => 'wide',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( 'alignwide' );
+
+} );
+
+test( 'wrapper carries alignfull when align attribute is "full"', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 111, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 111, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$GLOBALS['kntnt_map_test_attrs'] = [ 'align' => 'full' ];
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 111,
+			'mapId'        => 'map-full',
+			'align'        => 'full',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( 'alignfull' );
+
+} );
+
+test( 'wrapper carries HTML id when anchor attribute is set', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 112, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 112, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$GLOBALS['kntnt_map_test_attrs'] = [ 'anchor' => 'my-trail' ];
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 112,
+			'mapId'        => 'map-anchor',
+			'anchor'       => 'my-trail',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( 'id="my-trail"' );
+
+} );
+
+test( 'wrapper carries the user-supplied additional CSS class', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 113, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 113, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$GLOBALS['kntnt_map_test_attrs'] = [ 'className' => 'is-style-rounded my-extra-class' ];
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 113,
+			'mapId'        => 'map-class',
+			'className'    => 'is-style-rounded my-extra-class',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( 'is-style-rounded my-extra-class' );
 
 } );

@@ -282,6 +282,41 @@ beforeEach( function (): void {
 	);
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'current_user_can' )->justReturn( false );
+
+	// Reset the per-test attribute capture and install a default
+	// get_block_wrapper_attributes mock that mirrors core's behaviour for the
+	// fields the production code passes in (class + style) and additionally
+	// honours the editor-UI fields the wrapper-contract tests inject via
+	// $GLOBALS['kntnt_elev_test_attrs'].
+	$GLOBALS['kntnt_elev_test_attrs'] = [];
+	Functions\when( 'get_block_wrapper_attributes' )->alias(
+		static function ( array $extras = [] ): string {
+			$attrs       = is_array( $GLOBALS['kntnt_elev_test_attrs'] ?? null )
+				? $GLOBALS['kntnt_elev_test_attrs']
+				: [];
+			$class_parts = [ 'wp-block-kntnt-gpx-blocks-elevation' ];
+			if ( isset( $extras['class'] ) && '' !== $extras['class'] ) {
+				$class_parts[] = $extras['class'];
+			}
+			$align = $attrs['align'] ?? '';
+			if ( is_string( $align ) && '' !== $align ) {
+				$class_parts[] = 'align' . $align;
+			}
+			$class_name = $attrs['className'] ?? '';
+			if ( is_string( $class_name ) && '' !== $class_name ) {
+				$class_parts[] = $class_name;
+			}
+			$out = sprintf( 'class="%s"', implode( ' ', $class_parts ) );
+			if ( isset( $extras['style'] ) && '' !== $extras['style'] ) {
+				$out .= sprintf( ' style="%s"', $extras['style'] );
+			}
+			$anchor = $attrs['anchor'] ?? '';
+			if ( is_string( $anchor ) && '' !== $anchor ) {
+				$out .= sprintf( ' id="%s"', $anchor );
+			}
+			return $out;
+		}
+	);
 } );
 
 // ---------------------------------------------------------------------------
@@ -731,5 +766,206 @@ test( 'yMin and yMax are present even when the elevation series is flat', functi
 
 	expect( $slice )->not->toBeNull();
 	expect( $slice['yMax'] )->toBeGreaterThan( $slice['yMin'] );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Wrapper contract — normal path. get_block_wrapper_attributes propagates
+// editor-UI affordances (alignwide / alignfull, HTML anchor, additional
+// className) when the chart actually renders.
+// ---------------------------------------------------------------------------
+
+/**
+ * Stubs the full set of WP / cache helpers needed for a normal-path render
+ * with elevation data. Returns the attachment ID the seeded payload uses.
+ *
+ * @param int    $attachment_id Attachment ID to seed.
+ * @param int    $post_id       Host post ID.
+ * @param string $map_id        mapId on the parsed GPX Map block.
+ *
+ * @return void
+ */
+function elev_setup_normal_path( int $attachment_id, int $post_id, string $map_id ): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( $attachment_id, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( $post_id );
+	elev_stub_parse_blocks( [ elev_map_block( $attachment_id, $map_id ) ] );
+	elev_stub_attached_file( $attachment_id, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( $post_id );
+
+}
+
+/**
+ * Stubs the WP / cache helpers needed for an empty-data render — a 2D track
+ * (no elevation) so render_empty_state() runs.
+ *
+ * @param int    $attachment_id Attachment ID to seed.
+ * @param int    $post_id       Host post ID.
+ * @param string $map_id        mapId on the parsed GPX Map block.
+ *
+ * @return void
+ */
+function elev_setup_empty_path( int $attachment_id, int $post_id, string $map_id ): void {
+
+	$coords = elev_synthetic_coords_2d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => null,
+		'max_elevation' => null,
+		'ascent'        => null,
+		'descent'       => null,
+	];
+
+	$store = elev_seeded_store( $attachment_id, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( $post_id );
+	elev_stub_parse_blocks( [ elev_map_block( $attachment_id, $map_id ) ] );
+	elev_stub_attached_file( $attachment_id, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( $post_id );
+
+}
+
+test( 'wrapper carries alignwide on the normal path when align is "wide"', function (): void {
+
+	elev_setup_normal_path( 200, 100, 'map-wide' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'wide' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'align' => 'wide' ],
+		'',
+		elev_fake_block( 100 ),
+	);
+
+	expect( $html )->toContain( 'alignwide' );
+
+} );
+
+test( 'wrapper carries alignfull on the normal path when align is "full"', function (): void {
+
+	elev_setup_normal_path( 201, 101, 'map-full' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'full' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'align' => 'full' ],
+		'',
+		elev_fake_block( 101 ),
+	);
+
+	expect( $html )->toContain( 'alignfull' );
+
+} );
+
+test( 'wrapper carries HTML id on the normal path when anchor is set', function (): void {
+
+	elev_setup_normal_path( 202, 102, 'map-anchor' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'anchor' => 'profile-section' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'anchor' => 'profile-section' ],
+		'',
+		elev_fake_block( 102 ),
+	);
+
+	expect( $html )->toContain( 'id="profile-section"' );
+
+} );
+
+test( 'wrapper carries the user-supplied additional CSS class on the normal path', function (): void {
+
+	elev_setup_normal_path( 203, 103, 'map-class' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'className' => 'is-style-rounded my-extra-class' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'className' => 'is-style-rounded my-extra-class' ],
+		'',
+		elev_fake_block( 103 ),
+	);
+
+	expect( $html )->toContain( 'is-style-rounded my-extra-class' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Wrapper contract — empty-data path (render_empty_state). The same four
+// editor-UI affordances must reach the empty-state wrapper as well, so a
+// theme-aligned/anchored Elevation that happens to lack elevation data
+// keeps its anchor and alignment.
+// ---------------------------------------------------------------------------
+
+test( 'empty-state wrapper carries alignwide when align is "wide"', function (): void {
+
+	elev_setup_empty_path( 210, 110, 'map-empty-wide' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'wide' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'align' => 'wide' ],
+		'',
+		elev_fake_block( 110 ),
+	);
+
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation--empty' )
+		->toContain( 'alignwide' );
+
+} );
+
+test( 'empty-state wrapper carries alignfull when align is "full"', function (): void {
+
+	elev_setup_empty_path( 211, 111, 'map-empty-full' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'full' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'align' => 'full' ],
+		'',
+		elev_fake_block( 111 ),
+	);
+
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation--empty' )
+		->toContain( 'alignfull' );
+
+} );
+
+test( 'empty-state wrapper carries HTML id when anchor is set', function (): void {
+
+	elev_setup_empty_path( 212, 112, 'map-empty-anchor' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'anchor' => 'no-elevation-here' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'anchor' => 'no-elevation-here' ],
+		'',
+		elev_fake_block( 112 ),
+	);
+
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation--empty' )
+		->toContain( 'id="no-elevation-here"' );
+
+} );
+
+test( 'empty-state wrapper carries the user-supplied additional CSS class', function (): void {
+
+	elev_setup_empty_path( 213, 113, 'map-empty-class' );
+	$GLOBALS['kntnt_elev_test_attrs'] = [ 'className' => 'is-style-rounded my-extra-class' ];
+
+	$html = Render_Elevation::render(
+		[ 'mapId' => 'auto', 'className' => 'is-style-rounded my-extra-class' ],
+		'',
+		elev_fake_block( 113 ),
+	);
+
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation--empty' )
+		->toContain( 'is-style-rounded my-extra-class' );
 
 } );

@@ -18,6 +18,13 @@
   "editorStyle": "file:./index.css",
   "viewStyle": "file:./view.css",
   "render": "file:./render.php",
+  "supports": {
+    "align": [
+      "wide",
+      "full"
+    ],
+    "anchor": true
+  },
   "attributes": {
     "attachmentId": {
       "type": "integer",

@@ -292,9 +292,20 @@ final class Render_Map {
 		// phpcs:ignore Generic.Files.LineLength.TooLong -- Translator strings must be a single literal per WordPress.WP.I18n; splitting is not permitted.
 		$noscript_text = esc_html__( 'This map requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
 
+		// Build the block wrapper attributes via core's helper so that editor-UI
+		// affordances (HTML anchor, additional CSS class, theme-supplied
+		// alignwide/alignfull, third-party render_block_data filters) reach the
+		// frontend. The wp-block-kntnt-gpx-blocks-map class is supplied by core
+		// from block.json and need not be repeated here.
+		$wrapper = get_block_wrapper_attributes( [
+			'class' => 'kntnt-gpx-blocks-map',
+			'style' => $style,
+		] );
+
 		// Return the block element. Leaflet mounts directly into this wrapper —
 		// the wrapper has explicit width / aspect-ratio / min-height via inline
-		// style, so Leaflet always sees a correctly sized container.
+		// style (carried inside $wrapper), so Leaflet always sees a correctly
+		// sized container.
 		// role="application" and aria-label expose the interactive map to assistive
 		// technology. <noscript> is shown only when JS is disabled.
 		// data-wp-init bootstraps the block. The suffixed data-wp-watch directive
@@ -304,19 +315,18 @@ final class Render_Map {
 		// No plugin-supplied placeholder, button, or consent UI is rendered —
 		// the active consent-management plugin owns the visitor-facing UX.
 		return sprintf(
-			'<div class="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"'
+			'<div %1$s'
 				. ' role="application"'
-				. ' aria-label="%1$s"'
+				. ' aria-label="%2$s"'
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
-				. ' data-wp-context=\'%2$s\''
+				. ' data-wp-context=\'%3$s\''
 				. ' data-wp-init="callbacks.initMap"'
-				. ' data-wp-watch--cursor="callbacks.onMapCursorChange"'
-				. ' style="%3$s">'
+				. ' data-wp-watch--cursor="callbacks.onMapCursorChange">'
 				. '<noscript><p class="kntnt-gpx-blocks-map-noscript">%4$s</p></noscript>'
 				. '</div>',
+			$wrapper,
 			$aria_label,
 			esc_attr( (string) $context ),
-			esc_attr( $style ),
 			$noscript_text,
 		);
 

@@ -13,6 +13,10 @@
 	"editorStyle": "file:./index.css",
 	"render": "file:./render.php",
 	"usesContext": [ "postId" ],
+	"supports": {
+		"align": [ "wide", "full" ],
+		"anchor": true
+	},
 	"attributes": {
 		"mapId": {
 			"type": "string",

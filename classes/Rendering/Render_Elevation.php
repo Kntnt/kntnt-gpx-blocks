@@ -321,18 +321,27 @@ final class Render_Elevation {
 		// and screen readers both get the same description.
 		$noscript_text = self::build_desc( $payload['statistics'], (float) ( end( $downsampled )[0] ?? 0.0 ) );
 
+		// Build the block wrapper attributes via core's helper so that editor-UI
+		// affordances (HTML anchor, additional CSS class, theme-supplied
+		// alignwide/alignfull, third-party render_block_data filters) reach the
+		// frontend. The wp-block-kntnt-gpx-blocks-elevation class is supplied by
+		// core from block.json and need not be repeated here.
+		$wrapper = get_block_wrapper_attributes( [
+			'class' => 'kntnt-gpx-blocks-elevation',
+			'style' => $style,
+		] );
+
 		return sprintf(
-			'<div class="wp-block-kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation"'
+			'<div %1$s'
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
-				. ' data-wp-context=\'%1$s\''
+				. ' data-wp-context=\'%2$s\''
 				. ' data-wp-init="callbacks.initElevation"'
-				. ' data-wp-watch="callbacks.onElevationCursorChange"'
-				. ' style="%2$s">'
+				. ' data-wp-watch="callbacks.onElevationCursorChange">'
 				. '%3$s'
 				. '<noscript><p class="kntnt-gpx-blocks-elevation-noscript">%4$s</p></noscript>'
 				. '</div>',
+			$wrapper,
 			esc_attr( (string) $context_json ),
-			esc_attr( $style ),
 			$svg,
 			esc_html( $noscript_text ),
 		);
@@ -819,10 +828,16 @@ final class Render_Elevation {
 		}
 		$style = implode( '; ', $style_parts );
 
+		// Build the block wrapper attributes via core's helper so that editor-UI
+		// affordances reach the frontend even on the empty-data path.
+		$wrapper = get_block_wrapper_attributes( [
+			'class' => 'kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation--empty',
+			'style' => $style,
+		] );
+
 		return sprintf(
-			'<div class="wp-block-kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation'
-				. ' kntnt-gpx-blocks-elevation--empty" style="%s">%s</div>',
-			esc_attr( $style ),
+			'<div %s>%s</div>',
+			$wrapper,
 			esc_html__( 'No elevation data in this GPX file.', 'kntnt-gpx-blocks' ),
 		);
 
