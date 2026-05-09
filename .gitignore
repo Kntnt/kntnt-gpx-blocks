@@ -21,6 +21,9 @@ coverage/
 *.swp
 *~
 
+# Local AI-agent config (Claude Code etc.) — per-developer, not project content
+.claude/
+
 # Local config
 .env
 .env.local
