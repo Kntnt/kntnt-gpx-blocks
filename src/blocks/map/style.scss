@@ -16,6 +16,17 @@
 	aspect-ratio: 3 / 1;
 	min-height: 240px;
 
+	// Anchor descendants that need to fill the wrapper's box (the editor
+	// preview's inner host, the absolute Leaflet panes) without depending on
+	// percentage height resolution. `aspect-ratio` plus an inline
+	// `min-height` from core's `dimensions` block supports leaves the
+	// wrapper's used height definite per spec, but Chrome and Safari have
+	// historically resolved `height: 100%` to zero on a child of such a
+	// wrapper. Pinning the wrapper as a positioned ancestor lets the inner
+	// host fill the box via `position: absolute; inset: 0` instead — see
+	// issue #86 and the matching `hostStyle` in editor-preview.tsx.
+	position: relative;
+
 	// Clip Leaflet's absolutely-positioned tile layers to the block's rounded
 	// corners when the editor sets a border-radius via the core Border panel.
 	// `box-shadow` is unaffected by `overflow` on the same element, so the

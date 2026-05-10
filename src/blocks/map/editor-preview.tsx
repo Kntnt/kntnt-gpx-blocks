@@ -533,12 +533,22 @@ export const MapEditorPreview = ( {
 	// MapEditorPreview's own elements simply fill that wrapper without
 	// asserting their own dimensions, so the editor's chosen aspect-ratio and
 	// min-height stay in effect both for the wrapper itself and for the
-	// Leaflet host inside it. `position: relative` anchors the absolutely
-	// positioned waypoint-info preview to this host's content box.
+	// Leaflet host inside it.
+	//
+	// The inner host is pinned to all four sides of the wrapper instead of
+	// relying on `width: 100%; height: 100%`. With `aspect-ratio` from the
+	// project class plus an inline `min-height` from core's `dimensions`
+	// block supports, `height: 100%` resolved to zero in Chrome and Safari
+	// — Leaflet then mounted into a 0 × 0 container and the editor preview
+	// vanished the moment the editor entered any value in the Mått panel
+	// (issue #86). The wrapper is `position: relative` (style.scss) so the
+	// host's `inset: 0` anchors to the wrapper's padding-box and the box
+	// stays definite regardless of how the wrapper's height is computed.
+	// The host also remains the positioned ancestor that the absolutely
+	// positioned waypoint-info preview anchors to.
 	const hostStyle: React.CSSProperties = {
-		position: 'relative',
-		width: '100%',
-		height: '100%',
+		position: 'absolute',
+		inset: 0,
 	};
 
 	const fillParentStyle: React.CSSProperties = {
@@ -594,13 +604,19 @@ export const MapEditorPreview = ( {
 	// Loading and error are intentionally rendered inside the same fill-parent
 	// host that holds the map so the editor sees consistent dimensions
 	// throughout the load lifecycle — no layout jump when the map mounts.
+	// The error branch reuses `hostStyle` rather than the fill-parent
+	// helper so an error notice is anchored against the wrapper the same
+	// way the map host is — staying visible inside the wrapper's
+	// `overflow: hidden` clip even when the wrapper's height is computed
+	// via `aspect-ratio` and clamped by an inline `min-height` from core's
+	// `dimensions` block supports (see the `hostStyle` comment above).
 	// Notices render above the error host as well so a stale `tileProvider`
 	// surfaces even when the GPX payload itself fails to load.
 	if ( error ) {
 		return (
 			<>
 				{ notices }
-				<div style={ fillParentStyle }>
+				<div style={ hostStyle }>
 					<div className="kntnt-gpx-blocks-error">
 						<p>
 							<strong>
