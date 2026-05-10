@@ -72,6 +72,26 @@ export interface EditorOverlayRecord {
 }
 
 /**
+ * Resolved base-tile provider record forwarded from `edit.tsx` to the preview.
+ *
+ * Same Leaflet-facing fields as `EditorOverlayRecord` minus the `id` —
+ * `MapEditorPreview` does not need the id because there is only one base
+ * layer at a time and the preview cannot surface "unknown provider"
+ * notices anyway (that's #82). `{KEY}` is already substituted by
+ * `edit.tsx`'s `resolveProviderForPreview()` before the record reaches
+ * this component, mirroring how `Render_Map` substitutes for the
+ * frontend.
+ *
+ * @since 1.0.0
+ */
+export interface EditorProviderRecord {
+	readonly url: string;
+	readonly attribution: string;
+	readonly maxZoom: number;
+	subdomains?: string[];
+}
+
+/**
  * Attributes the preview reads. A subset of the Map block's attribute set —
  * only the ones that affect preview appearance.
  *
@@ -97,6 +117,14 @@ interface PreviewAttributes {
 	waypointColor: string;
 	tooltipShowName: boolean;
 	tooltipShowDesc: boolean;
+	/**
+	 * Resolved base-tile provider with `{KEY}` already substituted client-side
+	 * from `attributes.tileApiKey`. `null` when the editor-data global is
+	 * unavailable — the preview then renders the polyline and waypoints over
+	 * an empty tile background, matching the documented "fail visually" path
+	 * for issue #79.
+	 */
+	provider: EditorProviderRecord | null;
 	overlays: readonly EditorOverlayRecord[];
 }
 
@@ -127,33 +155,20 @@ const DEFAULT_TRACK_COLOR = '#0073aa';
 const DEFAULT_WAYPOINT_COLOR = '#d63638';
 
 /**
- * Tile URL template for the OSM tile layer used in the editor preview.
- *
- * Identical to the URL used in view.ts so the editor preview matches the
- * frontend's visual appearance.
- *
- * @since 1.0.0
- */
-const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-/**
- * Tile layer attribution string. Required by OSM's usage policy.
- *
- * @since 1.0.0
- */
-const TILE_ATTRIBUTION =
-	'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-/**
  * Editor preview for the GPX Map block.
  *
  * Fetches the cached GeoJSON for the given attachmentId via the plugin's
  * REST endpoint, then mounts a Leaflet instance into a div ref. Re-fits the
  * map when the GeoJSON changes; tears the map down on unmount.
  *
- * The polyline colour reacts to trackColor attribute changes without a full
- * remount because Leaflet's canvas-rendered polyline cannot be styled by
- * CSS — we rebuild only the GeoJSON layer when the colour changes.
+ * The polyline colour, the base tile provider, and the overlay layers each
+ * react to attribute changes without a full remount. The polyline is
+ * canvas-rendered and is restyled in place; the base tile layer is removed
+ * and re-added (with `bringToBack()` so it sits beneath any overlays);
+ * overlays are wiped and re-added in editor-configured order. Each lives
+ * in its own dedicated `useEffect` so a colour-picker drag, a provider
+ * dropdown change, or an overlay toggle does not rebuild the whole Leaflet
+ * map.
  *
  * @since 1.0.0
  *
@@ -166,6 +181,7 @@ export const MapEditorPreview = ( {
 	const containerRef = useRef< HTMLDivElement >( null );
 	const mapRef = useRef< L.Map | null >( null );
 	const layerRef = useRef< L.GeoJSON | null >( null );
+	const baseTileLayerRef = useRef< L.TileLayer | null >( null );
 	const overlayLayersRef = useRef< L.TileLayer[] >( [] );
 	const [ payload, setPayload ] = useState< PreviewPayload | null >( null );
 	const [ error, setError ] = useState< ApiError | null >( null );
@@ -177,8 +193,26 @@ export const MapEditorPreview = ( {
 		waypointColor,
 		tooltipShowName,
 		tooltipShowDesc,
+		provider,
 		overlays,
 	} = attributes;
+
+	// Stable cache key for the base-tile provider. Stringify because the
+	// resolveProviderForPreview() call upstream returns a fresh object on every
+	// parent render even when the underlying values are unchanged; comparing
+	// the serialised tuple keeps the swap-in-place effect from re-firing on
+	// every keystroke in unrelated controls. `null` serialises to the literal
+	// "null" so the empty-registry path also has a stable key.
+	const providerKey = JSON.stringify(
+		provider
+			? {
+					url: provider.url,
+					attribution: provider.attribution,
+					maxZoom: provider.maxZoom,
+					subdomains: provider.subdomains ?? null,
+			  }
+			: null
+	);
 
 	// Fetch the preview payload whenever the attachment changes. Cancellation
 	// guards against late responses overwriting newer state when the editor
@@ -234,6 +268,7 @@ export const MapEditorPreview = ( {
 			mapRef.current.remove();
 			mapRef.current = null;
 			layerRef.current = null;
+			baseTileLayerRef.current = null;
 			overlayLayersRef.current = [];
 		}
 
@@ -256,18 +291,15 @@ export const MapEditorPreview = ( {
 		} );
 		mapRef.current = map;
 
-		// Add the OSM tile layer. The editor preview ignores the consent
-		// contract by design — see docs/consent.md "Editor behaviour".
-		L.tileLayer( TILE_URL, {
-			maxZoom: 19,
-			attribution: TILE_ATTRIBUTION,
-		} ).addTo( map );
-
-		// Overlay tile layers are seeded by the dedicated sync effect below,
-		// which fires after this mount effect on every render and is the
-		// single source of truth for what overlays exist on the map. Keeping
-		// the seeding in one place avoids the wipe-and-readd burst that would
-		// otherwise happen on first mount.
+		// The base tile layer and overlay tile layers are added by their
+		// dedicated sync effects below, which fire after this mount effect on
+		// every render and are the single source of truth for which tile
+		// layers exist on the map. Keeping the seeding in one place avoids
+		// the wipe-and-readd burst that would otherwise happen on first
+		// mount, and lets a provider change after mount swap layers in place
+		// without rebuilding the whole map. The editor preview ignores the
+		// consent contract by design — see docs/consent.md "Editor behaviour".
+		baseTileLayerRef.current = null;
 		overlayLayersRef.current = [];
 
 		// Render the polyline + waypoints from the cached GeoJSON.
@@ -304,6 +336,7 @@ export const MapEditorPreview = ( {
 			map.remove();
 			mapRef.current = null;
 			layerRef.current = null;
+			baseTileLayerRef.current = null;
 			overlayLayersRef.current = [];
 		};
 		// payload + colours intentionally drive a fresh remount; React's hook
@@ -326,6 +359,47 @@ export const MapEditorPreview = ( {
 			color: trackColor || DEFAULT_TRACK_COLOR,
 		} );
 	}, [ trackColor ] );
+
+	// Synchronise the base tile layer with the current `provider` prop without
+	// rebuilding the whole map. Leaflet does not expose a "swap base layer"
+	// primitive, so we remove the previous base layer (if any) and add the
+	// new one in its place. `bringToBack()` keeps the freshly added base
+	// beneath the overlays already on the map, so a provider change does not
+	// flicker overlays above the new base. When the provider is null
+	// (registry global stripped), the previous base layer is removed and no
+	// replacement is added — the polyline renders over an empty tile
+	// background, which is the documented "fail visually" path for #79.
+	useEffect( () => {
+		const map = mapRef.current;
+		if ( ! map ) {
+			return;
+		}
+
+		if ( baseTileLayerRef.current ) {
+			map.removeLayer( baseTileLayerRef.current );
+			baseTileLayerRef.current = null;
+		}
+
+		if ( ! provider ) {
+			return;
+		}
+
+		const options: L.TileLayerOptions = {
+			maxZoom: provider.maxZoom,
+			attribution: provider.attribution,
+		};
+		if ( provider.subdomains && provider.subdomains.length > 0 ) {
+			options.subdomains = [ ...provider.subdomains ];
+		}
+		const layer = L.tileLayer( provider.url, options ).addTo( map );
+		layer.bringToBack();
+		baseTileLayerRef.current = layer;
+		// `provider` is a fresh object on every parent render, so listing it
+		// as a dep would re-fire this effect on every keystroke in unrelated
+		// controls. `providerKey` is the stable serialised tuple of the
+		// fields this effect reads, so it is the correct dep for caching.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ providerKey ] );
 
 	// Synchronise the overlay tile layers with the current `overlays` prop
 	// without rebuilding the whole map. The mount effect above seeds

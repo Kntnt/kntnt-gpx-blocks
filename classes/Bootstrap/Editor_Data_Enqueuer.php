@@ -71,13 +71,18 @@ final class Editor_Data_Enqueuer {
 	 * Builds the editor data payload and inlines it as a `before` script.
 	 *
 	 * Wired to `enqueue_block_editor_assets`. Reads the validated provider
-	 * and overlay registries, strips internal-only fields that the editor
-	 * does not need (notably `requiresKey`, `signupUrl`, and `subdomains`,
-	 * which are render-time concerns), JSON-encodes the result, and emits
-	 * it as `window.kntntGpxBlocks = {...}`. When JSON encoding fails or
-	 * the inline-script call is unavailable, a warning is logged and the
-	 * method returns silently — the editor falls back to an empty registry
-	 * and the overlay panel collapses to nothing.
+	 * and overlay registries and forwards the fields the editor's Inspector
+	 * controls and `MapEditorPreview` need: `label` and `requiresKey` drive
+	 * the dropdown and the conditional API-key text field, the optional
+	 * `signupUrl` powers the "Get one →" help-text link, and the URL /
+	 * attribution / maxZoom / optional subdomains let the preview mount the
+	 * selected provider's tile layer directly via `L.tileLayer()`. API keys
+	 * are deliberately *not* in the payload — they remain a per-block
+	 * attribute (`tileApiKey`) and reach the browser only as the substituted
+	 * `{KEY}` value at render time. When JSON encoding fails or the
+	 * inline-script call is unavailable, a warning is logged and the method
+	 * returns silently — the editor reads `window.kntntGpxBlocks` defensively
+	 * and degrades to an empty Tiles dropdown rather than throwing.
 	 *
 	 * @since 1.0.0
 	 */
@@ -113,9 +118,16 @@ final class Editor_Data_Enqueuer {
 	/**
 	 * Shapes the provider registry for the editor payload.
 	 *
-	 * Strips internal-only fields the editor's UI does not need. The shape
-	 * is deliberately minimal so a future change to the registry's internal
-	 * record type does not silently leak through the editor data.
+	 * Carries everything `MapEditorPreview` needs to mount the selected
+	 * provider's tile layer (URL with `{KEY}` left intact, attribution,
+	 * maxZoom, optional subdomains) plus the metadata the Inspector needs
+	 * to drive its UI (`label`, `requiresKey`, optional `signupUrl`). The
+	 * shape is deliberately explicit so a future change to the registry's
+	 * internal record type does not silently leak through the editor data;
+	 * only the fields listed below ever reach the browser. The per-block
+	 * API key is *never* part of this payload — it lives in
+	 * `attributes.tileApiKey` and is substituted into `{KEY}` client-side
+	 * by `edit.tsx` before forwarding the URL to the preview.
 	 *
 	 * @since 1.0.0
 	 *
@@ -129,7 +141,15 @@ final class Editor_Data_Enqueuer {
 	 *     subdomains?: list<string>,
 	 * }> $providers Validated provider records keyed by id.
 	 *
-	 * @return array<string, array{ label: string, requiresKey: bool, signupUrl?: string }>
+	 * @return array<string, array{
+	 *     label: string,
+	 *     url: string,
+	 *     attribution: string,
+	 *     maxZoom: int,
+	 *     requiresKey: bool,
+	 *     signupUrl?: string,
+	 *     subdomains?: list<string>,
+	 * }>
 	 */
 	private static function shape_providers( array $providers ): array {
 
@@ -138,10 +158,16 @@ final class Editor_Data_Enqueuer {
 		foreach ( $providers as $id => $record ) {
 			$entry = [
 				'label'       => $record['label'],
+				'url'         => $record['url'],
+				'attribution' => $record['attribution'],
+				'maxZoom'     => $record['maxZoom'],
 				'requiresKey' => $record['requiresKey'],
 			];
 			if ( isset( $record['signupUrl'] ) ) {
 				$entry['signupUrl'] = $record['signupUrl'];
+			}
+			if ( isset( $record['subdomains'] ) ) {
+				$entry['subdomains'] = $record['subdomains'];
 			}
 			$out[ $id ] = $entry;
 		}

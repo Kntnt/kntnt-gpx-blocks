@@ -40,6 +40,9 @@ import {
 	ToggleControl,
 	ColorPicker,
 	FontSizePicker,
+	SelectControl,
+	TextControl,
+	ExternalLink,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
 	__experimentalToolsPanel as ToolsPanel,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
@@ -51,8 +54,13 @@ import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
 import { useEnsureUniqueMapId } from './use-ensure-unique-map-id';
-import { MapEditorPreview, type EditorOverlayRecord } from './editor-preview';
+import {
+	MapEditorPreview,
+	type EditorOverlayRecord,
+	type EditorProviderRecord,
+} from './editor-preview';
 import { flattenPresets } from '../shared/flatten-presets';
+import { substituteTileApiKey } from './tile-key';
 
 // ─── Editor data global (window.kntntGpxBlocks) ─────────────────────────────
 
@@ -77,16 +85,25 @@ interface EditorRegistryOverlay {
 /**
  * Editor-only provider record exposed via `window.kntntGpxBlocks.providers`.
  *
- * Reserved for issue #79's tile-provider dropdown; this issue (#80) uses
- * only the `overlays` half of the global. The shape is documented here so
- * the type-safety contract for the global is centralised in one place.
+ * Carries the metadata the Inspector needs to drive its UI (`label`,
+ * `requiresKey`, optional `signupUrl`) plus the tile-layer fields the
+ * `MapEditorPreview` forwards to `L.tileLayer()` (URL, attribution,
+ * maxZoom, optional subdomains). The URL still contains the literal
+ * `{KEY}` placeholder for paid providers — substitution against
+ * `attributes.tileApiKey` happens in `edit.tsx` immediately before the
+ * resolved record is handed to the preview, mirroring how `Render_Map`
+ * substitutes server-side for the frontend.
  *
  * @since 1.0.0
  */
 interface EditorRegistryProvider {
 	readonly label: string;
+	readonly url: string;
+	readonly attribution: string;
+	readonly maxZoom: number;
 	readonly requiresKey: boolean;
 	readonly signupUrl?: string;
+	readonly subdomains?: readonly string[];
 }
 
 /**
@@ -518,6 +535,159 @@ function resolveOverlaysForPreview(
 }
 
 /**
+ * Resolves the saved provider id and per-block API key to the runtime record
+ * the editor preview mounts.
+ *
+ * Mirrors `Tile_Layer_Registry::resolve_provider()` on the JS side: the
+ * lookup falls back to the canonical OSM provider when the saved id is not
+ * in the editor-data global (filter dropped it, or a stale attribute
+ * survived a registry change), and `{KEY}` is substituted with the
+ * per-block key just like the server does for the frontend. When the
+ * registry is missing entirely (the inline script was stripped), the
+ * helper returns `null` and the caller renders without a tile layer —
+ * the editor preview's single useEffect handles the null-provider case
+ * defensively rather than crashing.
+ *
+ * @since 1.0.0
+ *
+ * @param providerId - Saved `tileProvider` attribute.
+ * @param apiKey     - Saved `tileApiKey` attribute (may be empty for paid
+ *                   providers; the resulting URL will fail to load tiles
+ *                   visually, which is the documented behaviour for this
+ *                   slice — see issue #79).
+ * @return Resolved record with `{KEY}` substituted, or `null` when the
+ *         registry global is absent and no fallback is possible.
+ */
+function resolveProviderForPreview(
+	providerId: string,
+	apiKey: string
+): EditorProviderRecord | null {
+	const providers = window.kntntGpxBlocks?.providers ?? {};
+
+	const record =
+		providers[ providerId ] ?? providers[ FALLBACK_PROVIDER_ID ] ?? null;
+	if ( ! record ) {
+		return null;
+	}
+
+	const url = record.requiresKey
+		? substituteTileApiKey( record.url, apiKey )
+		: record.url;
+
+	const out: EditorProviderRecord = {
+		url,
+		attribution: record.attribution,
+		maxZoom: record.maxZoom,
+	};
+	if ( record.subdomains && record.subdomains.length > 0 ) {
+		out.subdomains = [ ...record.subdomains ];
+	}
+	return out;
+}
+
+/**
+ * Identifier of the canonical fallback provider.
+ *
+ * Mirrors `Tile_Layer_Registry::FALLBACK_PROVIDER_ID` — kept as a string
+ * literal here rather than imported because the editor JS has no PHP
+ * surface to reach for it. Drifting from the PHP constant is unlikely but
+ * would only affect the editor's fallback path; the frontend renders the
+ * resolved provider PHP shipped on `state.tileProvider`.
+ *
+ * @since 1.0.0
+ */
+const FALLBACK_PROVIDER_ID = 'osm-standard';
+
+/**
+ * Renders the "Tiles" inspector panel.
+ *
+ * Surfaces the base-tile provider dropdown and a conditional API-key field
+ * driven by the registry's `requiresKey` flag. The dropdown's options are
+ * populated from `window.kntntGpxBlocks.providers` (see
+ * `Bootstrap\Editor_Data_Enqueuer`); when the global is missing or empty
+ * the panel still renders so the editor surfaces a clear "nothing here"
+ * state rather than vanishing silently. The text field appears only for
+ * providers with `requiresKey === true`; its help text shows the
+ * provider's `signupUrl` as an `<ExternalLink>` when present and a
+ * generic instruction otherwise.
+ *
+ * @since 1.0.0
+ *
+ * @param props          Component props.
+ * @param props.provider Current `tileProvider` attribute.
+ * @param props.apiKey   Current `tileApiKey` attribute.
+ * @param props.onChange Setter — receives the new provider id and key.
+ */
+function TilesPanel( {
+	provider,
+	apiKey,
+	onChange,
+}: {
+	provider: string;
+	apiKey: string;
+	onChange: ( next: { provider?: string; apiKey?: string } ) => void;
+} ): JSX.Element {
+	const providers = window.kntntGpxBlocks?.providers ?? {};
+	const ids = Object.keys( providers );
+	const selected = providers[ provider ] ?? null;
+
+	// Build the SelectControl options from the registry. When the saved
+	// provider id is no longer in the registry (filter dropped it, or a
+	// stale post-content survived a registry change), surface it as a
+	// placeholder option labelled with the id itself — the editor reflects
+	// the current persisted state without silently rewriting it.
+	const options = ids.map( ( id ) => ( {
+		value: id,
+		label: providers[ id ]?.label ?? id,
+	} ) );
+	if ( provider !== '' && ! providers[ provider ] ) {
+		options.unshift( { value: provider, label: provider } );
+	}
+
+	return (
+		<PanelBody title={ __( 'Tiles', 'kntnt-gpx-blocks' ) }>
+			<SelectControl
+				__next40pxDefaultSize
+				__nextHasNoMarginBottom
+				label={ __( 'Provider', 'kntnt-gpx-blocks' ) }
+				value={ provider }
+				options={ options }
+				onChange={ ( next: string ) => onChange( { provider: next } ) }
+			/>
+			{ selected?.requiresKey && (
+				<TextControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					label={ __( 'API key', 'kntnt-gpx-blocks' ) }
+					value={ apiKey }
+					onChange={ ( next: string ) =>
+						onChange( { apiKey: next } )
+					}
+					help={
+						selected.signupUrl ? (
+							<>
+								{ __(
+									'This provider requires an API key.',
+									'kntnt-gpx-blocks'
+								) }{ ' ' }
+								<ExternalLink href={ selected.signupUrl }>
+									{ __( 'Get one →', 'kntnt-gpx-blocks' ) }
+								</ExternalLink>
+							</>
+						) : (
+							__(
+								"This provider requires an API key. See the provider's documentation.",
+								'kntnt-gpx-blocks'
+							)
+						)
+					}
+				/>
+			) }
+		</PanelBody>
+	);
+}
+
+/**
  * Editor preview for the GPX Map block.
  *
  * Shows a MediaPlaceholder when no attachment is selected; otherwise
@@ -577,6 +747,8 @@ export const MapEdit = ( {
 		tooltipDescLetterSpacing,
 		tooltipDescTextDecoration,
 		tooltipDescTextTransform,
+		tileProvider,
+		tileApiKey,
 		tileOverlays,
 	} = attributes;
 
@@ -867,6 +1039,20 @@ export const MapEdit = ( {
 						}
 					/>
 				</PanelBody>
+				<TilesPanel
+					provider={ tileProvider }
+					apiKey={ tileApiKey }
+					onChange={ ( next ) => {
+						const update: Partial< MapAttributes > = {};
+						if ( next.provider !== undefined ) {
+							update.tileProvider = next.provider;
+						}
+						if ( next.apiKey !== undefined ) {
+							update.tileApiKey = next.apiKey;
+						}
+						setAttributes( update );
+					} }
+				/>
 				<OverlaysPanel
 					selectedIds={ tileOverlays }
 					onChange={ ( next ) =>
@@ -1060,6 +1246,10 @@ export const MapEdit = ( {
 						waypointColor,
 						tooltipShowName,
 						tooltipShowDesc,
+						provider: resolveProviderForPreview(
+							tileProvider,
+							tileApiKey
+						),
 						overlays: resolveOverlaysForPreview( tileOverlays ),
 					} }
 				/>
