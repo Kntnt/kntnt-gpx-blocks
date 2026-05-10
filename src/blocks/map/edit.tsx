@@ -18,7 +18,9 @@
 import {
 	useBlockProps,
 	InspectorControls,
+	BlockControls,
 	MediaPlaceholder,
+	MediaReplaceFlow,
 	PanelColorSettings,
 	useSettings,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
@@ -37,6 +39,8 @@ import {
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
 	__experimentalToolsPanelItem as ToolsPanelItem,
 } from '@wordpress/components';
+import { useSelect } from '@wordpress/data';
+import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
@@ -332,6 +336,23 @@ export const MapEdit = ( {
 		waypointLabelFontStyle,
 	} = attributes;
 
+	// Resolve the attached media's source URL so MediaReplaceFlow can label
+	// the toolbar button with the current filename. The media object may be
+	// undefined while core/core-data is still resolving the attachment, in
+	// which case the toolbar button degrades gracefully to the generic label.
+	const mediaURL = useSelect(
+		( select ) => {
+			if ( attachmentId === 0 ) {
+				return undefined;
+			}
+			const { getMedia } = select( coreStore ) as {
+				getMedia: ( id: number ) => { source_url?: string } | undefined;
+			};
+			return getMedia( attachmentId )?.source_url;
+		},
+		[ attachmentId ]
+	);
+
 	// Pull the merged theme typography presets so the unified Typography
 	// panel exposes the same Standard/preset choices as core Paragraph/Group.
 	// useSettings returns the origin-keyed `{ default, theme, custom }` shape
@@ -395,9 +416,23 @@ export const MapEdit = ( {
 
 	// Render the inspector controls and the editor-side React preview once a
 	// GPX file is attached. The preview component renders any error notice
-	// inline; no separate Notice in the inspector is needed.
+	// inline; no separate Notice in the inspector is needed. The toolbar
+	// surfaces a Replace flow (Media Library + Upload tabs only — no URL,
+	// no Reset) so the editor can swap the .gpx without losing any other
+	// attribute; only `attachmentId` is written by the onSelect callback.
 	return (
 		<>
+			<BlockControls group="other">
+				<MediaReplaceFlow
+					mediaId={ attachmentId }
+					mediaURL={ mediaURL }
+					accept=".gpx"
+					allowedTypes={ [ 'application/gpx+xml' ] }
+					onSelect={ ( media: MediaObject ) => {
+						setAttributes( { attachmentId: media.id } );
+					} }
+				/>
+			</BlockControls>
 			<InspectorControls>
 				<PanelBody title={ __( 'Layout', 'kntnt-gpx-blocks' ) }>
 					<SelectControl
