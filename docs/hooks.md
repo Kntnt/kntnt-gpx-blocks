@@ -70,7 +70,7 @@ The GPX Map block resolves its base-tile provider and any overlay layers through
 
 ### `kntnt_gpx_blocks_tile_providers`
 
-Map of base-tile providers keyed by provider id. The default ships eight entries: `osm-standard`, `opentopomap`, `cyclosm`, `thunderforest-outdoors`, `thunderforest-landscape`, `stadia-outdoors`, `maptiler-outdoor`, and `mapbox-outdoors`.
+Map of base-tile providers keyed by provider id. The default ships 21 entries: `osm-standard`, `opentopomap`, `cyclosm`, `thunderforest-outdoors`, `thunderforest-landscape`, `thunderforest-atlas`, `thunderforest-opencyclemap`, `stadia-outdoors`, `maptiler-outdoor`, `maptiler-base`, `maptiler-landscape`, `maptiler-openstreetmap`, `maptiler-streets`, `maptiler-topo`, `maptiler-satellite`, `maptiler-hybrid`, `mapbox-outdoors`, `mapbox-streets`, `mapbox-satellite-streets`, `mapbox-light`, and `mapbox-dark`. The first three (`osm-standard`, `opentopomap`, `cyclosm`) are free and key-less; the remaining 18 require a per-block API key.
 
 ```php
 $providers = apply_filters( 'kntnt_gpx_blocks_tile_providers', $defaults );
