@@ -534,13 +534,6 @@ test( 'render output includes waypoint-color CSS variable when waypointColor is 
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static function ( string $color ): ?string {
-			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
-				? $color
-				: null;
-		}
-	);
 
 	$html = Render_Map::render(
 		[
@@ -569,13 +562,6 @@ test( 'render output omits waypoint-color CSS variable when waypointColor is inv
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static function ( string $color ): ?string {
-			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
-				? $color
-				: null;
-		}
-	);
 
 	$html = Render_Map::render(
 		[
@@ -604,13 +590,6 @@ test( 'render output includes track-color CSS variable when trackColor is set', 
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static function ( string $color ): ?string {
-			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
-				? $color
-				: null;
-		}
-	);
 
 	$html = Render_Map::render(
 		[
@@ -639,13 +618,6 @@ test( 'render output omits track-color CSS variable when trackColor is invalid',
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static function ( string $color ): ?string {
-			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
-				? $color
-				: null;
-		}
-	);
 
 	$html = Render_Map::render(
 		[
@@ -674,13 +646,6 @@ test( 'render output includes track-cursor-color CSS variable when trackCursorCo
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static function ( string $color ): ?string {
-			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
-				? $color
-				: null;
-		}
-	);
 
 	$html = Render_Map::render(
 		[
@@ -709,13 +674,6 @@ test( 'render output omits track-cursor-color CSS variable when trackCursorColor
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static function ( string $color ): ?string {
-			return preg_match( '/^#([a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})$/', $color )
-				? $color
-				: null;
-		}
-	);
 
 	$html = Render_Map::render(
 		[
@@ -744,9 +702,6 @@ test( 'render output omits tooltip-name-font-weight CSS variable when weight is 
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->alias(
-		static fn ( string $c ): ?string => null
-	);
 
 	$html = Render_Map::render(
 		[
@@ -843,6 +798,34 @@ test( 'render output omits tooltip-bg CSS variable for javascript: payload', fun
 	);
 
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-tooltip-bg' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Track CSS variable — hex8 trackColor round-trips through Color_Sanitizer
+// ---------------------------------------------------------------------------
+
+test( 'render output preserves a hex8 trackColor through the shared Color_Sanitizer', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 84, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 84, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 84,
+			'mapId'        => 'map-track-hex8',
+			'trackColor'   => '#ff000080',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-track-color: #ff000080' );
 
 } );
 

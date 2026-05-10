@@ -289,7 +289,6 @@ test( 'Render_Map output contains role="application" on the wrapper div', functi
 		static fn ( int $id ): string|false => $id === 101 ? a11y_fixture_path( 'happy-path.gpx' ) : false
 	);
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->justReturn( null );
 
 	$html = Render_Map::render(
 		[
@@ -321,7 +320,6 @@ test( 'Render_Map output contains an aria-label attribute on the wrapper div', f
 		static fn ( int $id ): string|false => $id === 102 ? a11y_fixture_path( 'happy-path.gpx' ) : false
 	);
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->justReturn( null );
 
 	$html = Render_Map::render(
 		[
@@ -357,7 +355,6 @@ test( 'Render_Map output contains a <noscript> element with fallback text', func
 		static fn ( int $id ): string|false => $id === 103 ? a11y_fixture_path( 'happy-path.gpx' ) : false
 	);
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
-	Functions\when( 'sanitize_hex_color' )->justReturn( null );
 
 	$html = Render_Map::render(
 		[

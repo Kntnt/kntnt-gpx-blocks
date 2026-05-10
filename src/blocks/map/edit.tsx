@@ -706,6 +706,7 @@ export const MapEdit = ( {
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
 					title={ __( 'Track', 'kntnt-gpx-blocks' ) }
+					enableAlpha
 					colorSettings={ [
 						{
 							value: trackColor,
@@ -726,6 +727,7 @@ export const MapEdit = ( {
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
 					title={ __( 'Waypoints', 'kntnt-gpx-blocks' ) }
+					enableAlpha
 					colorSettings={ [
 						{
 							value: waypointColor,

@@ -96,12 +96,16 @@ final class Render_Map {
 		$enable_double_click_zoom = isset( $raw_dclk ) ? (bool) $raw_dclk : true;
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
 
-		// Read and sanitize the two track colour attributes.
-		$track_color        = self::sanitize_color( $attributes['trackColor'] ?? '' );
-		$track_cursor_color = self::sanitize_color( $attributes['trackCursorColor'] ?? '' );
+		// Read and sanitize the two track colour attributes through the shared
+		// Color_Sanitizer (alpha-aware hex 3/4/6/8 plus strict `var(--ident)`
+		// references). PanelColorSettings on these controls runs with
+		// `enableAlpha`, so a non-opaque hex8 round-trips into the rendered
+		// CSS custom property.
+		$track_color        = Color_Sanitizer::sanitize( $attributes['trackColor'] ?? '' );
+		$track_cursor_color = Color_Sanitizer::sanitize( $attributes['trackCursorColor'] ?? '' );
 
 		// Read and sanitize the waypoint marker colour.
-		$waypoint_color = self::sanitize_color( $attributes['waypointColor'] ?? '' );
+		$waypoint_color = Color_Sanitizer::sanitize( $attributes['waypointColor'] ?? '' );
 
 		// Read the two waypoint-info tooltip toggles. Both default on; setting
 		// either off suppresses the corresponding line in the rendered tooltip.
@@ -109,14 +113,14 @@ final class Render_Map {
 		$tooltip_show_name = isset( $attributes['tooltipShowName'] ) ? (bool) $attributes['tooltipShowName'] : true;
 		$tooltip_show_desc = isset( $attributes['tooltipShowDesc'] ) ? (bool) $attributes['tooltipShowDesc'] : true;
 
-		// Read and sanitize the tooltip background — hex-only, accepts alpha
-		// channel via #RRGGBBAA and #RGBA. WordPress's ColorPicker with
-		// `enableAlpha: true` produces hex8 by default.
-		$tooltip_background = self::sanitize_alpha_hex_color( $attributes['tooltipBackground'] ?? '' );
+		// Read and sanitize the tooltip background through the same shared
+		// validator. `ColorPicker` with `enableAlpha: true` produces hex8 by
+		// default; rgba()/hsl()/named colours are rejected.
+		$tooltip_background = Color_Sanitizer::sanitize( $attributes['tooltipBackground'] ?? '' );
 
 		// Read and sanitize the per-line tooltip styling attributes — colour
 		// plus the seven aspects of WordPress's standard TypographyToolsPanel.
-		$tooltip_name_color           = self::sanitize_alpha_hex_color( $attributes['tooltipNameColor'] ?? '' );
+		$tooltip_name_color           = Color_Sanitizer::sanitize( $attributes['tooltipNameColor'] ?? '' );
 		$tooltip_name_family          = self::sanitize_font_family( $attributes['tooltipNameFontFamily'] ?? '' );
 		$tooltip_name_size            = self::sanitize_font_size( $attributes['tooltipNameFontSize'] ?? '' );
 		$tooltip_name_weight          = self::sanitize_font_weight( $attributes['tooltipNameFontWeight'] ?? '' );
@@ -126,7 +130,7 @@ final class Render_Map {
 		$tooltip_name_text_decoration = self::sanitize_text_decoration( $attributes['tooltipNameTextDecoration'] ?? '' );
 		$tooltip_name_text_transform  = self::sanitize_text_transform( $attributes['tooltipNameTextTransform'] ?? '' );
 
-		$tooltip_desc_color           = self::sanitize_alpha_hex_color( $attributes['tooltipDescColor'] ?? '' );
+		$tooltip_desc_color           = Color_Sanitizer::sanitize( $attributes['tooltipDescColor'] ?? '' );
 		$tooltip_desc_family          = self::sanitize_font_family( $attributes['tooltipDescFontFamily'] ?? '' );
 		$tooltip_desc_size            = self::sanitize_font_size( $attributes['tooltipDescFontSize'] ?? '' );
 		$tooltip_desc_weight          = self::sanitize_font_weight( $attributes['tooltipDescFontWeight'] ?? '' );
@@ -580,70 +584,6 @@ final class Render_Map {
 				],
 			],
 		];
-
-	}
-
-	/**
-	 * Validates and returns a hex colour string, or empty string on invalid input.
-	 *
-	 * Accepts hex colours via WordPress's `sanitize_hex_color`. Returns empty
-	 * string for blank input so the CSS falls back to the hardcoded default in
-	 * style.scss rather than emitting a broken value. Used for the non-alpha
-	 * colour pickers (track, cursor, marker); the alpha-aware tooltip colour
-	 * pickers go through `sanitize_hex_color` instead.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated hex colour or empty string.
-	 */
-	private static function sanitize_color( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// sanitize_hex_color returns null on failure; coerce to empty string.
-		$clean = sanitize_hex_color( $raw );
-		return is_string( $clean ) ? $clean : '';
-
-	}
-
-	/**
-	 * Validates a hex colour with optional alpha channel, or returns empty string.
-	 *
-	 * Accepts `#RGB`, `#RGBA`, `#RRGGBB`, and `#RRGGBBAA`. Anything else — named
-	 * colours, `rgb(...)`, `rgba(...)`, `hsl(...)`, CSS variables, attempts at
-	 * URL injection — is rejected by returning empty string. WordPress's
-	 * `ColorPicker` with `enableAlpha: true` writes the hex8 form by default,
-	 * so this is sufficient for the tooltip colour attributes.
-	 *
-	 * Self-contained on purpose: this helper mirrors the eventual contract of
-	 * the shared `\Kntnt\Gpx_Blocks\Rendering\Color_Sanitizer::sanitize()` (see
-	 * issue #73 / #74), so #74 can fold it into the shared validator without
-	 * touching call sites here. Named with the `_alpha_` infix so the call
-	 * site is unambiguous next to WordPress's narrower global
-	 * `sanitize_hex_color()` used by the non-alpha pickers.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated hex colour or empty string.
-	 */
-	private static function sanitize_alpha_hex_color( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// Match exactly #RGB / #RGBA / #RRGGBB / #RRGGBBAA — case-insensitive.
-		if ( preg_match( '/^#(?:[A-Fa-f0-9]{3,4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $raw ) === 1 ) {
-			return $raw;
-		}
-
-		return '';
 
 	}
 
