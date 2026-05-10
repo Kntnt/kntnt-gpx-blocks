@@ -684,7 +684,7 @@ function TilesPanel( {
 									'kntnt-gpx-blocks'
 								) }{ ' ' }
 								<ExternalLink href={ selected.signupUrl }>
-									{ __( 'Get one →', 'kntnt-gpx-blocks' ) }
+									{ __( 'Get one', 'kntnt-gpx-blocks' ) }
 								</ExternalLink>
 							</>
 						) : (

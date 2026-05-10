@@ -169,7 +169,7 @@ test( 'provider records expose signupUrl for paid providers, omit it for free on
 	$json    = rtrim( $json, ';' );
 	$decoded = json_decode( $json, true );
 
-	// signupUrl is the contract that drives #79's "Get one →" link in the
+	// signupUrl is the contract that drives #79's "Get one" link in the
 	// help-text below the API-key field. Every paid default provider ships
 	// with one in the registry, and the editor payload preserves it.
 	expect( $decoded['providers']['thunderforest-outdoors'] )->toHaveKey( 'signupUrl' );

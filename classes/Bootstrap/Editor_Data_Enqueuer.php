@@ -74,7 +74,7 @@ final class Editor_Data_Enqueuer {
 	 * and overlay registries and forwards the fields the editor's Inspector
 	 * controls and `MapEditorPreview` need: `label` and `requiresKey` drive
 	 * the dropdown and the conditional API-key text field, the optional
-	 * `signupUrl` powers the "Get one →" help-text link, and the URL /
+	 * `signupUrl` powers the "Get one" help-text link, and the URL /
 	 * attribution / maxZoom / optional subdomains let the preview mount the
 	 * selected provider's tile layer directly via `L.tileLayer()`. API keys
 	 * are deliberately *not* in the payload — they remain a per-block
