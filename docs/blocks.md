@@ -67,6 +67,8 @@ The block toolbar additionally renders a `MediaReplaceFlow` inside `<BlockContro
 
 The full `border` (color, radius, style, width) and `shadow` block supports are also enabled, so the editor's standard Border and Shadow panels are available on the block. The block root sets `overflow: hidden` in its stylesheet so border-radius cleanly clips Leaflet's absolutely-positioned tile layers to the rounded edge; `box-shadow` is unaffected by `overflow` on the same element, so shadows still render outside the wrapper.
 
+`supports.spacing` enables only `margin`, deliberately omitting `padding` and `blockGap`. Leaflet absolutely-positions its `.leaflet-pane` elements against the wrapper's padding box, so a padding control would emit inline `padding` that has zero visible effect — the same anti-pattern as `blockGap` (the block has no inner blocks). Site builders who want a padded frame around the map compose it with `core/group`. GPX Elevation, by contrast, exposes both margin *and* padding because its inline SVG paints into the content box and respects padding the way ordinary block content does.
+
 ### Render output
 
 ```html
@@ -180,6 +182,8 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
 `block.json` declares `supports.align: [ "wide", "full" ]` (toolbar offers None / Wide / Full — `left`/`right`/`center` are intentionally excluded) and `supports.anchor: true` (Advanced panel exposes the HTML anchor field). `customClassName` stays at its core default (`true`). Both the normal-data path and the empty-data fallback emit their wrapper through `get_block_wrapper_attributes()`, so alignment, anchor, and additional className all propagate even when the track has no elevation samples.
 
 The full `border` (color, radius, style, width) and `shadow` block supports are also enabled, so the editor's standard Border and Shadow panels are available on the block. The block root sets `overflow: hidden` in its stylesheet so border-radius cleanly clips the inline SVG to the rounded edge; `box-shadow` is unaffected by `overflow` on the same element, so shadows still render outside the wrapper.
+
+`supports.spacing` enables both `margin` and `padding` (but not `blockGap`, which is meaningless without inner blocks). Padding works as expected because the inline SVG paints into the wrapper's content box like ordinary block content — the asymmetry with GPX Map (margin only) is intentional and is explained in the Map's *Block supports* section above.
 
 ### Render output
 

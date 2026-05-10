@@ -22,7 +22,10 @@
 			"style": true,
 			"width": true
 		},
-		"shadow": true
+		"shadow": true,
+		"spacing": {
+			"margin": true
+		}
 	},
 	"attributes": {
 		"attachmentId": {

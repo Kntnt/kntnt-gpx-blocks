@@ -32,7 +32,11 @@
       "style": true,
       "width": true
     },
-    "shadow": true
+    "shadow": true,
+    "spacing": {
+      "padding": true,
+      "margin": true
+    }
   },
   "attributes": {
     "mapId": {
