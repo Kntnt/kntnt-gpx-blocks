@@ -450,8 +450,13 @@ export const MapEditorPreview = ( {
 		// as a dep would re-fire this effect on every keystroke in unrelated
 		// controls. `providerKey` is the stable serialised tuple of the
 		// fields this effect reads, so it is the correct dep for caching.
+		// `payload` is listed too because the mount effect creates the
+		// `L.Map` only after the REST fetch resolves; without re-firing on
+		// first payload arrival, the base tile layer is never attached when
+		// `providerKey` is unchanged between the initial render and the
+		// post-fetch render (issue #100).
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ providerKey ] );
+	}, [ providerKey, payload ] );
 
 	// Synchronise the overlay tile layers with the current `overlays` prop
 	// without rebuilding the whole map. The mount effect above seeds
