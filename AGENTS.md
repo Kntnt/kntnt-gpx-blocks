@@ -32,6 +32,16 @@ The `docs/` directory holds deep specs. Don't read all of them every time — lo
 | Locating where a kind of file lives in the repo | [`docs/file-structure.md`](docs/file-structure.md) |
 | The original design brief, before architectural decisions were made | [`docs/design.md`](docs/design.md) |
 
+## Pre-1.0 policy — no backwards compatibility
+
+This plugin is in **pre-1.0 development**. **There are no users, no installations in the wild, no production posts, and no saved data anywhere except on the maintainer's own machine.** Every commit is to an unreleased product.
+
+**As long as the major version number is `0`, no design or implementation decision shall factor in existing users, existing installations, existing saved post content, existing attribute shapes, existing meta keys, or any other form of backwards compatibility.** That includes: no `block.json` `deprecated` entries, no attribute migrations, no aliasing of old attribute names, no fallback paths "in case someone has the old shape", no concern for "people who already have this in their `post_content`". Pick the cleanest end-state, change the code to match, and ship the breaking change. Breaking changes are free until v1.0.0.
+
+When weighing alternatives, do not raise backwards compatibility as a constraint, do not weight it against other criteria, and do not propose extra work to preserve it. If a user-supplied prompt asks for a migration path or a deprecation while the major version is still `0`, push back: explain that this rule supersedes that request and ask whether the user wants to override it for a specific reason.
+
+This rule sunsets automatically the moment the `Version:` header in `kntnt-gpx-blocks.php` and `"version"` in `package.json` cross `1.0.0`. From that release onward, normal backwards-compatibility discipline applies and this section should be deleted.
+
 ## Working in this repo
 
 - Both blocks are implemented; the GPX Statistics `core/group` block-variation + its `kntnt-gpx-blocks/statistics` bindings source replace what used to be a third block. `classes/` is organised under the `Kntnt\Gpx_Blocks\` namespace into `Bindings\`, `Bootstrap\`, `Cache\`, `Cli\`, `Consent\`, `Conversion\`, `Format\`, `Rendering\`, and `Rest\`, plus the `Plugin` singleton and the `Updater` at the namespace root. Block source lives in `src/blocks/{map,elevation}/` and compiles to `build/blocks/<slug>/`. The plugin's own ES2022 scripts that don't go through `@wordpress/scripts` live in `js/` — currently the consent stub and the `statistics-variation.js` script that calls `registerBlockVariation()`. See [`docs/file-structure.md`](docs/file-structure.md) for the full layout.
