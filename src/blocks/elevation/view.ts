@@ -116,6 +116,10 @@ interface ElevationEntry {
 	tooltipElevation: SVGTSpanElement;
 	/** Chart boundaries in SVG viewBox logical units. */
 	chart: ChartBounds;
+	/** Tooltip rect width in SVG viewBox logical units. */
+	tooltipWidth: number;
+	/** Tooltip rect height in SVG viewBox logical units. */
+	tooltipHeight: number;
 	/** The SVG element itself, used for coordinate conversion. */
 	svg: SVGSVGElement;
 }
@@ -297,19 +301,30 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			}
 
 			// Read chart boundaries from the cursor group's data attributes.
-			// These are written by build_svg() and match the PHP MARGIN_* constants.
-			const plotLeft = parseInt(
-				cursorGroup.dataset.plotLeft ?? '56',
-				10
+			// These are written by Render_Elevation::build_chart() and reflect
+			// the dynamic viewBox (sized to the editor-set aspect ratio).
+			// Issue #93: parseFloat — not parseInt — because the renderer now
+			// emits fractional viewBox units when the aspect ratio is not the
+			// default 4/1.
+			const plotLeft = parseFloat( cursorGroup.dataset.plotLeft ?? '8' );
+			const plotRight = parseFloat(
+				cursorGroup.dataset.plotRight ?? '1192'
 			);
-			const plotRight = parseInt(
-				cursorGroup.dataset.plotRight ?? '1184',
-				10
+			const plotTop = parseFloat( cursorGroup.dataset.plotTop ?? '8' );
+			const plotBottom = parseFloat(
+				cursorGroup.dataset.plotBottom ?? '292'
 			);
-			const plotTop = parseInt( cursorGroup.dataset.plotTop ?? '16', 10 );
-			const plotBottom = parseInt(
-				cursorGroup.dataset.plotBottom ?? '272',
-				10
+
+			// Tooltip dimensions are server-rendered so they scale with the
+			// chart's viewBox height (which itself follows the aspect ratio).
+			// The renderer is the source of truth; the client reads back what
+			// PHP wrote so server-rendered preview and live updates stay in
+			// lock-step. Issue #93.
+			const tooltipWidth = parseFloat(
+				cursorGroup.dataset.tooltipWidth ?? '180'
+			);
+			const tooltipHeight = parseFloat(
+				cursorGroup.dataset.tooltipHeight ?? '60'
 			);
 
 			// Snapshot the elevation data array at mount time. Reads once from state
@@ -359,10 +374,15 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				tooltipDistance,
 				tooltipElevation,
 				chart,
+				tooltipWidth,
+				tooltipHeight,
 				svg,
 			} );
 
 			// ViewBox width — matches the PHP constant VIEWBOX_WIDTH (1200).
+			// The viewBox height now varies with the editor-set aspect ratio
+			// (issue #93), but the width is the load-bearing dimension for
+			// `clientXToFraction` and stays fixed.
 			const viewWidth = svg.viewBox.baseVal.width || 1200;
 
 			// Defer pointer-event handler binding until the chart is in (or near)
@@ -550,6 +570,8 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				tooltipDistance,
 				tooltipElevation,
 				chart,
+				tooltipWidth,
+				tooltipHeight,
 			} = entry;
 
 			// Null points or too few to resolve — keep hidden.
@@ -588,12 +610,11 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			cursorDot.setAttribute( 'cx', String( cx ) );
 			cursorDot.setAttribute( 'cy', String( cy ) );
 
-			// Position the tooltip rect and text, keeping the rect within SVG bounds.
-			// Width and height match the values written by Render_Elevation::build_svg
-			// when it server-renders the cursor group; if those change there, change
-			// these constants too.
-			const tooltipWidth = 130;
-			const tooltipHeight = 50;
+			// Position the tooltip rect and text, keeping the rect within SVG
+			// bounds. Width and height are read from `data-tooltip-*` data
+			// attributes the renderer wrote on mount — the renderer is the
+			// source of truth (issue #93) so server-rendered preview and live
+			// updates stay in lock-step regardless of aspect ratio.
 			const rectX = clamp(
 				cx - tooltipWidth / 2,
 				chart.left,

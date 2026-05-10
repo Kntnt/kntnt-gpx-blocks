@@ -229,21 +229,31 @@ The full `border` (color, radius, style, width) and `shadow` block supports are 
     data-wp-watch="callbacks.onElevationCursorChange"
     style="aspect-ratio:4/1;min-height:120px;--kntnt-gpx-blocks-line-color: #06c;"
 >
-    <svg viewBox="0 0 1200 300" role="img" aria-labelledby="kntnt-gpx-blocks-elevation-desc-map-abc123" preserveAspectRatio="none">
+    <svg class="kntnt-gpx-blocks-elevation-svg" viewBox="0 0 1200 300" role="img" aria-labelledby="kntnt-gpx-blocks-elevation-desc-map-abc123" preserveAspectRatio="xMidYMid meet">
         <desc id="kntnt-gpx-blocks-elevation-desc-map-abc123"><!-- screen-reader summary --></desc>
-        <!-- axes, polyline, server-rendered cursor group — all SVG elements -->
+        <!-- frame lines, polyline, server-rendered cursor group — all SVG elements -->
     </svg>
+    <div class="kntnt-gpx-blocks-elevation-y-labels" aria-hidden="true">
+        <span class="kntnt-gpx-blocks-elevation-axis-label" style="top:0.00%">205 m</span>
+        <!-- five y-tick labels, each positioned by inline top: <pct>% -->
+    </div>
+    <div class="kntnt-gpx-blocks-elevation-x-labels" aria-hidden="true">
+        <span class="kntnt-gpx-blocks-elevation-axis-label" style="left:0.00%">0.0 km</span>
+        <!-- five x-tick labels, each positioned by inline left: <pct>% -->
+    </div>
     <noscript><!-- summary text --></noscript>
 </div>
 ```
 
 The screen-reader summary in `<desc>` reads (translated): `"Elevation profile from {min} m at the start to {max} m after {distance}, with total ascent {ascent} m and descent {descent} m."`
 
+**Layout model (issue #93).** The wrapper is `position: relative` and reserves space for the HTML axis-label overlays via `padding-left` / `padding-bottom` driven by font-relative CSS variables (`--kntnt-gpx-blocks-axis-label-y-width` and `--kntnt-gpx-blocks-axis-label-x-height`, both defaulting to a small multiple of `em`). The SVG is `position: absolute` and pinned to all four sides of the wrapper's content box so it grows to fill any editor-set `min-height` (the same #86 idiom the Map block uses). The viewBox dimensions are computed from the editor's `style.dimensions.aspectRatio` (or the SCSS baseline `4/1` when unset) and the SVG uses `preserveAspectRatio="xMidYMid meet"` so the polyline scales uniformly into the rendered box without stretching. Axis tick labels live in two sibling `<div>` overlays — one on the left strip for the y axis, one along the bottom for the x axis — so they honour the resolved CSS `font-size` set by the editor's axis typography controls and reserve their own layout space outside the SVG plot area. Larger axis font-size grows the reserved padding and the polyline's draw area shrinks to fit, without any client-side measurement loop.
+
 ### Interactivity behaviour
 
 `callbacks.initElevation`:
 
-1. Locates the server-rendered cursor group (`<g class="kntnt-gpx-blocks-elevation-cursor">`) inside the inline SVG. Reads the chart plot boundaries from `data-plot-left`, `data-plot-right`, `data-plot-top`, `data-plot-bottom` attributes on the group, which match the PHP `MARGIN_*` constants exactly.
+1. Locates the server-rendered cursor group (`<g class="kntnt-gpx-blocks-elevation-cursor">`) inside the inline SVG. Reads the chart plot boundaries from `data-plot-left`, `data-plot-right`, `data-plot-top`, `data-plot-bottom` attributes on the group; reads the tooltip rect size from `data-tooltip-width` / `data-tooltip-height`. All six values are parsed with `parseFloat` because the viewBox is now sized to the editor-set aspect ratio (issue #93) and the plot rectangle carries fractional viewBox units in the general case.
 2. Snapshots the LTTB-downsampled `(distance, elevation)` pairs from `state[mapId].elevation` at mount time.
 3. Defers `pointermove` / `pointerleave` binding on the SVG until the block enters the viewport via `IntersectionObserver`. Pointer events compute `fraction` from the pointer's x-position relative to the plot area and write it to `state[mapId].fraction`.
 4. The `callbacks.onElevationCursorChange` watch updates the cursor line x-position, the dot position, and the tooltip text whenever `state[mapId].fraction` changes (from either Elevation's own pointer events or from GPX Map). Does not write back to fraction (no feedback loop). Named per block so the Map module's watch callback (`onMapCursorChange`) survives the merge into the shared `kntnt-gpx-blocks` store.

@@ -45,53 +45,37 @@ final class Render_Elevation {
 	private const DEFAULT_TARGET_POINTS = 300;
 
 	/**
-	 * SVG view-box width in logical units. CSS scales the SVG to its container.
+	 * Reference viewBox width in logical units. The viewBox height is derived
+	 * from the editor-set aspect-ratio (or {@see DEFAULT_ASPECT_RATIO}) so that
+	 * `preserveAspectRatio="xMidYMid meet"` scales the polyline uniformly into
+	 * any rendered container size. Issue #93.
 	 *
 	 * @since 1.0.0
-	 * @var int
+	 * @var float
 	 */
-	private const VIEWBOX_WIDTH = 1200;
+	private const VIEWBOX_WIDTH = 1200.0;
 
 	/**
-	 * SVG view-box height in logical units.
+	 * Default chart aspect ratio (width / height) when the editor has not set
+	 * an explicit `style.dimensions.aspectRatio`. Matches the SCSS baseline
+	 * `aspect-ratio: 4 / 1`.
 	 *
 	 * @since 1.0.0
-	 * @var int
+	 * @var float
 	 */
-	private const VIEWBOX_HEIGHT = 300;
+	private const DEFAULT_ASPECT_RATIO = 4.0;
 
 	/**
-	 * Left margin (logical units) reserved for y-axis tick labels.
+	 * Internal plot padding inside the SVG, in viewBox units. The actual axis
+	 * tick labels live in HTML overlay containers outside the SVG (issue #93),
+	 * so the SVG itself reserves only a small inset so the polyline never
+	 * sits flush against the SVG's edges. The cursor's tooltip uses these
+	 * bounds too.
 	 *
 	 * @since 1.0.0
-	 * @var int
+	 * @var float
 	 */
-	private const MARGIN_LEFT = 56;
-
-	/**
-	 * Right margin (logical units) — small padding so the line never touches the
-	 * SVG's right edge.
-	 *
-	 * @since 1.0.0
-	 * @var int
-	 */
-	private const MARGIN_RIGHT = 16;
-
-	/**
-	 * Top margin (logical units) — keeps the line clear of the SVG's top edge.
-	 *
-	 * @since 1.0.0
-	 * @var int
-	 */
-	private const MARGIN_TOP = 16;
-
-	/**
-	 * Bottom margin (logical units) reserved for x-axis tick labels.
-	 *
-	 * @since 1.0.0
-	 * @var int
-	 */
-	private const MARGIN_BOTTOM = 28;
+	private const PLOT_INSET = 8.0;
 
 	/**
 	 * Number of evenly spaced tick labels on each axis.
@@ -245,18 +229,26 @@ final class Render_Elevation {
 		// Detect the editor render context. The REST block-renderer endpoint
 		// invokes the render callback inside a REST request; gating on
 		// `edit_posts` excludes anonymous REST callers from the bypass. When
-		// true, build_svg() pre-positions the cursor at fraction=0.5 and renders
-		// it visible so the user has live feedback for the Cursor / Tooltip
-		// controls without having to scrub the chart first.
+		// true, build_chart() pre-positions the cursor at fraction=0.5 and
+		// renders it visible so the user has live feedback for the Cursor /
+		// Tooltip controls without having to scrub the chart first.
 		$is_editor_preview = self::is_editor_request();
 
-		// Build the SVG and wrap it in the Interactivity-API-annotated container.
-		$svg          = self::build_svg(
+		// Resolve the chart aspect ratio from the editor's `style.dimensions`
+		// slot — it shapes the SVG's viewBox so uniform scaling (issue #20)
+		// matches the wrapper's rendered aspect-ratio. Falls back to 4/1 when
+		// the editor leaves the field empty.
+		$aspect_ratio = self::resolve_aspect_ratio( $attributes );
+
+		// Build the SVG plus its HTML axis-label overlays, wrapped in the
+		// Interactivity-API-annotated container.
+		$chart        = self::build_chart(
 			$downsampled,
 			$payload['statistics'],
 			$desc_id,
 			$y_min,
 			$y_max,
+			$aspect_ratio,
 			$is_editor_preview,
 		);
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
@@ -340,7 +332,7 @@ final class Render_Elevation {
 				. '</div>',
 			$wrapper,
 			esc_attr( (string) $context_json ),
-			$svg,
+			$chart,
 			esc_html( $noscript_text ),
 		);
 
@@ -520,13 +512,24 @@ final class Render_Elevation {
 	}
 
 	/**
-	 * Builds the inline SVG chart with axes, polyline, and screen-reader desc.
+	 * Builds the SVG chart together with its HTML axis-label overlays.
 	 *
-	 * The `$desc_id` is set on the `<desc>` element so the SVG's `aria-labelledby`
-	 * attribute can reference it. Using `aria-labelledby` is preferred over
-	 * `aria-label` when the label text is already present in the document as a
-	 * child element — it avoids duplication and keeps the source of truth in one
-	 * place.
+	 * The SVG carries the polyline, the bottom + left frame lines, and the
+	 * server-rendered cursor group; axis tick labels live in two HTML overlay
+	 * `<div>` siblings of the SVG so they honour real CSS font-size from the
+	 * editor's typography controls and reserve their own layout space outside
+	 * the SVG's plot area (issue #93 / bugs #11, #12).
+	 *
+	 * The SVG's viewBox dimensions follow the editor-set aspect ratio
+	 * (`style.dimensions.aspectRatio`) so that `preserveAspectRatio="xMidYMid meet"`
+	 * scales the polyline uniformly into the wrapper (issue #93 / bug #20).
+	 * The wrapper's stylesheet pins the SVG with `position: absolute; inset: …;`
+	 * to the wrapper's plot rectangle (issue #93 / bug #21), mirroring the Map
+	 * block's #86 idiom.
+	 *
+	 * The `$desc_id` is set on the SVG's `<desc>` child element so the SVG's
+	 * `aria-labelledby` attribute can reference it — preferred over
+	 * `aria-label` when the label text is already in the DOM.
 	 *
 	 * When `$is_editor_preview` is true, the cursor group is server-rendered
 	 * visible at fraction=0.5 with the corresponding (distance, elevation)
@@ -546,18 +549,22 @@ final class Render_Elevation {
 	 *                                                                 aria-labelledby on the svg.
 	 * @param float                                 $y_min             Padded y-axis lower bound.
 	 * @param float                                 $y_max             Padded y-axis upper bound.
+	 * @param float                                 $aspect_ratio      Chart aspect ratio
+	 *                                                                 (width / height) used
+	 *                                                                 to size the viewBox.
 	 * @param bool                                  $is_editor_preview Whether to render the
 	 *                                                                 cursor visible at the
 	 *                                                                 midpoint sample.
 	 *
-	 * @return string SVG markup.
+	 * @return string SVG markup plus its HTML axis-label overlays.
 	 */
-	private static function build_svg(
+	private static function build_chart(
 		array $series,
 		array $statistics,
 		string $desc_id,
 		float $y_min,
 		float $y_max,
+		float $aspect_ratio,
 		bool $is_editor_preview = false,
 	): string {
 
@@ -566,11 +573,19 @@ final class Render_Elevation {
 		$x_min = $series[0][0];
 		$x_max = $series[ count( $series ) - 1 ][0];
 
-		// Compute the SVG plot rectangle (the inner box the line actually maps into).
-		$plot_left   = self::MARGIN_LEFT;
-		$plot_right  = self::VIEWBOX_WIDTH - self::MARGIN_RIGHT;
-		$plot_top    = self::MARGIN_TOP;
-		$plot_bottom = self::VIEWBOX_HEIGHT - self::MARGIN_BOTTOM;
+		// Derive the viewBox from the editor-set aspect ratio so uniform
+		// scaling (preserveAspectRatio="xMidYMid meet") fills the rendered
+		// box without stretching the polyline. The chart area lives outside
+		// the SVG (the wrapper reserves space for HTML axis-label overlays
+		// via padding-left / padding-bottom), so the plot rectangle here
+		// is the full viewBox minus a small inset that keeps the line from
+		// painting flush against the SVG edges.
+		$viewbox_w   = self::VIEWBOX_WIDTH;
+		$viewbox_h   = $aspect_ratio > 0.0 ? self::VIEWBOX_WIDTH / $aspect_ratio : self::VIEWBOX_WIDTH / self::DEFAULT_ASPECT_RATIO;
+		$plot_left   = self::PLOT_INSET;
+		$plot_right  = $viewbox_w - self::PLOT_INSET;
+		$plot_top    = self::PLOT_INSET;
+		$plot_bottom = $viewbox_h - self::PLOT_INSET;
 		$plot_w      = $plot_right - $plot_left;
 		$plot_h      = $plot_bottom - $plot_top;
 
@@ -599,18 +614,11 @@ final class Render_Elevation {
 		$x_factor = $use_km ? 0.001 : 1.0;
 		$x_decim  = $use_km ? 1 : 0;
 
-		// Build axis tick groups for both axes.
-		$y_ticks = self::build_y_ticks( $y_min, $y_max, $plot_top, $plot_bottom, $plot_left );
-		$x_ticks = self::build_x_ticks(
-			$x_min,
-			$x_max,
-			$plot_left,
-			$plot_right,
-			$plot_bottom,
-			$x_factor,
-			$x_decim,
-			$x_unit,
-		);
+		// Build the HTML axis-label overlays. These live outside the SVG so
+		// the labels honour real CSS font-size and reserve their own layout
+		// space (issue #93 / bugs #11, #12).
+		$y_labels = self::build_y_labels( $y_min, $y_max );
+		$x_labels = self::build_x_labels( $x_min, $x_max, $x_factor, $x_decim, $x_unit );
 
 		// Compose the screen-reader summary text and escape the desc id for HTML.
 		$desc    = self::build_desc( $statistics, $x_max );
@@ -619,8 +627,8 @@ final class Render_Elevation {
 		// Plot-area frame: a faint axis line on the bottom and left edges so
 		// the chart has a clear baseline even when the polyline is short.
 		$frame = sprintf(
-			'<line class="kntnt-gpx-blocks-elevation-axis" x1="%d" y1="%d" x2="%d" y2="%d" stroke="currentColor" />'
-			. '<line class="kntnt-gpx-blocks-elevation-axis" x1="%d" y1="%d" x2="%d" y2="%d" stroke="currentColor" />',
+			'<line class="kntnt-gpx-blocks-elevation-axis" x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="currentColor" />'
+			. '<line class="kntnt-gpx-blocks-elevation-axis" x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="currentColor" />',
 			$plot_left,
 			$plot_bottom,
 			$plot_right,
@@ -631,16 +639,20 @@ final class Render_Elevation {
 			$plot_bottom,
 		);
 
-		// Compute the cursor group's initial geometry. On the frontend the group
-		// is invisible (display:none) and JS positions it on the first
+		// Compute the cursor group's initial geometry. On the frontend the
+		// group is invisible (display:none) and JS positions it on the first
 		// pointermove. In the editor preview the group is rendered visible at
-		// the midpoint sample of the LTTB-downsampled series so the editor user
-		// sees live feedback for the Cursor / Tooltip controls without having
-		// to scrub the chart first; the math mirrors view.ts's
+		// the midpoint sample of the LTTB-downsampled series so the editor
+		// user sees live feedback for the Cursor / Tooltip controls without
+		// having to scrub the chart first; the math mirrors view.ts's
 		// `interpolateSample` + `sampleToSvg` so the server-rendered position
 		// is identical to what the JS would produce for fraction=0.5.
-		$tooltip_width  = 130;
-		$tooltip_height = 50;
+		//
+		// Tooltip size scales with the viewBox height so the tooltip stays
+		// proportionate to the chart regardless of aspect ratio.
+		$tooltip_width  = min( $viewbox_w * 0.15, 200.0 );
+		$tooltip_height = min( $viewbox_h * 0.22, 60.0 );
+		$tooltip_pad    = $viewbox_h * 0.025;
 		[ $preview_cx, $preview_cy, $preview_distance_m, $preview_elevation_m ] =
 			self::midpoint_preview_geometry(
 				$series,
@@ -660,10 +672,10 @@ final class Render_Elevation {
 		// Server-render the cursor line. In editor preview mode `x1`/`x2` are
 		// anchored at the midpoint sample's x; on the frontend they start at 0
 		// and JS updates them on every pointermove.
-		$line_x = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
+		$line_x      = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
 		$cursor_line = sprintf(
 			'<line class="kntnt-gpx-blocks-elevation-cursor-line"'
-			. ' x1="%s" y1="%d" x2="%s" y2="%d" stroke="currentColor" />',
+			. ' x1="%s" y1="%.2f" x2="%s" y2="%.2f" stroke="currentColor" />',
 			$line_x,
 			$plot_top,
 			$line_x,
@@ -672,23 +684,24 @@ final class Render_Elevation {
 
 		// Server-render the dot at the midpoint sample's (cx, cy) in preview
 		// mode; at (0, 0) on the frontend until JS positions it.
-		$dot_cx = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
-		$dot_cy = $is_editor_preview ? sprintf( '%.2f', $preview_cy ) : '0';
+		$dot_cx     = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
+		$dot_cy     = $is_editor_preview ? sprintf( '%.2f', $preview_cy ) : '0';
+		$dot_radius = max( 3.0, $viewbox_h * 0.018 );
 		$cursor_dot = sprintf(
-			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="%s" cy="%s" r="5" fill="currentColor" />',
+			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="%s" cy="%s" r="%.2f" fill="currentColor" />',
 			$dot_cx,
 			$dot_cy,
+			$dot_radius,
 		);
 
-		// Tooltip rect sized for two text rows at the SCSS default font-size
-		// (16 viewBox units): ~8 padding-top + ~16 line-height + ~3 line-gap
-		// + ~16 line-height + ~7 padding-bottom = 50 units. Width is bumped
-		// to 130 units so longer formatted distances ("32.4 km") still fit
-		// comfortably with the larger default font.
-		$rect_x = $is_editor_preview ? sprintf( '%.2f', $preview_rect_x ) : '0';
+		// Tooltip rect — the tooltip lives inside the SVG and scales
+		// uniformly with the polyline. Tooltip typography controls are
+		// covered by issue #94 (separate dual-context typography refactor);
+		// for now the tooltip continues to use SVG <text>.
+		$rect_x              = $is_editor_preview ? sprintf( '%.2f', $preview_rect_x ) : '0';
 		$cursor_tooltip_rect = sprintf(
 			'<rect class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"'
-			. ' x="%s" y="%d" width="%d" height="%d" rx="3" />',
+			. ' x="%s" y="%.2f" width="%.2f" height="%.2f" rx="3" />',
 			$rect_x,
 			$plot_top,
 			$tooltip_width,
@@ -702,23 +715,20 @@ final class Render_Elevation {
 		// `dominant-baseline="hanging"` anchors the first row to the text
 		// element's `y`; `dy="1.2em"` on the second tspan offsets it onto
 		// the next line in proportion to the (possibly user-overridden)
-		// font-size. In editor preview mode the tspans are pre-filled with
-		// the midpoint sample's formatted distance and elevation; the same
-		// formatter helpers run in `view.ts::formatDistance` and
-		// `formatElevation`, kept in sync verbatim.
-		$text_x          = $is_editor_preview ? sprintf( '%.2f', $preview_text_x ) : '0';
-		$distance_label  = $is_editor_preview ? self::format_distance_label( $preview_distance_m ) : '';
-		$elevation_label = $is_editor_preview ? self::format_elevation_label( $preview_elevation_m ) : '';
+		// font-size.
+		$text_x              = $is_editor_preview ? sprintf( '%.2f', $preview_text_x ) : '0';
+		$distance_label      = $is_editor_preview ? self::format_distance_label( $preview_distance_m ) : '';
+		$elevation_label     = $is_editor_preview ? self::format_elevation_label( $preview_elevation_m ) : '';
 		$cursor_tooltip_text = sprintf(
 			'<text class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"'
-			. ' x="%s" y="%d" text-anchor="middle" dominant-baseline="hanging">'
+			. ' x="%s" y="%.2f" text-anchor="middle" dominant-baseline="hanging">'
 			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"'
 			. ' x="%s" dy="0">%s</tspan>'
 			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"'
 			. ' x="%s" dy="1.2em">%s</tspan>'
 			. '</text>',
 			$text_x,
-			$plot_top + 8,
+			$plot_top + $tooltip_pad,
 			$text_x,
 			esc_html( $distance_label ),
 			$text_x,
@@ -731,17 +741,26 @@ final class Render_Elevation {
 		// undefined). The first real fraction update — from the user scrubbing
 		// the chart, or from a sibling Map block — clears the data attribute
 		// and the cursor follows live state from that point on.
+		//
+		// The data-plot-* attributes carry the (now dynamic) plot rectangle
+		// so view.ts's pointer math agrees with the server-rendered geometry.
+		// view.ts parses these via parseFloat semantics (parseInt truncates
+		// the fractional part for non-default aspect ratios — acceptable
+		// because the inset is small relative to the chart width).
 		$style_attr   = $is_editor_preview ? '' : ' style="display:none"';
 		$preview_attr = $is_editor_preview ? ' data-preview="1"' : '';
 		$cursor_group = sprintf(
 			'<g class="kntnt-gpx-blocks-elevation-cursor"%s%s'
-			. ' data-plot-left="%d" data-plot-right="%d" data-plot-top="%d" data-plot-bottom="%d">%s%s%s%s</g>',
+			. ' data-plot-left="%.2f" data-plot-right="%.2f" data-plot-top="%.2f" data-plot-bottom="%.2f"'
+			. ' data-tooltip-width="%.2f" data-tooltip-height="%.2f">%s%s%s%s</g>',
 			$style_attr,
 			$preview_attr,
 			$plot_left,
 			$plot_right,
 			$plot_top,
 			$plot_bottom,
+			$tooltip_width,
+			$tooltip_height,
 			$cursor_line,
 			$cursor_dot,
 			$cursor_tooltip_rect,
@@ -749,21 +768,174 @@ final class Render_Elevation {
 		);
 
 		// aria-labelledby references the <desc> child element, which is the
-		// recommended pattern when the accessible name is already present in the DOM.
-		return sprintf(
-			'<svg viewBox="0 0 %d %d" role="img" aria-labelledby="%s" preserveAspectRatio="none">'
-				. '<desc id="%s">%s</desc>%s%s%s%s%s</svg>',
-			self::VIEWBOX_WIDTH,
-			self::VIEWBOX_HEIGHT,
+		// recommended pattern when the accessible name is already present in
+		// the DOM. `preserveAspectRatio="xMidYMid meet"` keeps the polyline
+		// uniformly scaled regardless of how the wrapper resolves its size
+		// (issue #93 / bug #20).
+		$svg = sprintf(
+			'<svg class="kntnt-gpx-blocks-elevation-svg" viewBox="0 0 %.2f %.2f" role="img"'
+				. ' aria-labelledby="%s" preserveAspectRatio="xMidYMid meet">'
+				. '<desc id="%s">%s</desc>%s%s%s</svg>',
+			$viewbox_w,
+			$viewbox_h,
 			$safe_id,
 			$safe_id,
 			esc_html( $desc ),
 			$frame,
-			$y_ticks,
-			$x_ticks,
 			$polyline,
 			$cursor_group,
 		);
+
+		// Compose the final chart: SVG plus the two HTML axis-label overlays.
+		// The overlays are sibling elements inside the wrapper; their
+		// absolute positioning and sizing live in the stylesheet.
+		return $svg . $y_labels . $x_labels;
+
+	}
+
+	/**
+	 * Builds the HTML overlay for the y-axis tick labels.
+	 *
+	 * Each label is a child `<span>` positioned vertically via inline `top`
+	 * percentage, with the topmost tick carrying the maximum value (SVG y
+	 * grows downwards — the overlay's top corresponds to the chart's top).
+	 * The container's stylesheet pins it next to the SVG along the left
+	 * edge of the wrapper so the labels honour real CSS font-size and
+	 * reserve their own layout space outside the SVG plot area.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param float $y_min Domain min (metres).
+	 * @param float $y_max Domain max (metres).
+	 *
+	 * @return string HTML fragment for the y-axis overlay container.
+	 */
+	private static function build_y_labels( float $y_min, float $y_max ): string {
+
+		$out = '';
+		$div = self::TICK_COUNT - 1;
+
+		// Walk every tick top-down — index 0 is the topmost tick (the max
+		// value), placed at top: 0%; index TICK_COUNT-1 is the bottom tick
+		// (the min value) at top: 100%.
+		for ( $i = 0; $i < self::TICK_COUNT; $i++ ) {
+			$ratio   = $i / $div;
+			$value   = $y_max - ( $y_max - $y_min ) * $ratio;
+			$top_pct = $ratio * 100.0;
+			$label   = number_format_i18n( $value, 0 ) . ' ' . __( 'm', 'kntnt-gpx-blocks' );
+			$out    .= sprintf(
+				'<span class="kntnt-gpx-blocks-elevation-axis-label" style="top:%.2f%%">%s</span>',
+				$top_pct,
+				esc_html( $label ),
+			);
+		}
+
+		return sprintf(
+			'<div class="kntnt-gpx-blocks-elevation-y-labels" aria-hidden="true">%s</div>',
+			$out,
+		);
+
+	}
+
+	/**
+	 * Builds the HTML overlay for the x-axis tick labels.
+	 *
+	 * Each label is a child `<span>` positioned horizontally via inline `left`
+	 * percentage; ticks span the entire chart width with index 0 at left: 0%
+	 * and the rightmost tick at left: 100%. The container's stylesheet pins
+	 * it below the SVG along the bottom of the wrapper so the labels honour
+	 * real CSS font-size and reserve their own layout space outside the SVG.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param float  $x_min    Domain min (metres).
+	 * @param float  $x_max    Domain max (metres).
+	 * @param float  $factor   Multiplier converting metres to display unit
+	 *                         (1.0 or 0.001).
+	 * @param int    $decimals Number of decimals for the formatted label.
+	 * @param string $unit     Translated unit suffix.
+	 *
+	 * @return string HTML fragment for the x-axis overlay container.
+	 */
+	private static function build_x_labels(
+		float $x_min,
+		float $x_max,
+		float $factor,
+		int $decimals,
+		string $unit,
+	): string {
+
+		$out = '';
+		$div = self::TICK_COUNT - 1;
+		for ( $i = 0; $i < self::TICK_COUNT; $i++ ) {
+			$ratio    = $i / $div;
+			$value    = $x_min + ( $x_max - $x_min ) * $ratio;
+			$left_pct = $ratio * 100.0;
+			$label    = number_format_i18n( $value * $factor, $decimals ) . ' ' . $unit;
+			$out     .= sprintf(
+				'<span class="kntnt-gpx-blocks-elevation-axis-label" style="left:%.2f%%">%s</span>',
+				$left_pct,
+				esc_html( $label ),
+			);
+		}
+
+		return sprintf(
+			'<div class="kntnt-gpx-blocks-elevation-x-labels" aria-hidden="true">%s</div>',
+			$out,
+		);
+
+	}
+
+	/**
+	 * Resolves the chart aspect ratio (width / height) from block attributes.
+	 *
+	 * Reads `style.dimensions.aspectRatio` — the slot core's `dimensions`
+	 * block supports persists into — and parses the two shapes Gutenberg
+	 * emits: a CSS string like `"3/1"`, `"16/9"`, or a numeric value
+	 * directly. Returns the default `4/1` baseline (matching the SCSS rule)
+	 * when the attribute is missing or unparseable.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<string,mixed> $attributes Block attributes from post_content.
+	 *
+	 * @return float Chart aspect ratio, always strictly positive.
+	 */
+	private static function resolve_aspect_ratio( array $attributes ): float {
+
+		// Reach into the standard block-supports `style.dimensions.aspectRatio`
+		// slot — the only persistence shape the dimensions panel emits.
+		$style      = $attributes['style'] ?? null;
+		$dimensions = is_array( $style ) ? ( $style['dimensions'] ?? null ) : null;
+		$raw        = is_array( $dimensions ) ? ( $dimensions['aspectRatio'] ?? null ) : null;
+
+		// Accept a numeric value directly. Theme JSON sometimes carries
+		// aspect ratios this way for built-in tokens.
+		if ( is_int( $raw ) || is_float( $raw ) ) {
+			$value = (float) $raw;
+			return $value > 0.0 ? $value : self::DEFAULT_ASPECT_RATIO;
+		}
+
+		// Accept the "W/H" string Gutenberg emits from the editor UI.
+		if ( is_string( $raw ) && '' !== $raw ) {
+			if ( preg_match( '#^\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*$#', $raw, $m ) ) {
+				$w = (float) $m[1];
+				$h = (float) $m[2];
+				if ( $w > 0.0 && $h > 0.0 ) {
+					return $w / $h;
+				}
+			}
+
+			// Plain decimal string fallback (e.g. "1.78").
+			if ( is_numeric( $raw ) ) {
+				$value = (float) $raw;
+				if ( $value > 0.0 ) {
+					return $value;
+				}
+			}
+		}
+
+		return self::DEFAULT_ASPECT_RATIO;
 
 	}
 
@@ -784,10 +956,10 @@ final class Render_Elevation {
 	 *                                                           pairs.
 	 * @param float                                 $y_min       Padded y-axis lower bound.
 	 * @param float                                 $y_max       Padded y-axis upper bound.
-	 * @param int                                   $plot_left   SVG-space plot left.
-	 * @param int                                   $plot_right  SVG-space plot right.
-	 * @param int                                   $plot_top    SVG-space plot top.
-	 * @param int                                   $plot_bottom SVG-space plot bottom.
+	 * @param float                                 $plot_left   SVG-space plot left.
+	 * @param float                                 $plot_right  SVG-space plot right.
+	 * @param float                                 $plot_top    SVG-space plot top.
+	 * @param float                                 $plot_bottom SVG-space plot bottom.
 	 *
 	 * @return array{0: float, 1: float, 2: float, 3: float}
 	 *         [cx, cy, distance_m, elevation_m] for the midpoint sample.
@@ -796,10 +968,10 @@ final class Render_Elevation {
 		array $series,
 		float $y_min,
 		float $y_max,
-		int $plot_left,
-		int $plot_right,
-		int $plot_top,
-		int $plot_bottom,
+		float $plot_left,
+		float $plot_right,
+		float $plot_top,
+		float $plot_bottom,
 	): array {
 
 		// Resolve the midpoint sample by linearly interpolating along the
@@ -833,12 +1005,12 @@ final class Render_Elevation {
 		$total_distance = $series[ $count - 1 ][0];
 		$cx             = $total_distance > 0.0
 			? $plot_left + ( $distance_m / $total_distance ) * $plot_w
-			: (float) $plot_left;
+			: $plot_left;
 
 		$y_span = $y_max > $y_min ? $y_max - $y_min : 0.0;
 		$cy     = $y_span > 0.0
 			? $plot_bottom - ( ( $elevation_m - $y_min ) / $y_span ) * $plot_h
-			: (float) $plot_bottom;
+			: $plot_bottom;
 
 		return [ $cx, $cy, $distance_m, $elevation_m ];
 
@@ -928,98 +1100,6 @@ final class Render_Elevation {
 	 */
 	private static function format_elevation_label( float $elevation_m ): string {
 		return (string) (int) round( $elevation_m ) . ' m';
-	}
-
-	/**
-	 * Builds the y-axis tick group: TICK_COUNT evenly spaced labels and lines.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param float $y_min       Domain min (metres).
-	 * @param float $y_max       Domain max (metres).
-	 * @param int   $plot_top    SVG-space top of the plot rectangle.
-	 * @param int   $plot_bottom SVG-space bottom of the plot rectangle.
-	 * @param int   $plot_left   SVG-space left of the plot rectangle.
-	 *
-	 * @return string SVG fragment.
-	 */
-	private static function build_y_ticks(
-		float $y_min,
-		float $y_max,
-		int $plot_top,
-		int $plot_bottom,
-		int $plot_left,
-	): string {
-
-		$out = '';
-		$div = self::TICK_COUNT - 1;
-		for ( $i = 0; $i < self::TICK_COUNT; $i++ ) {
-			$ratio = $i / $div;
-			$value = $y_min + ( $y_max - $y_min ) * $ratio;
-
-			// SVG y grows downward; the top tick has the largest data value.
-			$sy = $plot_bottom - ( $plot_bottom - $plot_top ) * $ratio;
-
-			$label = number_format_i18n( $value, 0 ) . ' ' . __( 'm', 'kntnt-gpx-blocks' );
-			$out  .= sprintf(
-				'<text class="kntnt-gpx-blocks-elevation-axis-label" x="%d" y="%.2f"'
-				. ' text-anchor="end" dominant-baseline="middle">%s</text>',
-				$plot_left - 6,
-				$sy,
-				esc_html( $label ),
-			);
-		}
-
-		return $out;
-
-	}
-
-	/**
-	 * Builds the x-axis tick group: TICK_COUNT evenly spaced labels.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param float  $x_min       Domain min (metres).
-	 * @param float  $x_max       Domain max (metres).
-	 * @param int    $plot_left   SVG-space left of the plot rectangle.
-	 * @param int    $plot_right  SVG-space right of the plot rectangle.
-	 * @param int    $plot_bottom SVG-space bottom of the plot rectangle.
-	 * @param float  $factor      Multiplier converting metres to display unit (1.0 or 0.001).
-	 * @param int    $decimals    Number of decimals for the formatted label.
-	 * @param string $unit        Translated unit suffix.
-	 *
-	 * @return string SVG fragment.
-	 */
-	private static function build_x_ticks(
-		float $x_min,
-		float $x_max,
-		int $plot_left,
-		int $plot_right,
-		int $plot_bottom,
-		float $factor,
-		int $decimals,
-		string $unit,
-	): string {
-
-		$out = '';
-		$div = self::TICK_COUNT - 1;
-		for ( $i = 0; $i < self::TICK_COUNT; $i++ ) {
-			$ratio = $i / $div;
-			$value = $x_min + ( $x_max - $x_min ) * $ratio;
-			$sx    = $plot_left + ( $plot_right - $plot_left ) * $ratio;
-
-			$label = number_format_i18n( $value * $factor, $decimals ) . ' ' . $unit;
-			$out  .= sprintf(
-				'<text class="kntnt-gpx-blocks-elevation-axis-label" x="%.2f" y="%d"'
-				. ' text-anchor="middle" dominant-baseline="hanging">%s</text>',
-				$sx,
-				$plot_bottom + 8,
-				esc_html( $label ),
-			);
-		}
-
-		return $out;
-
 	}
 
 	/**

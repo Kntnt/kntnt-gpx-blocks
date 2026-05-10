@@ -1,26 +1,46 @@
 // Shared styles (editor + frontend) for the GPX Elevation block.
-// The wrapper sets the layout box; the inline SVG fills that box completely
-// via width: 100% / height: 100%. Layout dimensions (`aspect-ratio`,
-// `min-height`) come from core's `dimensions` block supports, which emit the
-// editor-chosen values inline on the wrapper at render time. The
-// `aspect-ratio: 4 / 1; min-height: 120px;` rule below is the baseline shape
-// applied when the editor leaves both dimensions empty; the inline style
-// from core's block supports overrides it when set. Per-block theming
-// (colours, typography) is driven by the CSS custom properties declared
-// below; empty editor fields fall back to the hardcoded defaults here.
+//
+// Layout (issue #93):
+//
+// - The wrapper sets the layout box. `aspect-ratio` and `min-height` are
+//   delegated to core's `dimensions` block supports; the SCSS baseline
+//   `aspect-ratio: 4 / 1; min-height: 120px;` applies whenever the editor
+//   leaves both fields empty.
+// - The wrapper reserves space for the HTML axis-label overlays outside
+//   the SVG plot area via `padding-left` / `padding-bottom` driven by
+//   font-relative CSS variables. Larger axis font-size grows the reserved
+//   space; the polyline's plot rectangle shrinks to fit. Pure CSS — no
+//   client-side measurement loop.
+// - The SVG is absolutely positioned to the wrapper's content box so it
+//   fills any height (mirrors the Map block's #86 idiom). With
+//   `preserveAspectRatio="xMidYMid meet"` on the SVG and the viewBox sized
+//   to match the editor-set aspect ratio, the polyline scales uniformly
+//   without stretching.
+// - The y/x axis labels are HTML `<span>` children of overlay containers
+//   pinned to the wrapper's left and bottom strips; their inline `top` /
+//   `left` percentages mirror the SVG-tick fractions.
 
 .kntnt-gpx-blocks-elevation {
 	// ─── Layout baseline ──────────────────────────────────────────────────
 	// Overridden inline by core's `dimensions` block supports when the editor
 	// sets either field.
+	position: relative;
+	box-sizing: border-box;
 	width: 100%;
 	aspect-ratio: 4 / 1;
 	min-height: 120px;
 
-	// Clip the inline SVG to the block's rounded corners when the editor
-	// sets a border-radius via the core Border panel. `box-shadow` is
-	// unaffected by `overflow` on the same element, so the core Shadow
-	// panel still renders shadows outside the wrapper as expected.
+	// Padding reserves space for the HTML axis-label overlays. The two
+	// dedicated label-size variables are font-relative so increasing the
+	// axis font-size grows the reserved space; the polyline's draw area
+	// shrinks to fit (issue #93 / bug #12). The widths use `em` so they
+	// scale with the resolved axis label font-size declared on the label
+	// elements themselves.
+	padding-left: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
+	padding-bottom: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+
+	// Clip overflowing content to the block's rounded corners when the
+	// editor sets a border-radius via the core Border panel.
 	overflow: hidden;
 
 	// ─── Colour defaults ──────────────────────────────────────────────────
@@ -45,18 +65,24 @@
 	--kntnt-gpx-blocks-tooltip-font-style: normal;
 
 	// ─── SVG container ────────────────────────────────────────────────────
+	// The SVG fills the wrapper's content box (everything inside padding).
+	// Mirrors the Map block's #86 idiom: pin to all four sides so a larger
+	// inline `min-height` grows the chart vertically instead of leaving an
+	// empty strip below (issue #93 / bug #21).
+	//
 	// `touch-action: none` makes the browser hand a touch starting on the
 	// chart to our `pointerdown` listener instead of claiming it for page
-	// scroll — without this, even a small vertical jitter while scrubbing
-	// horizontally is interpreted as a scroll gesture and the page rolls.
-	// `cursor: crosshair` signals that the chart is a precision-pointing
-	// surface. The three `-webkit-*` properties suppress Safari mobile
-	// defaults (long-press image-callout, drag text selection, grey tap
-	// highlight) the same way as on the Map block's hit-band.
-	svg {
-		width: 100%;
-		height: 100%;
+	// scroll. `cursor: crosshair` signals precision-pointing. The
+	// `-webkit-*` properties suppress Safari mobile defaults.
+	.kntnt-gpx-blocks-elevation-svg {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+		left: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
 		display: block;
+		width: auto;
+		height: auto;
 		cursor: crosshair;
 		touch-action: none;
 		-webkit-touch-callout: none;
@@ -72,14 +98,55 @@
 		stroke-width: 1;
 	}
 
-	// ─── Axis tick labels ─────────────────────────────────────────────────
+	// ─── Axis tick labels (HTML overlay) ──────────────────────────────────
+	// Labels live in two `<div>` overlays pinned to the wrapper's left and
+	// bottom strips. They honour real CSS font-size and reserve their own
+	// layout space outside the SVG (issue #93 / bugs #11, #12).
+	.kntnt-gpx-blocks-elevation-y-labels {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
+		bottom: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+		pointer-events: none;
+	}
+
+	.kntnt-gpx-blocks-elevation-x-labels {
+		position: absolute;
+		bottom: 0;
+		left: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
+		right: 0;
+		height: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+		pointer-events: none;
+	}
+
 	.kntnt-gpx-blocks-elevation-axis-label {
-		fill: var(--kntnt-gpx-blocks-axis-label-color);
-		stroke: none;
+		position: absolute;
+		display: block;
+		color: var(--kntnt-gpx-blocks-axis-label-color);
 		font-family: var(--kntnt-gpx-blocks-axis-font-family);
 		font-size: var(--kntnt-gpx-blocks-axis-font-size);
 		font-weight: var(--kntnt-gpx-blocks-axis-font-weight);
 		font-style: var(--kntnt-gpx-blocks-axis-font-style);
+		line-height: 1;
+		white-space: nowrap;
+	}
+
+	// Y-axis labels: right-aligned to the y-axis line, vertically centred
+	// on each tick position. The inline `top: <percent>%` is emitted by the
+	// renderer; `transform: translateY(-50%)` centres the label.
+	.kntnt-gpx-blocks-elevation-y-labels .kntnt-gpx-blocks-elevation-axis-label {
+		right: 0.5em;
+		transform: translateY(-50%);
+		text-align: right;
+	}
+
+	// X-axis labels: horizontally centred on each tick position, vertically
+	// near the top of the strip just below the SVG.
+	.kntnt-gpx-blocks-elevation-x-labels .kntnt-gpx-blocks-elevation-axis-label {
+		top: 0.25em;
+		transform: translateX(-50%);
+		text-align: center;
 	}
 
 	// ─── Elevation polyline ───────────────────────────────────────────────
@@ -115,6 +182,10 @@
 
 	// ─── Empty state ──────────────────────────────────────────────────────
 	&--empty {
+		// Override the layout padding for the empty state — there is no SVG
+		// to make room for, so the message centres in the full wrapper box.
+		padding-left: 0;
+		padding-bottom: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;

@@ -589,10 +589,12 @@ test( 'x-axis labels use km when total distance is 2 km or more', function (): v
 	// tick labels — Value_Formatter::format_distance() also produces "5.5 km"
 	// inside the screen-reader summary, which would otherwise satisfy the
 	// pattern even if the axis ticks were wrong.
-	$svg_only = (string) preg_replace( '#<desc>.*?</desc>#s', '', $html );
+	$labels_only = (string) preg_replace( '#<desc>.*?</desc>#s', '', $html );
 
-	// X-axis tick labels include "X km".
-	expect( $svg_only )->toMatch( '/\d+(\.\d+)?\s+km<\/text>/' );
+	// X-axis tick labels (HTML overlay spans, post issue #93) include "X km".
+	expect( $labels_only )
+		->toContain( 'kntnt-gpx-blocks-elevation-x-labels' )
+		->toMatch( '/\d+(\.\d+)?\s+km<\/span>/' );
 
 } );
 
@@ -627,10 +629,11 @@ test( 'x-axis labels use m when total distance is less than 2 km', function (): 
 
 	// Strip <desc> so distance text inside the screen-reader summary doesn't
 	// poison the negative match — the assertion targets axis ticks only.
-	$svg_only = (string) preg_replace( '#<desc>.*?</desc>#s', '', $html );
+	$labels_only = (string) preg_replace( '#<desc>.*?</desc>#s', '', $html );
 
 	// X-axis ticks have plain metres labels, e.g. "0 m" or "50 m".
-	expect( $svg_only )->not->toMatch( '/\d+(\.\d+)?\s+km<\/text>/' );
+	// Post issue #93 the labels live in HTML overlay <span>s, not SVG <text>.
+	expect( $labels_only )->not->toMatch( '/\d+(\.\d+)?\s+km<\/span>/' );
 
 } );
 
@@ -1457,3 +1460,132 @@ test( 'editor preview is disabled for non-editor users even with REST_REQUEST se
 		->not->toContain( 'data-preview' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Issue #93 — SVG renderer refactor for responsive sizing.
+//
+// Bundles four bugs sharing one root cause:
+//
+// - #11 axis font-size has no effect when Appearance is left at Standard.
+// - #12 large fonts clip beyond MARGIN_LEFT / MARGIN_BOTTOM.
+// - #20 polyline stretching with non-default aspect ratios.
+// - #21 increasing min-height leaves empty space below the chart.
+//
+// Each bug below has a regression test asserting the post-fix behaviour.
+// ---------------------------------------------------------------------------
+
+test( 'svg drops the non-uniform preserveAspectRatio (issue #20)', function (): void {
+
+	elev_setup_normal_path( 400, 300, 'map-aspect' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 300 ) );
+
+	$matched = preg_match( '#<svg\b[^>]*>#', $html, $svg_match );
+	expect( $matched )->toBe( 1 );
+	$svg_open = $svg_match[0];
+
+	// The pre-fix renderer hardcoded `preserveAspectRatio="none"`, which makes
+	// the polyline stretch non-uniformly when the editor sets a non-default
+	// aspect ratio. The fix either uses `xMidYMid meet` or omits the
+	// attribute altogether (SVG defaults to `xMidYMid meet` when absent).
+	expect( $svg_open )->not->toContain( 'preserveAspectRatio="none"' );
+
+} );
+
+test( 'svg viewBox dimensions reflect the editor-set aspect ratio (issue #20)', function (): void {
+
+	elev_setup_normal_path( 401, 301, 'map-ratio' );
+
+	// A non-default aspect ratio passed through core's `dimensions` block
+	// supports — Gutenberg serialises it under `style.dimensions.aspectRatio`
+	// and the wrapper carries it as inline `aspect-ratio: 16/9;`. The SVG's
+	// viewBox dimensions must reflect this so that uniform scaling
+	// (preserveAspectRatio="xMidYMid meet") fills the wrapper exactly.
+	$html = Render_Elevation::render(
+		[
+			'mapId' => 'auto',
+			'style' => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
+		],
+		'',
+		elev_fake_block( 301 ),
+	);
+
+	$matched = preg_match( '#<svg\b[^>]*viewBox="0 0 ([0-9.]+) ([0-9.]+)"#', $html, $vb_match );
+	expect( $matched )->toBe( 1 );
+	$vb_width  = (float) $vb_match[1];
+	$vb_height = (float) $vb_match[2];
+
+	expect( $vb_width )->toBeGreaterThan( 0.0 );
+	expect( $vb_height )->toBeGreaterThan( 0.0 );
+
+	// The viewBox aspect-ratio must match the requested 16/9 within a small
+	// rounding tolerance. A 4/1 viewBox (the unfixed default) would fail
+	// this check by ratio = 4.0 instead of ~1.78.
+	$vb_ratio       = $vb_width / $vb_height;
+	$expected_ratio = 16.0 / 9.0;
+	expect( abs( $vb_ratio - $expected_ratio ) )->toBeLessThan( 0.05 );
+
+} );
+
+test( 'axis labels render in HTML overlay, not as SVG <text> (issue #11)', function (): void {
+
+	elev_setup_normal_path( 402, 302, 'map-overlay' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 302 ) );
+
+	// Pre-fix: every axis label is an SVG `<text class="kntnt-gpx-blocks-elevation-axis-label">` —
+	// living inside the stretched SVG coordinate space, so the editor's
+	// chosen axis font-size has no visible effect when Appearance is
+	// Standard. Post-fix: labels live in HTML overlay containers next to
+	// the SVG so they honour real CSS font-size and reserve layout space.
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation-y-labels' )
+		->toContain( 'kntnt-gpx-blocks-elevation-x-labels' )
+		->not->toMatch( '#<text class="kntnt-gpx-blocks-elevation-axis-label"#' );
+
+} );
+
+test( 'plot label overlays carry the axis-label class for CSS sizing (issue #12)', function (): void {
+
+	elev_setup_normal_path( 403, 303, 'map-margins' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 303 ) );
+
+	// Pre-fix: MARGIN_LEFT / MARGIN_BOTTOM are baked-in viewBox constants;
+	// larger label fonts clip because there is no compensating reservation.
+	// Post-fix: the wrapper reserves label space outside the SVG plot area
+	// via padding driven by a CSS variable sized in em (or another
+	// font-relative unit), so a larger axis font-size grows the reserved
+	// space and the polyline draw area shrinks to fit. The renderer's
+	// contract is to emit the overlay containers labelled with
+	// `kntnt-gpx-blocks-elevation-axis-label` so the SCSS rule applies
+	// font-family / font-size from the CSS variables.
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation-y-labels' )
+		->toContain( 'kntnt-gpx-blocks-elevation-x-labels' )
+		->toContain( 'kntnt-gpx-blocks-elevation-axis-label' );
+
+} );
+
+test( 'svg drops the non-uniform preserveAspectRatio for wrapper-fill (issue #21)', function (): void {
+
+	elev_setup_normal_path( 404, 304, 'map-fill' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 304 ) );
+
+	// Pre-fix: the SVG kept its intrinsic viewBox aspect-ratio and refused
+	// to grow vertically beyond it even with `height: 100%`, so an
+	// editor-set `min-height` larger than `width / aspect-ratio` left empty
+	// space below the chart. Post-fix mirrors the Map block's #86 idiom:
+	// the wrapper is positioned (`position: relative`) and the SVG is
+	// pinned to its bounds via `position: absolute`. The stylesheet
+	// declares the positioning; the renderer's contract is that the SVG
+	// no longer carries `preserveAspectRatio="none"` (the non-uniform
+	// override that pre-fix relied on) so uniform scaling can take over.
+	$matched = preg_match( '#<svg\b[^>]*>#', $html, $svg_match );
+	expect( $matched )->toBe( 1 );
+
+	expect( $svg_match[0] )->not->toContain( 'preserveAspectRatio="none"' );
+
+} );
+
