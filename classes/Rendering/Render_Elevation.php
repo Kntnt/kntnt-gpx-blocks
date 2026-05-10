@@ -242,8 +242,23 @@ final class Render_Elevation {
 		// each get their own distinct suffix derived from the resolved map id.
 		$desc_id = 'kntnt-gpx-blocks-elevation-desc-' . esc_attr( $resolved_map_id );
 
+		// Detect the editor render context. The REST block-renderer endpoint
+		// invokes the render callback inside a REST request; gating on
+		// `edit_posts` excludes anonymous REST callers from the bypass. When
+		// true, build_svg() pre-positions the cursor at fraction=0.5 and renders
+		// it visible so the user has live feedback for the Cursor / Tooltip
+		// controls without having to scrub the chart first.
+		$is_editor_preview = self::is_editor_request();
+
 		// Build the SVG and wrap it in the Interactivity-API-annotated container.
-		$svg          = self::build_svg( $downsampled, $payload['statistics'], $desc_id, $y_min, $y_max );
+		$svg          = self::build_svg(
+			$downsampled,
+			$payload['statistics'],
+			$desc_id,
+			$y_min,
+			$y_max,
+			$is_editor_preview,
+		);
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
 
 		// Assemble the inline style with non-empty theming custom properties.
@@ -489,6 +504,22 @@ final class Render_Elevation {
 	}
 
 	/**
+	 * Detects an editor render context.
+	 *
+	 * The REST block-renderer endpoint invokes dynamic render callbacks inside
+	 * a REST request; gating on `edit_posts` excludes anonymous REST callers
+	 * from the bypass. Matches the idiom Render_Map uses for its
+	 * `bypassConsent` flag so both blocks detect editor previews identically.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return bool True when called from the editor's block-renderer.
+	 */
+	private static function is_editor_request(): bool {
+		return defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'edit_posts' );
+	}
+
+	/**
 	 * Builds the inline SVG chart with axes, polyline, and screen-reader desc.
 	 *
 	 * The `$desc_id` is set on the `<desc>` element so the SVG's `aria-labelledby`
@@ -497,17 +528,27 @@ final class Render_Elevation {
 	 * child element — it avoids duplication and keeps the source of truth in one
 	 * place.
 	 *
+	 * When `$is_editor_preview` is true, the cursor group is server-rendered
+	 * visible at fraction=0.5 with the corresponding (distance, elevation)
+	 * sample shown in the tooltip. The editor user can then see live feedback
+	 * for the Cursor / Tooltip controls without having to scrub the chart
+	 * first. On the frontend (false), the cursor keeps `style="display:none"`
+	 * and `view.ts` reveals it on the first pointermove.
+	 *
 	 * @since 1.0.0
 	 *
-	 * @param array<int, array{0: float, 1: float}> $series     Downsampled
-	 *                                                          (distance, elevation)
-	 *                                                          pairs.
-	 * @param array<string,float|null>              $statistics Cached statistics.
-	 * @param string                                $desc_id    HTML id for the <desc>
-	 *                                                          element; referenced via
-	 *                                                          aria-labelledby on the svg.
-	 * @param float                                 $y_min      Padded y-axis lower bound.
-	 * @param float                                 $y_max      Padded y-axis upper bound.
+	 * @param array<int, array{0: float, 1: float}> $series            Downsampled
+	 *                                                                 (distance, elevation)
+	 *                                                                 pairs.
+	 * @param array<string,float|null>              $statistics        Cached statistics.
+	 * @param string                                $desc_id           HTML id for the <desc>
+	 *                                                                 element; referenced via
+	 *                                                                 aria-labelledby on the svg.
+	 * @param float                                 $y_min             Padded y-axis lower bound.
+	 * @param float                                 $y_max             Padded y-axis upper bound.
+	 * @param bool                                  $is_editor_preview Whether to render the
+	 *                                                                 cursor visible at the
+	 *                                                                 midpoint sample.
 	 *
 	 * @return string SVG markup.
 	 */
@@ -517,6 +558,7 @@ final class Render_Elevation {
 		string $desc_id,
 		float $y_min,
 		float $y_max,
+		bool $is_editor_preview = false,
 	): string {
 
 		// The caller guarantees count($series) >= 2; walk the x-domain directly
@@ -589,26 +631,68 @@ final class Render_Elevation {
 			$plot_bottom,
 		);
 
-		// Server-render the cursor group so view.ts only needs to toggle visibility
-		// and update attributes — no element creation at runtime.
+		// Compute the cursor group's initial geometry. On the frontend the group
+		// is invisible (display:none) and JS positions it on the first
+		// pointermove. In the editor preview the group is rendered visible at
+		// the midpoint sample of the LTTB-downsampled series so the editor user
+		// sees live feedback for the Cursor / Tooltip controls without having
+		// to scrub the chart first; the math mirrors view.ts's
+		// `interpolateSample` + `sampleToSvg` so the server-rendered position
+		// is identical to what the JS would produce for fraction=0.5.
+		$tooltip_width  = 130;
+		$tooltip_height = 50;
+		[ $preview_cx, $preview_cy, $preview_distance_m, $preview_elevation_m ] =
+			self::midpoint_preview_geometry(
+				$series,
+				$y_min,
+				$y_max,
+				$plot_left,
+				$plot_right,
+				$plot_top,
+				$plot_bottom,
+			);
+		$preview_rect_x = max(
+			$plot_left,
+			min( $plot_right - $tooltip_width, $preview_cx - $tooltip_width / 2 ),
+		);
+		$preview_text_x = $preview_rect_x + $tooltip_width / 2;
+
+		// Server-render the cursor line. In editor preview mode `x1`/`x2` are
+		// anchored at the midpoint sample's x; on the frontend they start at 0
+		// and JS updates them on every pointermove.
+		$line_x = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
 		$cursor_line = sprintf(
 			'<line class="kntnt-gpx-blocks-elevation-cursor-line"'
-			. ' x1="0" y1="%d" x2="0" y2="%d" stroke="currentColor" />',
+			. ' x1="%s" y1="%d" x2="%s" y2="%d" stroke="currentColor" />',
+			$line_x,
 			$plot_top,
+			$line_x,
 			$plot_bottom,
 		);
+
+		// Server-render the dot at the midpoint sample's (cx, cy) in preview
+		// mode; at (0, 0) on the frontend until JS positions it.
+		$dot_cx = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
+		$dot_cy = $is_editor_preview ? sprintf( '%.2f', $preview_cy ) : '0';
 		$cursor_dot = sprintf(
-			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="0" cy="0" r="5" fill="currentColor" />',
+			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="%s" cy="%s" r="5" fill="currentColor" />',
+			$dot_cx,
+			$dot_cy,
 		);
+
 		// Tooltip rect sized for two text rows at the SCSS default font-size
 		// (16 viewBox units): ~8 padding-top + ~16 line-height + ~3 line-gap
 		// + ~16 line-height + ~7 padding-bottom = 50 units. Width is bumped
 		// to 130 units so longer formatted distances ("32.4 km") still fit
 		// comfortably with the larger default font.
+		$rect_x = $is_editor_preview ? sprintf( '%.2f', $preview_rect_x ) : '0';
 		$cursor_tooltip_rect = sprintf(
 			'<rect class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"'
-			. ' x="0" y="%d" width="130" height="50" rx="3" />',
+			. ' x="%s" y="%d" width="%d" height="%d" rx="3" />',
+			$rect_x,
 			$plot_top,
+			$tooltip_width,
+			$tooltip_height,
 		);
 
 		// Two-line tooltip text built as a parent <text> with two <tspan>
@@ -618,20 +702,42 @@ final class Render_Elevation {
 		// `dominant-baseline="hanging"` anchors the first row to the text
 		// element's `y`; `dy="1.2em"` on the second tspan offsets it onto
 		// the next line in proportion to the (possibly user-overridden)
-		// font-size.
+		// font-size. In editor preview mode the tspans are pre-filled with
+		// the midpoint sample's formatted distance and elevation; the same
+		// formatter helpers run in `view.ts::formatDistance` and
+		// `formatElevation`, kept in sync verbatim.
+		$text_x          = $is_editor_preview ? sprintf( '%.2f', $preview_text_x ) : '0';
+		$distance_label  = $is_editor_preview ? self::format_distance_label( $preview_distance_m ) : '';
+		$elevation_label = $is_editor_preview ? self::format_elevation_label( $preview_elevation_m ) : '';
 		$cursor_tooltip_text = sprintf(
 			'<text class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"'
-			. ' x="0" y="%d" text-anchor="middle" dominant-baseline="hanging">'
+			. ' x="%s" y="%d" text-anchor="middle" dominant-baseline="hanging">'
 			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"'
-			. ' x="0" dy="0"></tspan>'
+			. ' x="%s" dy="0">%s</tspan>'
 			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"'
-			. ' x="0" dy="1.2em"></tspan>'
+			. ' x="%s" dy="1.2em">%s</tspan>'
 			. '</text>',
+			$text_x,
 			$plot_top + 8,
+			$text_x,
+			esc_html( $distance_label ),
+			$text_x,
+			esc_html( $elevation_label ),
 		);
+
+		// In editor preview mode the cursor group is rendered visible and
+		// flagged with `data-preview="1"` so view.ts's watch callback knows
+		// not to hide it on the initial mount-time fire (when `fraction` is
+		// undefined). The first real fraction update — from the user scrubbing
+		// the chart, or from a sibling Map block — clears the data attribute
+		// and the cursor follows live state from that point on.
+		$style_attr   = $is_editor_preview ? '' : ' style="display:none"';
+		$preview_attr = $is_editor_preview ? ' data-preview="1"' : '';
 		$cursor_group = sprintf(
-			'<g class="kntnt-gpx-blocks-elevation-cursor" style="display:none"'
+			'<g class="kntnt-gpx-blocks-elevation-cursor"%s%s'
 			. ' data-plot-left="%d" data-plot-right="%d" data-plot-top="%d" data-plot-bottom="%d">%s%s%s%s</g>',
+			$style_attr,
+			$preview_attr,
 			$plot_left,
 			$plot_right,
 			$plot_top,
@@ -659,6 +765,169 @@ final class Render_Elevation {
 			$cursor_group,
 		);
 
+	}
+
+	/**
+	 * Computes the SVG-space cursor position and tooltip values at fraction=0.5.
+	 *
+	 * Mirrors `view.ts::interpolateSample` + `sampleToSvg` so the
+	 * server-rendered preview matches what JS would produce for fraction=0.5
+	 * once the user starts scrubbing. The caller guarantees
+	 * `count($series) >= 2`, so the midpoint sample always resolves; the
+	 * `count($series) === 1` branch is defensive in case a future refactor
+	 * loosens that contract.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<int, array{0: float, 1: float}> $series      Downsampled
+	 *                                                           (distance, elevation)
+	 *                                                           pairs.
+	 * @param float                                 $y_min       Padded y-axis lower bound.
+	 * @param float                                 $y_max       Padded y-axis upper bound.
+	 * @param int                                   $plot_left   SVG-space plot left.
+	 * @param int                                   $plot_right  SVG-space plot right.
+	 * @param int                                   $plot_top    SVG-space plot top.
+	 * @param int                                   $plot_bottom SVG-space plot bottom.
+	 *
+	 * @return array{0: float, 1: float, 2: float, 3: float}
+	 *         [cx, cy, distance_m, elevation_m] for the midpoint sample.
+	 */
+	private static function midpoint_preview_geometry(
+		array $series,
+		float $y_min,
+		float $y_max,
+		int $plot_left,
+		int $plot_right,
+		int $plot_top,
+		int $plot_bottom,
+	): array {
+
+		// Resolve the midpoint sample by linearly interpolating along the
+		// LTTB-downsampled distance array — same binary-search-and-lerp shape
+		// as view.ts's `interpolateSample` so server and client agree.
+		$count = count( $series );
+		if ( $count === 1 ) {
+			$distance_m  = $series[0][0];
+			$elevation_m = $series[0][1];
+		} else {
+			$total_distance = $series[ $count - 1 ][0];
+			$target         = 0.5 * $total_distance;
+
+			$i = self::lower_bound_index( $series, $target );
+			$j = min( $i + 1, $count - 1 );
+			$a = $series[ $i ];
+			$b = $series[ $j ];
+
+			$span         = $b[0] - $a[0];
+			$t            = $span > 0.0 ? ( $target - $a[0] ) / $span : 0.0;
+			$distance_m   = $a[0] + ( $b[0] - $a[0] ) * $t;
+			$elevation_m  = $a[1] + ( $b[1] - $a[1] ) * $t;
+		}
+
+		// Project the sample into SVG space using the padded y bounds — the
+		// same ones the polyline was drawn with — so the preview cursor sits
+		// exactly on the rendered curve.
+		$plot_w = $plot_right - $plot_left;
+		$plot_h = $plot_bottom - $plot_top;
+
+		$total_distance = $series[ $count - 1 ][0];
+		$cx             = $total_distance > 0.0
+			? $plot_left + ( $distance_m / $total_distance ) * $plot_w
+			: (float) $plot_left;
+
+		$y_span = $y_max > $y_min ? $y_max - $y_min : 0.0;
+		$cy     = $y_span > 0.0
+			? $plot_bottom - ( ( $elevation_m - $y_min ) / $y_span ) * $plot_h
+			: (float) $plot_bottom;
+
+		return [ $cx, $cy, $distance_m, $elevation_m ];
+
+	}
+
+	/**
+	 * Largest index `i` such that `$series[i][0] <= $target`.
+	 *
+	 * Plain binary search over the monotone non-decreasing distance column —
+	 * the LTTB output preserves source order. Mirrors view.ts's
+	 * `lowerBoundIndex` so the server-rendered preview's bracketing matches
+	 * the client at fraction=0.5.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<int, array{0: float, 1: float}> $series Downsampled samples.
+	 * @param float                                 $target Distance value to bracket.
+	 *
+	 * @return int Predecessor index.
+	 */
+	private static function lower_bound_index( array $series, float $target ): int {
+
+		$count = count( $series );
+		if ( $count === 0 ) {
+			return 0;
+		}
+
+		$lo = 0;
+		$hi = $count - 1;
+		if ( $target <= $series[0][0] ) {
+			return 0;
+		}
+		if ( $target >= $series[ $hi ][0] ) {
+			return $hi;
+		}
+
+		while ( $lo + 1 < $hi ) {
+			$mid = (int) floor( ( $lo + $hi ) / 2 );
+			if ( $series[ $mid ][0] <= $target ) {
+				$lo = $mid;
+			} else {
+				$hi = $mid;
+			}
+		}
+
+		return $lo;
+
+	}
+
+	/**
+	 * Formats a distance value for the editor-preview tooltip's first row.
+	 *
+	 * Switches from metres to kilometres at the 1000 m threshold so the
+	 * server-rendered string matches what view.ts's `formatDistance` would
+	 * produce for the same sample. Kilometres carry one decimal; metres are
+	 * rounded to the nearest whole number. The label is intentionally locale-
+	 * neutral (raw "." decimal) so it agrees with the JS output byte-for-byte
+	 * — the same decision view.ts makes.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param float $distance_m Distance in metres.
+	 *
+	 * @return string Formatted label, e.g. "3.2 km" or "245 m".
+	 */
+	private static function format_distance_label( float $distance_m ): string {
+
+		if ( $distance_m >= 1000.0 ) {
+			return number_format( $distance_m / 1000.0, 1, '.', '' ) . ' km';
+		}
+
+		return (string) (int) round( $distance_m ) . ' m';
+
+	}
+
+	/**
+	 * Formats an elevation value for the editor-preview tooltip's second row.
+	 *
+	 * Always rendered in metres rounded to the nearest whole number — matching
+	 * view.ts's `formatElevation`.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param float $elevation_m Elevation in metres.
+	 *
+	 * @return string Formatted label, e.g. "245 m".
+	 */
+	private static function format_elevation_label( float $elevation_m ): string {
+		return (string) (int) round( $elevation_m ) . ' m';
 	}
 
 	/**

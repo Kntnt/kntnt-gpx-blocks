@@ -519,10 +519,23 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Null/undefined fraction — hide the cursor group.
+			// Null/undefined fraction — hide the cursor group, unless the server
+			// rendered a preview cursor at fraction=0.5 for editor mode. The
+			// preview survives the initial mount-time watch fire (when fraction
+			// is still undefined) and is cleared as soon as a real fraction
+			// arrives, so live scrubbing immediately overrides the preview.
 			if ( fraction === null || fraction === undefined ) {
+				if ( entry.cursorGroup.dataset.preview === '1' ) {
+					return;
+				}
 				entry.cursorGroup.style.display = 'none';
 				return;
+			}
+
+			// First real fraction received — discard the preview flag so future
+			// null transitions hide the cursor like on the frontend.
+			if ( entry.cursorGroup.dataset.preview === '1' ) {
+				delete entry.cursorGroup.dataset.preview;
 			}
 
 			const {

@@ -1269,3 +1269,191 @@ test( 'empty-state wrapper carries the user-supplied additional CSS class', func
 		->toContain( 'is-style-rounded my-extra-class' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Editor-preview cursor (issue #91)
+//
+// When Render_Elevation::is_editor_request() returns true the cursor group is
+// server-rendered visible at fraction=0.5 with the midpoint LTTB sample's
+// distance/elevation pre-filled into the tooltip. The frontend (non-editor)
+// render path keeps style="display:none" so view.ts can reveal the cursor on
+// the first pointermove. REST_REQUEST is defined for the first time in this
+// file inside the editor-mode tests; PHP constants cannot be undefined, so
+// these tests are grouped together at the very end and explicitly stub
+// current_user_can per test to keep the implication local.
+// ---------------------------------------------------------------------------
+
+test( 'frontend cursor group keeps style="display:none"', function (): void {
+
+	elev_setup_normal_path( 300, 200, 'map-front-cursor' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 200 ) );
+
+	// Isolate the cursor <g> so the assertion targets its attributes only.
+	$matched = preg_match( '#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
+	expect( $matched )->toBe( 1 );
+
+	expect( $g_match[0] )
+		->toContain( 'style="display:none"' )
+		->not->toContain( 'data-preview' );
+
+} );
+
+test( 'editor preview renders the cursor group visible without display:none', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+
+	elev_setup_normal_path( 301, 201, 'map-edit-cursor' );
+	Functions\when( 'current_user_can' )->alias(
+		static fn ( string $cap ): bool => 'edit_posts' === $cap
+	);
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 201 ) );
+
+	$matched = preg_match( '#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
+	expect( $matched )->toBe( 1 );
+
+	expect( $g_match[0] )
+		->not->toContain( 'display:none' )
+		->toContain( 'data-preview="1"' );
+
+} );
+
+test( 'editor preview positions the cursor line at the midpoint sample\'s x', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+
+	elev_setup_normal_path( 302, 202, 'map-edit-x' );
+	Functions\when( 'current_user_can' )->alias(
+		static fn ( string $cap ): bool => 'edit_posts' === $cap
+	);
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 202 ) );
+
+	// The chart plot rectangle is [56, 1184] horizontally; fraction=0.5 lands
+	// at the geometric midpoint (56 + 1184) / 2 = 620 — but the synthetic
+	// series's distance distribution along the LTTB-downsampled samples may
+	// not be perfectly linear, so allow a wide tolerance and assert the
+	// x-position lies inside the plot interior (well away from either edge).
+	$matched = preg_match(
+		'#<line class="kntnt-gpx-blocks-elevation-cursor-line"[^>]*x1="([0-9.]+)"#',
+		$html,
+		$line_match,
+	);
+	expect( $matched )->toBe( 1 );
+
+	$x1 = (float) $line_match[1];
+	expect( $x1 )->toBeGreaterThan( 400.0 );
+	expect( $x1 )->toBeLessThan( 840.0 );
+
+} );
+
+test( 'editor preview pre-fills tooltip with formatted distance and elevation', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+
+	elev_setup_normal_path( 303, 203, 'map-edit-tooltip' );
+	Functions\when( 'current_user_can' )->alias(
+		static fn ( string $cap ): bool => 'edit_posts' === $cap
+	);
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 203 ) );
+
+	// The synthetic series has elevation rising linearly from 100 m to 200 m;
+	// the midpoint should be in the 130-170 m band (LTTB sampling can shift
+	// the exact midpoint slightly off 150 m, so the assertion uses a band
+	// instead of a hard equality).
+	$elev_matched = preg_match(
+		'#<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"[^>]*>([0-9]+) m</tspan>#',
+		$html,
+		$elev_match,
+	);
+	expect( $elev_matched )->toBe( 1 );
+	$elevation = (int) $elev_match[1];
+	expect( $elevation )->toBeGreaterThanOrEqual( 130 );
+	expect( $elevation )->toBeLessThanOrEqual( 170 );
+
+	// Distance: the synthetic track is ~5.5 km long, so the midpoint is well
+	// above the 1000 m kilometre threshold — expect a "X.Y km" label.
+	$dist_matched = preg_match(
+		'#<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"[^>]*>([^<]+)</tspan>#',
+		$html,
+		$dist_match,
+	);
+	expect( $dist_matched )->toBe( 1 );
+	expect( $dist_match[1] )->toMatch( '/^\d+\.\d km$/' );
+
+} );
+
+test( 'editor preview survives a very short series — single LTTB sample renders without crash', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+
+	// Build a two-point series — the minimum that survives the `count >= 2`
+	// guard in Render_Elevation::render(). The midpoint resolves to a point
+	// halfway between the two samples and the cursor must render without
+	// dividing by zero or producing NaN coordinates.
+	$coords = [
+		[ 18.0, 59.0, 100.0 ],
+		[ 18.01, 59.01, 110.0 ],
+	];
+	$stats = [
+		'distance'      => 1200.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 110.0,
+		'ascent'        => 10.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 304, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 204 );
+	elev_stub_parse_blocks( [ elev_map_block( 304, 'map-edit-short' ) ] );
+	elev_stub_attached_file( 304, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 204 );
+	Functions\when( 'current_user_can' )->alias(
+		static fn ( string $cap ): bool => 'edit_posts' === $cap
+	);
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 204 ) );
+
+	// The cursor group renders visible with finite coordinates and a tooltip
+	// matching the midpoint of a 100 m → 110 m series (expect ~105 m).
+	expect( $html )
+		->toContain( 'data-preview="1"' )
+		->toContain( '<svg' )
+		->toMatch( '#<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"[^>]*>105 m</tspan>#' );
+
+	// No NaN slipping through into the rendered coordinates.
+	expect( $html )->not->toContain( 'NaN' );
+
+} );
+
+test( 'editor preview is disabled for non-editor users even with REST_REQUEST set', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+
+	elev_setup_normal_path( 305, 205, 'map-rest-anon' );
+
+	// current_user_can stays at the beforeEach default of false — anonymous
+	// REST callers must not trigger the editor-preview path.
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 205 ) );
+
+	$matched = preg_match( '#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
+	expect( $matched )->toBe( 1 );
+
+	expect( $g_match[0] )
+		->toContain( 'style="display:none"' )
+		->not->toContain( 'data-preview' );
+
+} );
