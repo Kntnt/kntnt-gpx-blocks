@@ -853,6 +853,137 @@ test( 'does not emit --kntnt-gpx-blocks-axis-font-weight when font weight is inv
 } );
 
 // ---------------------------------------------------------------------------
+// Background-colour control removal (issue #95)
+//
+// The dedicated background-colour control was removed in favour of the
+// standard "wrap in Group" pattern. The renderer must therefore never
+// emit the background custom property nor any `background:` declaration,
+// regardless of whether a stale `backgroundColor` attribute survives in
+// post_content from an older save. The SVG and the empty-state container
+// must both render without a background.
+// ---------------------------------------------------------------------------
+
+test( 'does not emit --kntnt-gpx-blocks-background-color on the normal path', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 80, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 30 );
+	elev_stub_parse_blocks( [ elev_map_block( 80, 'map-no-bg' ) ] );
+	elev_stub_attached_file( 80, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 30 );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 30 ) );
+
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-background-color' )
+		->not->toContain( 'background:' )
+		->not->toContain( 'background ' );
+
+} );
+
+test( 'ignores a stale backgroundColor attribute carried over from an older save', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 81, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 31 );
+	elev_stub_parse_blocks( [ elev_map_block( 81, 'map-stale-bg' ) ] );
+	elev_stub_attached_file( 81, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 31 );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'           => 'auto',
+			'backgroundColor' => '#abcdef',
+		],
+		'',
+		elev_fake_block( 31 ),
+	);
+
+	// Pre-1.0: extra attributes from older saves are silent no-ops. The hex
+	// colour must not surface anywhere in the rendered output.
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-background-color' )
+		->not->toContain( '#abcdef' )
+		->not->toContain( 'background:' );
+
+} );
+
+test( 'rendered svg has no background style or attribute', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 82, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 32 );
+	elev_stub_parse_blocks( [ elev_map_block( 82, 'map-svg-bg' ) ] );
+	elev_stub_attached_file( 82, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 32 );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 32 ) );
+
+	// Isolate the <svg ...> opening tag so the assertion targets only the SVG
+	// element's own attributes/style, not the surrounding wrapper.
+	$matched = preg_match( '#<svg\b[^>]*>#', $html, $svg_match );
+	expect( $matched )->toBe( 1 );
+	$svg_open = $svg_match[0];
+
+	expect( $svg_open )
+		->not->toContain( 'background' )
+		->not->toContain( 'fill=' );
+
+} );
+
+test( 'empty-state wrapper emits no background custom property and no inline style', function (): void {
+
+	elev_setup_empty_path( 220, 120, 'map-empty-no-bg' );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'           => 'auto',
+			'backgroundColor' => '#abcdef',
+		],
+		'',
+		elev_fake_block( 120 ),
+	);
+
+	// The empty-state wrapper is now style-free unless core's block supports
+	// inject something (none of which a stale backgroundColor attribute can
+	// trigger). Confirm the marker class is present and the background hooks
+	// are absent.
+	expect( $html )
+		->toContain( 'kntnt-gpx-blocks-elevation--empty' )
+		->not->toContain( '--kntnt-gpx-blocks-background-color' )
+		->not->toContain( '#abcdef' )
+		->not->toContain( 'background:' );
+
+} );
+
+// ---------------------------------------------------------------------------
 // Cursor-sync state — yMin / yMax bounds match the rendered polyline
 // ---------------------------------------------------------------------------
 

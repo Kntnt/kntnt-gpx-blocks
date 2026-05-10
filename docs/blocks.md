@@ -176,7 +176,6 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
 | Attribute | Type | Default | Notes |
 |---|---|---|---|
 | `mapId` | string | `"auto"` | Resolves to the single Map on the page when `"auto"`. |
-| `backgroundColor` | string | `""` | SVG background. |
 | `axisColor` | string | `""` | Axis lines. |
 | `axisLabelColor` | string | `""` | Tick labels. |
 | `lineColor` | string | `""` | The plotted line. |
@@ -197,7 +196,7 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
 `InspectorControls`:
 
 1. **Data source** — `SelectControl` listing "Auto" and every GPX Map on the page (label = `"Karta {n}: {filename}"`). Open by default.
-2. **Colours** — `PanelColorSettings` for the seven colours.
+2. **Colours** — `PanelColorSettings` for the six colours.
 3. **Axis typography** — the unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern used by core Paragraph and Group), exposing three aspects through the per-aspect dropdown menu: **Font** (`FontFamilyControl`, fed by `useSettings('typography.fontFamilies')`), **Size** (`FontSizePicker`, fed by `useSettings('typography.fontSizes')`), and **Appearance** (`FontAppearanceControl`, which writes to `axisFontWeight` and `axisFontStyle` as a single combined control). Each aspect can be enabled or disabled individually; an unset aspect reads as "Standard" and inherits from the theme. "Reset all" clears every aspect at once.
 4. **Tooltip typography** — the same `ToolsPanel` shape, writing into the `tooltipFont*` attribute group instead of the `axisFont*` group.
 

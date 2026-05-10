@@ -124,7 +124,6 @@ function buildAttributes(
 ): Record< string, unknown > {
 	return {
 		mapId: 'auto',
-		backgroundColor: '',
 		axisColor: '',
 		axisLabelColor: '',
 		lineColor: '',
@@ -182,7 +181,7 @@ describe( 'ElevationEdit ServerSideRender attributes', () => {
 
 	it( 'still forwards the theming attributes that the SSR pipeline needs', () => {
 		const attributes = buildAttributes( {
-			backgroundColor: '#abcdef',
+			axisColor: '#abcdef',
 			lineColor: '#123456',
 			style: { spacing: { margin: { top: '20px' } } },
 		} );
@@ -204,7 +203,7 @@ describe( 'ElevationEdit ServerSideRender attributes', () => {
 
 		const captured = capturedAttributes[ 0 ];
 		expect( captured ).toBeDefined();
-		expect( captured?.backgroundColor ).toBe( '#abcdef' );
+		expect( captured?.axisColor ).toBe( '#abcdef' );
 		expect( captured?.lineColor ).toBe( '#123456' );
 		expect( captured?.mapId ).toBe( 'auto' );
 	} );

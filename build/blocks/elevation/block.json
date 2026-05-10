@@ -47,10 +47,6 @@
       "type": "string",
       "default": "auto"
     },
-    "backgroundColor": {
-      "type": "string",
-      "default": ""
-    },
     "axisColor": {
       "type": "string",
       "default": ""

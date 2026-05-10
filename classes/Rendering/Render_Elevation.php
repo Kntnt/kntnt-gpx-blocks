@@ -139,9 +139,8 @@ final class Render_Elevation {
 		$raw_map_id = $attributes['mapId'] ?? 'auto';
 		$map_id     = is_string( $raw_map_id ) && '' !== $raw_map_id ? $raw_map_id : 'auto';
 
-		// Read and sanitize the seven colour attributes through the shared
+		// Read and sanitize the six colour attributes through the shared
 		// validator — accepts hex 3/4/6/8 (alpha-aware) and rejects anything else.
-		$background_color  = Color_Sanitizer::sanitize( $attributes['backgroundColor'] ?? '' );
 		$axis_color        = Color_Sanitizer::sanitize( $attributes['axisColor'] ?? '' );
 		$axis_label_color  = Color_Sanitizer::sanitize( $attributes['axisLabelColor'] ?? '' );
 		$line_color        = Color_Sanitizer::sanitize( $attributes['lineColor'] ?? '' );
@@ -210,7 +209,7 @@ final class Render_Elevation {
 		// No usable elevation in the source — render the translated empty state
 		// in place of the chart.
 		if ( count( $series ) < 2 ) {
-			return self::render_empty_state( $background_color );
+			return self::render_empty_state();
 		}
 
 		// Downsample the series via LTTB to a configurable target point count.
@@ -254,9 +253,6 @@ final class Render_Elevation {
 		// typography values fall back to the SCSS defaults.
 		$style_parts = [];
 
-		if ( '' !== $background_color ) {
-			$style_parts[] = '--kntnt-gpx-blocks-background-color: ' . $background_color;
-		}
 		if ( '' !== $axis_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-axis-color: ' . $axis_color;
 		}
@@ -794,31 +790,22 @@ final class Render_Elevation {
 	 *
 	 * Dimensions (`aspect-ratio`, `min-height`) are emitted by core's
 	 * `dimensions` block supports and reach the wrapper through
-	 * `get_block_wrapper_attributes()`; this method only contributes the
-	 * optional background-colour custom property.
+	 * `get_block_wrapper_attributes()`. The empty-state container has no
+	 * background of its own — editors who want one wrap the block in a
+	 * `core/group` and use that block's standard background-colour control.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $background_color Validated background colour (may be empty).
-	 *
 	 * @return string
 	 */
-	private static function render_empty_state( string $background_color = '' ): string {
-
-		$style_parts = [];
-		if ( '' !== $background_color ) {
-			$style_parts[] = '--kntnt-gpx-blocks-background-color: ' . $background_color;
-		}
-		$style = implode( '; ', $style_parts );
+	private static function render_empty_state(): string {
 
 		// Build the block wrapper attributes via core's helper so that editor-UI
 		// affordances and the dimensions/border/shadow/spacing block supports
 		// reach the frontend even on the empty-data path.
-		$wrapper_args = [ 'class' => 'kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation--empty' ];
-		if ( '' !== $style ) {
-			$wrapper_args['style'] = $style;
-		}
-		$wrapper = get_block_wrapper_attributes( $wrapper_args );
+		$wrapper = get_block_wrapper_attributes(
+			[ 'class' => 'kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation--empty' ],
+		);
 
 		return sprintf(
 			'<div %s>%s</div>',

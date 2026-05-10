@@ -48,7 +48,6 @@ import { flattenPresets } from '../shared/flatten-presets';
  */
 interface ElevationAttributes {
 	mapId: string;
-	backgroundColor: string;
 	axisColor: string;
 	axisLabelColor: string;
 	lineColor: string;
@@ -290,7 +289,6 @@ export const ElevationEdit = ( {
 }: BlockEditProps< ElevationAttributes > ): JSX.Element => {
 	const {
 		mapId,
-		backgroundColor,
 		axisColor,
 		axisLabelColor,
 		lineColor,
@@ -323,9 +321,6 @@ export const ElevationEdit = ( {
 	// Build a style object carrying every non-empty theming attribute as a CSS
 	// custom property so the editor preview updates instantly.
 	const inlineStyle: Record< string, string > = {};
-	if ( backgroundColor ) {
-		inlineStyle[ '--kntnt-gpx-blocks-background-color' ] = backgroundColor;
-	}
 	if ( axisColor ) {
 		inlineStyle[ '--kntnt-gpx-blocks-axis-color' ] = axisColor;
 	}
@@ -495,14 +490,6 @@ export const ElevationEdit = ( {
 					enableAlpha
 					colorSettings={ [
 						{
-							value: backgroundColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									backgroundColor: value ?? '',
-								} ),
-							label: __( 'Background', 'kntnt-gpx-blocks' ),
-						},
-						{
 							value: axisColor,
 							onChange: ( value: string | undefined ) =>
 								setAttributes( { axisColor: value ?? '' } ),
@@ -617,7 +604,6 @@ export const ElevationEdit = ( {
 							// wrapper and the editor would render every
 							// dimension at twice the chosen value.
 							mapId,
-							backgroundColor,
 							axisColor,
 							axisLabelColor,
 							lineColor,
