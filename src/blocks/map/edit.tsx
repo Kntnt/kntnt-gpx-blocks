@@ -27,10 +27,18 @@ import {
 	__experimentalFontFamilyControl as FontFamilyControl,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
 	__experimentalFontAppearanceControl as FontAppearanceControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalLetterSpacingControl as LetterSpacingControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalTextDecorationControl as TextDecorationControl,
+	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
+	__experimentalTextTransformControl as TextTransformControl,
+	LineHeightControl,
 } from '@wordpress/block-editor';
 import {
 	PanelBody,
 	ToggleControl,
+	ColorPicker,
 	FontSizePicker,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
 	__experimentalToolsPanel as ToolsPanel,
@@ -65,12 +73,27 @@ interface MapAttributes {
 	trackColor: string;
 	trackCursorColor: string;
 	waypointColor: string;
-	waypointLabelBackground: string;
-	waypointLabelColor: string;
-	waypointLabelFontFamily: string;
-	waypointLabelFontSize: string;
-	waypointLabelFontWeight: string;
-	waypointLabelFontStyle: string;
+	tooltipShowName: boolean;
+	tooltipShowDesc: boolean;
+	tooltipBackground: string;
+	tooltipNameColor: string;
+	tooltipNameFontFamily: string;
+	tooltipNameFontSize: string;
+	tooltipNameFontWeight: string;
+	tooltipNameFontStyle: string;
+	tooltipNameLineHeight: string;
+	tooltipNameLetterSpacing: string;
+	tooltipNameTextDecoration: string;
+	tooltipNameTextTransform: string;
+	tooltipDescColor: string;
+	tooltipDescFontFamily: string;
+	tooltipDescFontSize: string;
+	tooltipDescFontWeight: string;
+	tooltipDescFontStyle: string;
+	tooltipDescLineHeight: string;
+	tooltipDescLetterSpacing: string;
+	tooltipDescTextDecoration: string;
+	tooltipDescTextTransform: string;
 	[ key: string ]: unknown;
 }
 
@@ -104,7 +127,9 @@ interface MediaObject {
 }
 
 /**
- * Per-aspect setter signature passed into the typography panel renderer.
+ * Per-aspect setter signature passed into the typography panel renderer. The
+ * panel writes one or more named aspects per call; unset aspects retain their
+ * previous value. The empty string is the canonical "unset" marker.
  *
  * @since 1.0.0
  */
@@ -113,6 +138,10 @@ type SetTypography = ( values: {
 	fontSize?: string;
 	fontWeight?: string;
 	fontStyle?: string;
+	lineHeight?: string;
+	letterSpacing?: string;
+	textDecoration?: string;
+	textTransform?: string;
 } ) => void;
 
 /**
@@ -121,22 +150,28 @@ type SetTypography = ( values: {
  * disable each aspect individually, and "Reset all" returns every aspect to
  * the inherited theme default.
  *
- * The panel exposes three aspects — Font (family), Size, and Appearance
- * (weight + style combined) — because that is the surface persisted in the
- * block's attribute schema. Adding more aspects (line height, letter spacing,
- * etc.) would require new attributes and is out of scope here.
+ * The panel exposes the seven aspects core's standard Typography panel
+ * surfaces — Font (family), Size, Appearance (weight + style combined), Line
+ * height, Letter spacing, Decoration, and Letter case — written into the
+ * caller-provided attribute group via `setTypography`. Each aspect can be
+ * enabled or disabled individually; an unset aspect reads as "Default" and
+ * inherits from the surrounding theme.
  *
  * @since 1.0.0
  *
- * @param {Object}             props               Component props.
- * @param {string}             props.label         Localised panel title.
- * @param {string}             props.fontFamily    Current font-family value.
- * @param {string}             props.fontSize      Current font-size value.
- * @param {string}             props.fontWeight    Current font-weight value.
- * @param {string}             props.fontStyle     Current font-style value.
- * @param {FontFamilyPreset[]} props.fontFamilies  Theme font-family presets.
- * @param {FontSizePreset[]}   props.fontSizes     Theme font-size presets.
- * @param {SetTypography}      props.setTypography Setter callback.
+ * @param {Object}             props                Component props.
+ * @param {string}             props.label          Localised panel title.
+ * @param {string}             props.fontFamily     Current font-family value.
+ * @param {string}             props.fontSize       Current font-size value.
+ * @param {string}             props.fontWeight     Current font-weight value.
+ * @param {string}             props.fontStyle      Current font-style value.
+ * @param {string}             props.lineHeight     Current line-height value.
+ * @param {string}             props.letterSpacing  Current letter-spacing value.
+ * @param {string}             props.textDecoration Current text-decoration value.
+ * @param {string}             props.textTransform  Current text-transform value.
+ * @param {FontFamilyPreset[]} props.fontFamilies   Theme font-family presets.
+ * @param {FontSizePreset[]}   props.fontSizes      Theme font-size presets.
+ * @param {SetTypography}      props.setTypography  Setter callback.
  */
 function TypographyToolsPanel( {
 	label,
@@ -144,6 +179,10 @@ function TypographyToolsPanel( {
 	fontSize,
 	fontWeight,
 	fontStyle,
+	lineHeight,
+	letterSpacing,
+	textDecoration,
+	textTransform,
 	fontFamilies,
 	fontSizes,
 	setTypography,
@@ -153,6 +192,10 @@ function TypographyToolsPanel( {
 	fontSize: string;
 	fontWeight: string;
 	fontStyle: string;
+	lineHeight: string;
+	letterSpacing: string;
+	textDecoration: string;
+	textTransform: string;
 	fontFamilies: FontFamilyPreset[];
 	fontSizes: FontSizePreset[];
 	setTypography: SetTypography;
@@ -169,6 +212,10 @@ function TypographyToolsPanel( {
 					fontSize: '',
 					fontWeight: '',
 					fontStyle: '',
+					lineHeight: '',
+					letterSpacing: '',
+					textDecoration: '',
+					textTransform: '',
 				} )
 			}
 		>
@@ -240,6 +287,67 @@ function TypographyToolsPanel( {
 					}
 				/>
 			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => lineHeight !== '' }
+				label={ __( 'Line height', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { lineHeight: '' } ) }
+				isShownByDefault={ false }
+			>
+				<LineHeightControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					__unstableInputWidth="auto"
+					value={ lineHeight }
+					onChange={ ( value: string | undefined ) =>
+						setTypography( { lineHeight: value ?? '' } )
+					}
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => letterSpacing !== '' }
+				label={ __( 'Letter spacing', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { letterSpacing: '' } ) }
+				isShownByDefault={ false }
+			>
+				<LetterSpacingControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					value={ letterSpacing }
+					onChange={ ( value: string | undefined ) =>
+						setTypography( { letterSpacing: value ?? '' } )
+					}
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => textDecoration !== '' }
+				label={ __( 'Decoration', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { textDecoration: '' } ) }
+				isShownByDefault={ false }
+			>
+				<TextDecorationControl
+					value={ textDecoration }
+					onChange={ ( value: string | undefined ) =>
+						setTypography( { textDecoration: value ?? '' } )
+					}
+				/>
+			</ToolsPanelItem>
+			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
+			<ToolsPanelItem
+				hasValue={ () => textTransform !== '' }
+				label={ __( 'Letter case', 'kntnt-gpx-blocks' ) }
+				onDeselect={ () => setTypography( { textTransform: '' } ) }
+				isShownByDefault={ false }
+			>
+				<TextTransformControl
+					value={ textTransform }
+					onChange={ ( value: string | undefined ) =>
+						setTypography( { textTransform: value ?? '' } )
+					}
+				/>
+			</ToolsPanelItem>
 		</ToolsPanel>
 	);
 }
@@ -283,12 +391,27 @@ export const MapEdit = ( {
 		trackColor,
 		trackCursorColor,
 		waypointColor,
-		waypointLabelBackground,
-		waypointLabelColor,
-		waypointLabelFontFamily,
-		waypointLabelFontSize,
-		waypointLabelFontWeight,
-		waypointLabelFontStyle,
+		tooltipShowName,
+		tooltipShowDesc,
+		tooltipBackground,
+		tooltipNameColor,
+		tooltipNameFontFamily,
+		tooltipNameFontSize,
+		tooltipNameFontWeight,
+		tooltipNameFontStyle,
+		tooltipNameLineHeight,
+		tooltipNameLetterSpacing,
+		tooltipNameTextDecoration,
+		tooltipNameTextTransform,
+		tooltipDescColor,
+		tooltipDescFontFamily,
+		tooltipDescFontSize,
+		tooltipDescFontWeight,
+		tooltipDescFontStyle,
+		tooltipDescLineHeight,
+		tooltipDescLetterSpacing,
+		tooltipDescTextDecoration,
+		tooltipDescTextTransform,
 	} = attributes;
 
 	// Resolve the attached media's source URL so MediaReplaceFlow can label
@@ -451,6 +574,24 @@ export const MapEdit = ( {
 						}
 					/>
 				</PanelBody>
+				<PanelBody title={ __( 'Waypoint info', 'kntnt-gpx-blocks' ) }>
+					<ToggleControl
+						label={ __( 'Show name', 'kntnt-gpx-blocks' ) }
+						checked={ tooltipShowName }
+						onChange={ ( value ) =>
+							setAttributes( { tooltipShowName: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Show description', 'kntnt-gpx-blocks' ) }
+						checked={ tooltipShowDesc }
+						onChange={ ( value ) =>
+							setAttributes( { tooltipShowDesc: value } )
+						}
+					/>
+				</PanelBody>
+			</InspectorControls>
+			<InspectorControls group="styles">
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
 					title={ __( 'Track', 'kntnt-gpx-blocks' ) }
@@ -481,55 +622,150 @@ export const MapEdit = ( {
 								setAttributes( { waypointColor: value ?? '' } ),
 							label: __( 'Marker colour', 'kntnt-gpx-blocks' ),
 						},
-						{
-							value: waypointLabelBackground,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									waypointLabelBackground: value ?? '',
-								} ),
-							label: __( 'Label background', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: waypointLabelColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									waypointLabelColor: value ?? '',
-								} ),
-							label: __(
-								'Label text colour',
-								'kntnt-gpx-blocks'
-							),
-						},
 					] }
 				/>
-				<TypographyToolsPanel
-					label={ __(
-						'Waypoint label typography',
+				<PanelBody
+					title={ __(
+						'Waypoint info — Background',
 						'kntnt-gpx-blocks'
 					) }
-					fontFamily={ waypointLabelFontFamily }
-					fontSize={ waypointLabelFontSize }
-					fontWeight={ waypointLabelFontWeight }
-					fontStyle={ waypointLabelFontStyle }
-					fontFamilies={ fontFamilies }
-					fontSizes={ fontSizes }
-					setTypography={ ( values ) => {
-						const next: Partial< MapAttributes > = {};
-						if ( values.fontFamily !== undefined ) {
-							next.waypointLabelFontFamily = values.fontFamily;
+					initialOpen={ false }
+				>
+					{ /* @ts-ignore — ColorPicker's runtime accepts these props but its typings lag. */ }
+					<ColorPicker
+						color={ tooltipBackground }
+						enableAlpha
+						copyFormat="hex"
+						onChange={ ( value: string ) =>
+							setAttributes( {
+								tooltipBackground: value ?? '',
+							} )
 						}
-						if ( values.fontSize !== undefined ) {
-							next.waypointLabelFontSize = values.fontSize;
+					/>
+				</PanelBody>
+				<PanelBody
+					title={ __( 'Waypoint info — Name', 'kntnt-gpx-blocks' ) }
+					initialOpen={ false }
+				>
+					{ /* @ts-ignore — ColorPicker's runtime accepts these props but its typings lag. */ }
+					<ColorPicker
+						color={ tooltipNameColor }
+						enableAlpha
+						copyFormat="hex"
+						onChange={ ( value: string ) =>
+							setAttributes( {
+								tooltipNameColor: value ?? '',
+							} )
 						}
-						if ( values.fontWeight !== undefined ) {
-							next.waypointLabelFontWeight = values.fontWeight;
+					/>
+					<TypographyToolsPanel
+						label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+						fontFamily={ tooltipNameFontFamily }
+						fontSize={ tooltipNameFontSize }
+						fontWeight={ tooltipNameFontWeight }
+						fontStyle={ tooltipNameFontStyle }
+						lineHeight={ tooltipNameLineHeight }
+						letterSpacing={ tooltipNameLetterSpacing }
+						textDecoration={ tooltipNameTextDecoration }
+						textTransform={ tooltipNameTextTransform }
+						fontFamilies={ fontFamilies }
+						fontSizes={ fontSizes }
+						setTypography={ ( values ) => {
+							const next: Partial< MapAttributes > = {};
+							if ( values.fontFamily !== undefined ) {
+								next.tooltipNameFontFamily = values.fontFamily;
+							}
+							if ( values.fontSize !== undefined ) {
+								next.tooltipNameFontSize = values.fontSize;
+							}
+							if ( values.fontWeight !== undefined ) {
+								next.tooltipNameFontWeight = values.fontWeight;
+							}
+							if ( values.fontStyle !== undefined ) {
+								next.tooltipNameFontStyle = values.fontStyle;
+							}
+							if ( values.lineHeight !== undefined ) {
+								next.tooltipNameLineHeight = values.lineHeight;
+							}
+							if ( values.letterSpacing !== undefined ) {
+								next.tooltipNameLetterSpacing =
+									values.letterSpacing;
+							}
+							if ( values.textDecoration !== undefined ) {
+								next.tooltipNameTextDecoration =
+									values.textDecoration;
+							}
+							if ( values.textTransform !== undefined ) {
+								next.tooltipNameTextTransform =
+									values.textTransform;
+							}
+							setAttributes( next );
+						} }
+					/>
+				</PanelBody>
+				<PanelBody
+					title={ __(
+						'Waypoint info — Description',
+						'kntnt-gpx-blocks'
+					) }
+					initialOpen={ false }
+				>
+					{ /* @ts-ignore — ColorPicker's runtime accepts these props but its typings lag. */ }
+					<ColorPicker
+						color={ tooltipDescColor }
+						enableAlpha
+						copyFormat="hex"
+						onChange={ ( value: string ) =>
+							setAttributes( {
+								tooltipDescColor: value ?? '',
+							} )
 						}
-						if ( values.fontStyle !== undefined ) {
-							next.waypointLabelFontStyle = values.fontStyle;
-						}
-						setAttributes( next );
-					} }
-				/>
+					/>
+					<TypographyToolsPanel
+						label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+						fontFamily={ tooltipDescFontFamily }
+						fontSize={ tooltipDescFontSize }
+						fontWeight={ tooltipDescFontWeight }
+						fontStyle={ tooltipDescFontStyle }
+						lineHeight={ tooltipDescLineHeight }
+						letterSpacing={ tooltipDescLetterSpacing }
+						textDecoration={ tooltipDescTextDecoration }
+						textTransform={ tooltipDescTextTransform }
+						fontFamilies={ fontFamilies }
+						fontSizes={ fontSizes }
+						setTypography={ ( values ) => {
+							const next: Partial< MapAttributes > = {};
+							if ( values.fontFamily !== undefined ) {
+								next.tooltipDescFontFamily = values.fontFamily;
+							}
+							if ( values.fontSize !== undefined ) {
+								next.tooltipDescFontSize = values.fontSize;
+							}
+							if ( values.fontWeight !== undefined ) {
+								next.tooltipDescFontWeight = values.fontWeight;
+							}
+							if ( values.fontStyle !== undefined ) {
+								next.tooltipDescFontStyle = values.fontStyle;
+							}
+							if ( values.lineHeight !== undefined ) {
+								next.tooltipDescLineHeight = values.lineHeight;
+							}
+							if ( values.letterSpacing !== undefined ) {
+								next.tooltipDescLetterSpacing =
+									values.letterSpacing;
+							}
+							if ( values.textDecoration !== undefined ) {
+								next.tooltipDescTextDecoration =
+									values.textDecoration;
+							}
+							if ( values.textTransform !== undefined ) {
+								next.tooltipDescTextTransform =
+									values.textTransform;
+							}
+							setAttributes( next );
+						} }
+					/>
+				</PanelBody>
 			</InspectorControls>
 			<div { ...blockProps }>
 				<MapEditorPreview

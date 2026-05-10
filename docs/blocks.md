@@ -36,24 +36,49 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 | `enableKeyboard` | boolean | `true` | `keyboard`. Required for accessibility. |
 | `trackColor` | string | `""` | Polyline colour. Empty falls back to the hardcoded CSS default. |
 | `trackCursorColor` | string | `""` | Cursor marker colour on the polyline. |
-| `waypointColor` | string | `""` | Marker colour for waypoints. |
-| `waypointLabelBackground` | string | `""` | Hover label background. |
-| `waypointLabelColor` | string | `""` | Hover label text colour. |
-| `waypointLabelFontFamily` | string | `""` | Hover label font family. |
-| `waypointLabelFontSize` | string | `""` | Hover label font size. |
-| `waypointLabelFontWeight` | string | `""` | Hover label font weight. |
-| `waypointLabelFontStyle` | string | `""` | Hover label font style. |
+| `waypointColor` | string | `""` | Marker dot colour for waypoints. |
+| `tooltipShowName` | boolean | `true` | Show the GPX `name` as the first line of the waypoint tooltip when present. |
+| `tooltipShowDesc` | boolean | `true` | Show the GPX `desc` as the second line of the waypoint tooltip when present. |
+| `tooltipBackground` | string | `"#000000cc"` | Tooltip background colour. Hex 3/4/6/8 — alpha supported via `#RRGGBBAA`. Also used to colour the arrow tip so a semi-transparent background renders consistently. |
+| `tooltipNameColor` | string | `"#ffffff"` | Name-line text colour. Hex 3/4/6/8. |
+| `tooltipNameFontFamily` | string | `""` | Name-line font family. |
+| `tooltipNameFontSize` | string | `""` | Name-line font size. |
+| `tooltipNameFontWeight` | string | `"700"` | Name-line font weight. |
+| `tooltipNameFontStyle` | string | `""` | Name-line font style. |
+| `tooltipNameLineHeight` | string | `""` | Name-line line-height. |
+| `tooltipNameLetterSpacing` | string | `""` | Name-line letter-spacing. |
+| `tooltipNameTextDecoration` | string | `""` | Name-line text-decoration. |
+| `tooltipNameTextTransform` | string | `""` | Name-line letter case. |
+| `tooltipDescColor` | string | `"#dddddd"` | Description-line text colour. Hex 3/4/6/8. |
+| `tooltipDescFontFamily` | string | `""` | Description-line font family. |
+| `tooltipDescFontSize` | string | `""` | Description-line font size. |
+| `tooltipDescFontWeight` | string | `""` | Description-line font weight. |
+| `tooltipDescFontStyle` | string | `"italic"` | Description-line font style. |
+| `tooltipDescLineHeight` | string | `""` | Description-line line-height. |
+| `tooltipDescLetterSpacing` | string | `""` | Description-line letter-spacing. |
+| `tooltipDescTextDecoration` | string | `""` | Description-line text-decoration. |
+| `tooltipDescTextTransform` | string | `""` | Description-line letter case. |
 
 ### Editor UI
 
-`InspectorControls` panels, in order:
+`InspectorControls` follow the WordPress Settings/Styles split. The Settings tab carries behaviour-shaping controls; the Styles tab carries appearance.
+
+**Settings tab**, in order:
 
 1. **Source** — `MediaUpload` for the `.gpx` file. Required. When empty, the block renders a `MediaPlaceholder` and skips the editor preview (`MapEditorPreview` for Map; `<ServerSideRender>` for Elevation).
 2. **Controls** — toggles for the four control overlays.
 3. **Interactions** — toggles for the four interaction modes (drag, pinch zoom, double-click zoom, keyboard). Scroll-wheel and box zoom are not toggles: the wheel handler is fixed (modifier-or-pinch zooms, two-finger pan pans when *Drag to pan* is enabled and otherwise surfaces the hint, mouse wheel surfaces the hint), and box zoom is removed.
-4. **Track** — `PanelColorSettings` for `trackColor` and `trackCursorColor`.
-5. **Waypoints** — `PanelColorSettings` for marker colour and the two label colours.
-6. **Waypoint label typography** — the unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern used by core Paragraph and Group), exposing three aspects through the per-aspect dropdown menu: **Font** (`FontFamilyControl`, fed by `useSettings('typography.fontFamilies')`), **Size** (`FontSizePicker`, fed by `useSettings('typography.fontSizes')`), and **Appearance** (`FontAppearanceControl`, which writes to the `waypointLabelFontWeight` and `waypointLabelFontStyle` attributes as a single combined control). Each aspect can be enabled or disabled individually; an unset aspect reads as "Standard" and inherits from the theme. "Reset all" clears every aspect at once.
+4. **Waypoint info** — two toggles, `Show name` and `Show description`. Both default on. They control whether the corresponding line is rendered inside the per-marker tooltip; setting both off suppresses the tooltip entirely (no hover surface, no sticky-on-click).
+
+**Styles tab**, in order:
+
+1. **Track** — `PanelColorSettings` for `trackColor` and `trackCursorColor`.
+2. **Waypoints** — `PanelColorSettings` exposing only the `waypointColor` marker-dot fill. Tooltip styling lives in the three panels below.
+3. **Waypoint info — Background** — a WordPress `ColorPicker` with `enableAlpha: true` writing into `tooltipBackground` as 8-digit hex. The same value also drives the arrow-tip colour so a semi-transparent background produces a semi-transparent arrow.
+4. **Waypoint info — Name** — a `ColorPicker` with `enableAlpha: true` writing `tooltipNameColor`, plus a unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern core Paragraph and Group use) covering all seven aspects WordPress's standard typography surface offers: **Font** (`FontFamilyControl`), **Size** (`FontSizePicker`), **Appearance** (`FontAppearanceControl` — combined weight + style), **Line height** (`LineHeightControl`), **Letter spacing** (`LetterSpacingControl`), **Decoration** (`TextDecorationControl`), and **Letter case** (`TextTransformControl`). Each aspect can be enabled or disabled individually; an unset aspect inherits from the theme. "Reset all" clears every aspect.
+5. **Waypoint info — Description** — same surface as *Name*, mapped to the `tooltipDesc*` attribute family.
+
+The default styling renders the tooltip as a roughly 80% opaque black rectangle with a white bold name and a light grey italic description.
 
 Sizing is delegated to the standard core **Dimensions** panel: `block.json` declares `supports.dimensions: { aspectRatio: true, minHeight: true }`, so the editor surfaces the same aspect-ratio dropdown and min-height field used by core Cover, Image, and Group. The plugin no longer carries its own `aspectRatio` / `minHeight` / `maxHeight` attributes or its own Layout panel — the block stores the chosen values under the core `style.dimensions.*` slot like every other dimensions-aware core block, and the wrapper picks them up through `useBlockProps()` / `get_block_wrapper_attributes()` automatically. The SCSS baseline (`aspect-ratio: 3 / 1; min-height: 240px;`) applies whenever both Dimensions fields are empty.
 
@@ -114,7 +139,7 @@ The state slice carries no consent values — the consent decision lives in `win
 2. If `bypassConsent` is `true` (editor context) **or** `window.kntnt_gpx_blocks.mayProceed( 'external_media' )` returns `true`, proceeds to step 3. Otherwise leaves the container empty and skips to step 6 (subscribe to consent transitions).
 3. Defers Leaflet initialisation via `IntersectionObserver` until the block element enters the viewport. Builds a Leaflet map with `L.canvas()` renderer and `L.geoJSON()` from the cached GeoJSON, mounting directly into the block element.
 4. Adds the configured controls and enables/disables interactions per `settings`.
-5. Adds waypoint markers from the hydrated `waypoints` GeoJSON. Each marker has a hover tooltip showing `name` (line 1) and `desc` (line 2 if set), built with text nodes (no innerHTML).
+5. Adds waypoint markers from the hydrated `waypoints` GeoJSON. Each marker carries a Leaflet tooltip whose body is built from per-line `<div>`s: `<div class="kntnt-gpx-blocks-tooltip-name">` for the GPX `name` (when `tooltipShowName` is on) and `<div class="kntnt-gpx-blocks-tooltip-desc">` for the GPX `desc` (when `tooltipShowDesc` is on). Both row contents come from GPX content and are inserted via `textContent`, so source markup never reaches the DOM as HTML. When both toggles are off — or when the source has neither `name` nor `desc` — no tooltip is bound to the marker; sticky-on-click only applies to markers with a bound tooltip.
 6. Subscribes to consent transitions via `window.kntnt_gpx_blocks.onConsentChanged( handler )`. On a `'granting'` transition, mounts Leaflet (idempotent — guarded by the per-element `mountedMaps` WeakMap). On a `'denying'` transition, tears down via `map.remove()`. Editor bypass skips this subscription entirely.
 7. Attaches the polyline scrub cycle: hover writes `fraction = index / (length - 1)` to `state[mapId].fraction`; press-and-drag on the polyline disables `map.dragging` for the duration of the press and follows the pointer over the entire map until release. A document-level `pointerup` ends the scrub and re-enables drag. A `pointerleave` on the block element nulls the fraction unless a scrub is in progress.
 8. Attaches the wheel handler on the block element: `Cmd`/`Ctrl`+wheel and trackpad pinch (delivered as a wheel event with `ctrlKey:true`) zoom around the cursor; trackpad two-finger pan (wheel with `deltaMode === 0` and no modifier) pans the map *only when `enableDrag` is true* — when drag-to-pan is disabled in the sidebar, the gesture falls through to the hint path so the page scrolls and the modifier-key overlay surfaces (the "Drag to pan" toggle is honoured across all input modalities, not just mouse and single-touch drag); a regular mouse wheel (`deltaMode === 1+` and no modifier) does not move the map but surfaces a brief overlay reminding the user to hold the modifier to zoom, and the page scrolls past the map normally.

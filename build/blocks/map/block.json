@@ -92,27 +92,87 @@
       "type": "string",
       "default": ""
     },
-    "waypointLabelBackground": {
+    "tooltipShowName": {
+      "type": "boolean",
+      "default": true
+    },
+    "tooltipShowDesc": {
+      "type": "boolean",
+      "default": true
+    },
+    "tooltipBackground": {
+      "type": "string",
+      "default": "#000000cc"
+    },
+    "tooltipNameColor": {
+      "type": "string",
+      "default": "#ffffff"
+    },
+    "tooltipNameFontFamily": {
       "type": "string",
       "default": ""
     },
-    "waypointLabelColor": {
+    "tooltipNameFontSize": {
       "type": "string",
       "default": ""
     },
-    "waypointLabelFontFamily": {
+    "tooltipNameFontWeight": {
+      "type": "string",
+      "default": "700"
+    },
+    "tooltipNameFontStyle": {
       "type": "string",
       "default": ""
     },
-    "waypointLabelFontSize": {
+    "tooltipNameLineHeight": {
       "type": "string",
       "default": ""
     },
-    "waypointLabelFontWeight": {
+    "tooltipNameLetterSpacing": {
       "type": "string",
       "default": ""
     },
-    "waypointLabelFontStyle": {
+    "tooltipNameTextDecoration": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipNameTextTransform": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescColor": {
+      "type": "string",
+      "default": "#dddddd"
+    },
+    "tooltipDescFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescFontStyle": {
+      "type": "string",
+      "default": "italic"
+    },
+    "tooltipDescLineHeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescLetterSpacing": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescTextDecoration": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDescTextTransform": {
       "type": "string",
       "default": ""
     }

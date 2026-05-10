@@ -732,10 +732,10 @@ test( 'render output omits track-cursor-color CSS variable when trackCursorColor
 } );
 
 // ---------------------------------------------------------------------------
-// Waypoint CSS variables — invalid waypointLabelFontWeight emits no CSS var
+// Tooltip CSS variables — invalid tooltipNameFontWeight emits no CSS var
 // ---------------------------------------------------------------------------
 
-test( 'render output omits waypoint-label-font-weight CSS variable when weight is unsafe', function (): void {
+test( 'render output omits tooltip-name-font-weight CSS variable when weight is unsafe', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 62, $coords );
@@ -750,15 +750,175 @@ test( 'render output omits waypoint-label-font-weight CSS variable when weight i
 
 	$html = Render_Map::render(
 		[
-			'attachmentId'            => 62,
-			'mapId'                   => 'map-wpt-weight',
-			'waypointLabelFontWeight' => 'expression(alert(1))',
+			'attachmentId'          => 62,
+			'mapId'                 => 'map-tooltip-weight',
+			'tooltipNameFontWeight' => 'expression(alert(1))',
 		],
 		'',
 		map_fake_block(),
 	);
 
-	expect( $html )->not->toContain( '--kntnt-gpx-blocks-waypoint-label-font-weight' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-tooltip-name-font-weight' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tooltip CSS variables — valid hex8 tooltipBackground emits the CSS var
+// ---------------------------------------------------------------------------
+
+test( 'render output includes tooltip-bg CSS variable for valid hex8 tooltipBackground', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 80, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 80, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'      => 80,
+			'mapId'             => 'map-tt-bg-hex8',
+			'tooltipBackground' => '#000000cc',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-tooltip-bg: #000000cc' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tooltip CSS variables — rgba(...) tooltipBackground is rejected (hex-only)
+// ---------------------------------------------------------------------------
+
+test( 'render output omits tooltip-bg CSS variable for rgba() tooltipBackground', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 81, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 81, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'      => 81,
+			'mapId'             => 'map-tt-bg-rgba',
+			'tooltipBackground' => 'rgba(0,0,0,0.8)',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-tooltip-bg' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tooltip CSS variables — javascript: payload is rejected
+// ---------------------------------------------------------------------------
+
+test( 'render output omits tooltip-bg CSS variable for javascript: payload', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 82, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 82, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'      => 82,
+			'mapId'             => 'map-tt-bg-bad',
+			'tooltipBackground' => 'javascript:alert(1)',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-tooltip-bg' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tooltip toggles — both default to true in the hydrated state
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state includes tooltipShowName and tooltipShowDesc as true by default', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 83, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 83, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured ): void {
+			$captured = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 83,
+			'mapId'        => 'map-tt-defaults',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured['map-tt-defaults']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['tooltipShowName'] )->toBeTrue();
+	expect( $settings['tooltipShowDesc'] )->toBeTrue();
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tooltip toggles — explicit false propagates into the hydrated state
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state propagates tooltipShowName and tooltipShowDesc when set to false', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 84, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 84, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured ): void {
+			$captured = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId'     => 84,
+			'mapId'            => 'map-tt-toggles-off',
+			'tooltipShowName'  => false,
+			'tooltipShowDesc'  => false,
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured['map-tt-toggles-off']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['tooltipShowName'] )->toBeFalse();
+	expect( $settings['tooltipShowDesc'] )->toBeFalse();
 
 } );
 

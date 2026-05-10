@@ -100,14 +100,41 @@ final class Render_Map {
 		$track_color        = self::sanitize_color( $attributes['trackColor'] ?? '' );
 		$track_cursor_color = self::sanitize_color( $attributes['trackCursorColor'] ?? '' );
 
-		// Read and sanitize the seven waypoint styling attributes.
-		$waypoint_color          = self::sanitize_color( $attributes['waypointColor'] ?? '' );
-		$waypoint_label_bg       = self::sanitize_color( $attributes['waypointLabelBackground'] ?? '' );
-		$waypoint_label_color    = self::sanitize_color( $attributes['waypointLabelColor'] ?? '' );
-		$waypoint_label_family   = self::sanitize_font_family( $attributes['waypointLabelFontFamily'] ?? '' );
-		$waypoint_label_size     = self::sanitize_font_size( $attributes['waypointLabelFontSize'] ?? '' );
-		$waypoint_label_weight   = self::sanitize_font_weight( $attributes['waypointLabelFontWeight'] ?? '' );
-		$waypoint_label_style    = self::sanitize_font_style( $attributes['waypointLabelFontStyle'] ?? '' );
+		// Read and sanitize the waypoint marker colour.
+		$waypoint_color = self::sanitize_color( $attributes['waypointColor'] ?? '' );
+
+		// Read the two waypoint-info tooltip toggles. Both default on; setting
+		// either off suppresses the corresponding line in the rendered tooltip.
+		// When both are off, view.ts binds no tooltip at all.
+		$tooltip_show_name = isset( $attributes['tooltipShowName'] ) ? (bool) $attributes['tooltipShowName'] : true;
+		$tooltip_show_desc = isset( $attributes['tooltipShowDesc'] ) ? (bool) $attributes['tooltipShowDesc'] : true;
+
+		// Read and sanitize the tooltip background — hex-only, accepts alpha
+		// channel via #RRGGBBAA and #RGBA. WordPress's ColorPicker with
+		// `enableAlpha: true` produces hex8 by default.
+		$tooltip_background = self::sanitize_alpha_hex_color( $attributes['tooltipBackground'] ?? '' );
+
+		// Read and sanitize the per-line tooltip styling attributes — colour
+		// plus the seven aspects of WordPress's standard TypographyToolsPanel.
+		$tooltip_name_color           = self::sanitize_alpha_hex_color( $attributes['tooltipNameColor'] ?? '' );
+		$tooltip_name_family          = self::sanitize_font_family( $attributes['tooltipNameFontFamily'] ?? '' );
+		$tooltip_name_size            = self::sanitize_font_size( $attributes['tooltipNameFontSize'] ?? '' );
+		$tooltip_name_weight          = self::sanitize_font_weight( $attributes['tooltipNameFontWeight'] ?? '' );
+		$tooltip_name_style           = self::sanitize_font_style( $attributes['tooltipNameFontStyle'] ?? '' );
+		$tooltip_name_line_height     = self::sanitize_line_height( $attributes['tooltipNameLineHeight'] ?? '' );
+		$tooltip_name_letter_spacing  = self::sanitize_length( $attributes['tooltipNameLetterSpacing'] ?? '' );
+		$tooltip_name_text_decoration = self::sanitize_text_decoration( $attributes['tooltipNameTextDecoration'] ?? '' );
+		$tooltip_name_text_transform  = self::sanitize_text_transform( $attributes['tooltipNameTextTransform'] ?? '' );
+
+		$tooltip_desc_color           = self::sanitize_alpha_hex_color( $attributes['tooltipDescColor'] ?? '' );
+		$tooltip_desc_family          = self::sanitize_font_family( $attributes['tooltipDescFontFamily'] ?? '' );
+		$tooltip_desc_size            = self::sanitize_font_size( $attributes['tooltipDescFontSize'] ?? '' );
+		$tooltip_desc_weight          = self::sanitize_font_weight( $attributes['tooltipDescFontWeight'] ?? '' );
+		$tooltip_desc_style           = self::sanitize_font_style( $attributes['tooltipDescFontStyle'] ?? '' );
+		$tooltip_desc_line_height     = self::sanitize_line_height( $attributes['tooltipDescLineHeight'] ?? '' );
+		$tooltip_desc_letter_spacing  = self::sanitize_length( $attributes['tooltipDescLetterSpacing'] ?? '' );
+		$tooltip_desc_text_decoration = self::sanitize_text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
+		$tooltip_desc_text_transform  = self::sanitize_text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
 
 		// No attachment configured yet — the editor shows MediaPlaceholder instead.
 		if ( $attachment_id <= 0 ) {
@@ -191,6 +218,8 @@ final class Render_Map {
 					'enablePinchZoom'       => $enable_pinch_zoom,
 					'enableDoubleClickZoom' => $enable_double_click_zoom,
 					'enableKeyboard'        => $enable_keyboard,
+					'tooltipShowName'       => $tooltip_show_name,
+					'tooltipShowDesc'       => $tooltip_show_desc,
 				],
 				'fraction'      => null,
 				'scrollHint'    => [
@@ -223,28 +252,77 @@ final class Render_Map {
 			$style_parts[] = '--kntnt-gpx-blocks-track-cursor-color: ' . esc_attr( $track_cursor_color );
 		}
 
-		// Append a CSS custom property for each non-empty, validated waypoint
-		// styling attribute. Empty strings fall back to the SCSS-defined defaults.
+		// Waypoint marker colour is independent of the tooltip styling; empty
+		// falls back to the SCSS-defined default.
 		if ( '' !== $waypoint_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-waypoint-color: ' . esc_attr( $waypoint_color );
 		}
-		if ( '' !== $waypoint_label_bg ) {
-			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-bg: ' . esc_attr( $waypoint_label_bg );
+
+		// Tooltip background flows into the .leaflet-tooltip rule and into the
+		// arrow-tip pseudo-element so a semi-transparent background colours the
+		// arrow consistently.
+		if ( '' !== $tooltip_background ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-bg: ' . esc_attr( $tooltip_background );
 		}
-		if ( '' !== $waypoint_label_color ) {
-			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-color: ' . esc_attr( $waypoint_label_color );
+
+		// Tooltip name-line custom properties — empty strings fall back to the
+		// SCSS-defined defaults so the theme inherits cleanly.
+		if ( '' !== $tooltip_name_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-color: ' . esc_attr( $tooltip_name_color );
 		}
-		if ( '' !== $waypoint_label_family ) {
-			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-family: ' . esc_attr( $waypoint_label_family );
+		if ( '' !== $tooltip_name_family ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-font-family: ' . esc_attr( $tooltip_name_family );
 		}
-		if ( '' !== $waypoint_label_size ) {
-			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-size: ' . esc_attr( $waypoint_label_size );
+		if ( '' !== $tooltip_name_size ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-font-size: ' . esc_attr( $tooltip_name_size );
 		}
-		if ( '' !== $waypoint_label_weight ) {
-			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-weight: ' . esc_attr( $waypoint_label_weight );
+		if ( '' !== $tooltip_name_weight ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-font-weight: ' . esc_attr( $tooltip_name_weight );
 		}
-		if ( '' !== $waypoint_label_style ) {
-			$style_parts[] = '--kntnt-gpx-blocks-waypoint-label-font-style: ' . esc_attr( $waypoint_label_style );
+		if ( '' !== $tooltip_name_style ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-font-style: ' . esc_attr( $tooltip_name_style );
+		}
+		if ( '' !== $tooltip_name_line_height ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-line-height: ' . esc_attr( $tooltip_name_line_height );
+		}
+		if ( '' !== $tooltip_name_letter_spacing ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-letter-spacing: ' . esc_attr( $tooltip_name_letter_spacing );
+		}
+		if ( '' !== $tooltip_name_text_decoration ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-text-decoration: ' . esc_attr( $tooltip_name_text_decoration );
+		}
+		if ( '' !== $tooltip_name_text_transform ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-name-text-transform: ' . esc_attr( $tooltip_name_text_transform );
+		}
+
+		// Tooltip description-line custom properties — same fall-back contract
+		// as the name line above.
+		if ( '' !== $tooltip_desc_color ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-color: ' . esc_attr( $tooltip_desc_color );
+		}
+		if ( '' !== $tooltip_desc_family ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-font-family: ' . esc_attr( $tooltip_desc_family );
+		}
+		if ( '' !== $tooltip_desc_size ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-font-size: ' . esc_attr( $tooltip_desc_size );
+		}
+		if ( '' !== $tooltip_desc_weight ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-font-weight: ' . esc_attr( $tooltip_desc_weight );
+		}
+		if ( '' !== $tooltip_desc_style ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-font-style: ' . esc_attr( $tooltip_desc_style );
+		}
+		if ( '' !== $tooltip_desc_line_height ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-line-height: ' . esc_attr( $tooltip_desc_line_height );
+		}
+		if ( '' !== $tooltip_desc_letter_spacing ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-letter-spacing: ' . esc_attr( $tooltip_desc_letter_spacing );
+		}
+		if ( '' !== $tooltip_desc_text_decoration ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-text-decoration: ' . esc_attr( $tooltip_desc_text_decoration );
+		}
+		if ( '' !== $tooltip_desc_text_transform ) {
+			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-text-transform: ' . esc_attr( $tooltip_desc_text_transform );
 		}
 
 		$style = implode( '; ', $style_parts );
@@ -508,9 +586,11 @@ final class Render_Map {
 	/**
 	 * Validates and returns a hex colour string, or empty string on invalid input.
 	 *
-	 * Accepts hex colours (#rgb, #rrggbb, #rrggbbaa) via sanitize_hex_color.
-	 * Returns empty string for blank input so the CSS falls back to the
-	 * hardcoded default in style.scss rather than emitting a broken value.
+	 * Accepts hex colours via WordPress's `sanitize_hex_color`. Returns empty
+	 * string for blank input so the CSS falls back to the hardcoded default in
+	 * style.scss rather than emitting a broken value. Used for the non-alpha
+	 * colour pickers (track, cursor, marker); the alpha-aware tooltip colour
+	 * pickers go through `sanitize_hex_color` instead.
 	 *
 	 * @since 1.0.0
 	 *
@@ -527,6 +607,43 @@ final class Render_Map {
 		// sanitize_hex_color returns null on failure; coerce to empty string.
 		$clean = sanitize_hex_color( $raw );
 		return is_string( $clean ) ? $clean : '';
+
+	}
+
+	/**
+	 * Validates a hex colour with optional alpha channel, or returns empty string.
+	 *
+	 * Accepts `#RGB`, `#RGBA`, `#RRGGBB`, and `#RRGGBBAA`. Anything else — named
+	 * colours, `rgb(...)`, `rgba(...)`, `hsl(...)`, CSS variables, attempts at
+	 * URL injection — is rejected by returning empty string. WordPress's
+	 * `ColorPicker` with `enableAlpha: true` writes the hex8 form by default,
+	 * so this is sufficient for the tooltip colour attributes.
+	 *
+	 * Self-contained on purpose: this helper mirrors the eventual contract of
+	 * the shared `\Kntnt\Gpx_Blocks\Rendering\Color_Sanitizer::sanitize()` (see
+	 * issue #73 / #74), so #74 can fold it into the shared validator without
+	 * touching call sites here. Named with the `_alpha_` infix so the call
+	 * site is unambiguous next to WordPress's narrower global
+	 * `sanitize_hex_color()` used by the non-alpha pickers.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated hex colour or empty string.
+	 */
+	private static function sanitize_alpha_hex_color( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		// Match exactly #RGB / #RGBA / #RRGGBB / #RRGGBBAA — case-insensitive.
+		if ( preg_match( '/^#(?:[A-Fa-f0-9]{3,4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $raw ) === 1 ) {
+			return $raw;
+		}
+
+		return '';
 
 	}
 
@@ -635,6 +752,124 @@ final class Render_Map {
 		}
 
 		if ( preg_match( '/^(normal|italic|oblique)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS line-height value.
+	 *
+	 * Accepts unitless multipliers (e.g. `1.5`), numeric lengths with the
+	 * common length units, and the keyword `normal`. Returns empty string on
+	 * anything else so the CSS falls back to the SCSS default.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated line-height string or empty string.
+	 */
+	private static function sanitize_line_height( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( 'normal' === $raw ) {
+			return $raw;
+		}
+
+		// Unitless multiplier or a numeric length with px/em/rem/%.
+		if ( preg_match( '/^(\d+(\.\d+)?)(px|em|rem|%)?$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a generic CSS length used for letter-spacing.
+	 *
+	 * Accepts numeric values with `px`, `em`, `rem`, or `%`, an optional leading
+	 * minus sign (negative letter-spacing is meaningful), and the keyword
+	 * `normal`. Anything else is rejected.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated length string or empty string.
+	 */
+	private static function sanitize_length( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( 'normal' === $raw ) {
+			return $raw;
+		}
+
+		// Optional leading minus, then digits with optional fraction, with px/em/rem/%.
+		if ( preg_match( '/^-?\d+(\.\d+)?(px|em|rem|%)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS text-decoration value against the accepted keyword whitelist.
+	 *
+	 * Limited to the four single-keyword values core's TypographyToolsPanel
+	 * surfaces (`none`, `underline`, `overline`, `line-through`). Composite
+	 * values like `underline dotted red` are not exposed by the panel and are
+	 * rejected here for safety.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated text-decoration string or empty string.
+	 */
+	private static function sanitize_text_decoration( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(none|underline|overline|line-through)$/', $raw ) ) {
+			return $raw;
+		}
+
+		return '';
+
+	}
+
+	/**
+	 * Validates a CSS text-transform value against the accepted keyword whitelist.
+	 *
+	 * Matches the keyword set core's TypographyToolsPanel offers (`none`,
+	 * `uppercase`, `lowercase`, `capitalize`).
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $raw Raw attribute value.
+	 *
+	 * @return string Validated text-transform string or empty string.
+	 */
+	private static function sanitize_text_transform( mixed $raw ): string {
+
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(none|uppercase|lowercase|capitalize)$/', $raw ) ) {
 			return $raw;
 		}
 

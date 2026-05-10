@@ -87,6 +87,10 @@ interface MapSettings {
 	readonly enableDoubleClickZoom: boolean;
 	/** Enable keyboard navigation. Required for accessibility. */
 	readonly enableKeyboard: boolean;
+	/** Show the waypoint name as the first line of the tooltip when present. */
+	readonly tooltipShowName: boolean;
+	/** Show the waypoint description as the second line of the tooltip when present. */
+	readonly tooltipShowDesc: boolean;
 }
 
 /**
@@ -868,34 +872,35 @@ function bootMount(
 						renderer: svgRenderer,
 					} );
 
-					// Build the tooltip label from name and optional desc.
+					// Build the tooltip body from name and optional desc, gated
+					// by the per-line toggles. Each surviving line lives in its
+					// own `<div>` so the stylesheet can address it via the
+					// `kntnt-gpx-blocks-tooltip-{name,desc}` class. The `name`
+					// and `desc` strings come from GPX content and are inserted
+					// via `textContent`, so no markup in the source ever
+					// reaches the DOM as HTML.
 					const props = feature.properties ?? {};
-					const name =
+					const rawName =
 						typeof props.name === 'string' ? props.name : '';
-					const desc =
+					const rawDesc =
 						typeof props.desc === 'string' ? props.desc : '';
+					const name = settings.tooltipShowName ? rawName : '';
+					const desc = settings.tooltipShowDesc ? rawDesc : '';
 
 					if ( name || desc ) {
-						// Build the tooltip DOM element using text nodes so
-						// that no GPX content can inject HTML.
 						const tooltipEl = document.createElement( 'div' );
-						const labelLines: string[] = [];
 						if ( name ) {
-							labelLines.push( name );
+							const nameEl = document.createElement( 'div' );
+							nameEl.className = 'kntnt-gpx-blocks-tooltip-name';
+							nameEl.textContent = name;
+							tooltipEl.appendChild( nameEl );
 						}
 						if ( desc ) {
-							labelLines.push( desc );
+							const descEl = document.createElement( 'div' );
+							descEl.className = 'kntnt-gpx-blocks-tooltip-desc';
+							descEl.textContent = desc;
+							tooltipEl.appendChild( descEl );
 						}
-						labelLines.forEach( ( line, i ) => {
-							if ( i > 0 ) {
-								tooltipEl.appendChild(
-									document.createElement( 'br' )
-								);
-							}
-							tooltipEl.appendChild(
-								document.createTextNode( line )
-							);
-						} );
 
 						// Bind with `permanent: false` so Leaflet's built-in
 						// hover handlers drive the transient open-on-mouseover

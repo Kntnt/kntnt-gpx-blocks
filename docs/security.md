@@ -65,11 +65,11 @@ Every piece of derived data is escaped at the point of HTML output:
 
 | Source | Context | Escaping function |
 |---|---|---|
-| Waypoint `name` | Element text | `esc_html()` |
-| Waypoint `desc` | Element text | `esc_html()` |
-| Waypoint `name`/`desc` in tooltip | HTML attribute | `esc_attr()` (Leaflet handles this internally for tooltips, but the plugin double-escapes when injecting raw markup) |
+| Waypoint `name` | DOM text node | `Element.textContent = name` (no markup parsing) |
+| Waypoint `desc` | DOM text node | `Element.textContent = desc` (no markup parsing) |
 | GPX file URL for download control | URL in `<a href>` | `esc_url()` (and the URL is `wp_get_attachment_url()` which is already validated) |
-| Editor-supplied colour values | CSS custom property value | `sanitize_hex_color()` then `esc_attr()` |
+| Editor-supplied solid colour values (track / cursor / waypoint dot) | CSS custom property value | `sanitize_hex_color()` then `esc_attr()` |
+| Editor-supplied alpha-aware colour values (`tooltipBackground`, `tooltipNameColor`, `tooltipDescColor`) | CSS custom property value | Local hex-3/4/6/8 regex whitelist (mirrors the eventual shared `Color_Sanitizer` contract; rejects `rgb(...)`, `rgba(...)`, `hsl(...)`, named colours, CSS variable references, and any URL-injection attempt) then `esc_attr()` |
 | Editor-supplied font references | CSS custom property value | Whitelist regex (matches CSS variable references and a handful of keywords); fallback to default if outside the whitelist |
 | Block class names | HTML attribute | `sanitize_html_class()` for any user-derived parts; static classes are concatenated as-is |
 | Statistics values | Element text | `esc_html()` after `number_format_i18n()` |
@@ -83,7 +83,7 @@ The principal XSS vector for this plugin would be GPX content (waypoint names, d
 
 1. The parser stores raw strings; it never executes or evaluates them.
 2. Render functions escape every interpolation at the point of output.
-3. The Leaflet binding for waypoint tooltips uses Leaflet's own escaped tooltip mechanism, which sets `textContent` rather than `innerHTML`.
+3. The view module builds waypoint tooltip bodies as per-line `<div>` elements whose `textContent` is set from the GPX `name` and `desc`, never `innerHTML`. Source markup cannot reach the DOM as HTML.
 
 We do **not** trust the HTML in `<desc>` even if a GPX producer wrote markup there. Description text is treated as plain text only. If a future feature needs rich HTML in descriptions, it must go through `wp_kses_post()` before output, with a documented allowlist.
 
