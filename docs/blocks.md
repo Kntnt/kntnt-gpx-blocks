@@ -65,6 +65,8 @@ The block toolbar additionally renders a `MediaReplaceFlow` inside `<BlockContro
 
 `block.json` declares `supports.align: [ "wide", "full" ]` (toolbar offers None / Wide / Full — `left`/`right`/`center` are intentionally excluded) and `supports.anchor: true` (Advanced panel exposes the HTML anchor field). `customClassName` stays at its core default (`true`) so the Advanced panel's "Additional CSS class(es)" field remains available. The frontend wrapper is emitted via `get_block_wrapper_attributes()`, so all three propagate to the rendered HTML alongside any third-party `render_block_data` filters.
 
+The full `border` (color, radius, style, width) and `shadow` block supports are also enabled, so the editor's standard Border and Shadow panels are available on the block. The block root sets `overflow: hidden` in its stylesheet so border-radius cleanly clips Leaflet's absolutely-positioned tile layers to the rounded edge; `box-shadow` is unaffected by `overflow` on the same element, so shadows still render outside the wrapper.
+
 ### Render output
 
 ```html
@@ -176,6 +178,8 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
 ### Block supports
 
 `block.json` declares `supports.align: [ "wide", "full" ]` (toolbar offers None / Wide / Full — `left`/`right`/`center` are intentionally excluded) and `supports.anchor: true` (Advanced panel exposes the HTML anchor field). `customClassName` stays at its core default (`true`). Both the normal-data path and the empty-data fallback emit their wrapper through `get_block_wrapper_attributes()`, so alignment, anchor, and additional className all propagate even when the track has no elevation samples.
+
+The full `border` (color, radius, style, width) and `shadow` block supports are also enabled, so the editor's standard Border and Shadow panels are available on the block. The block root sets `overflow: hidden` in its stylesheet so border-radius cleanly clips the inline SVG to the rounded edge; `box-shadow` is unaffected by `overflow` on the same element, so shadows still render outside the wrapper.
 
 ### Render output
 

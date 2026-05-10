@@ -15,7 +15,14 @@
 	"render": "file:./render.php",
 	"supports": {
 		"align": [ "wide", "full" ],
-		"anchor": true
+		"anchor": true,
+		"border": {
+			"color": true,
+			"radius": true,
+			"style": true,
+			"width": true
+		},
+		"shadow": true
 	},
 	"attributes": {
 		"attachmentId": {

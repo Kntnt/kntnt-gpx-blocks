@@ -11,6 +11,12 @@
 	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
 	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
 
+	// Clip Leaflet's absolutely-positioned tile layers to the block's rounded
+	// corners when the editor sets a border-radius via the core Border panel.
+	// `box-shadow` is unaffected by `overflow` on the same element, so the
+	// core Shadow panel still renders shadows outside the wrapper as expected.
+	overflow: hidden;
+
 	// Track polyline and cursor marker colour defaults — overridden per-block via
 	// inline style when the editor sets non-empty attribute values.
 	--kntnt-gpx-blocks-track-color: #0073aa;

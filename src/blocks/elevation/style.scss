@@ -11,6 +11,12 @@
 	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 4 / 1);
 	min-height: var(--kntnt-gpx-blocks-min-height, 120px);
 
+	// Clip the inline SVG to the block's rounded corners when the editor
+	// sets a border-radius via the core Border panel. `box-shadow` is
+	// unaffected by `overflow` on the same element, so the core Shadow
+	// panel still renders shadows outside the wrapper as expected.
+	overflow: hidden;
+
 	// ─── Colour defaults ──────────────────────────────────────────────────
 	// These are the fallback values used when the editor leaves a field empty.
 	// All seven properties must be declared here so var() always resolves even

@@ -23,7 +23,14 @@
       "wide",
       "full"
     ],
-    "anchor": true
+    "anchor": true,
+    "border": {
+      "color": true,
+      "radius": true,
+      "style": true,
+      "width": true
+    },
+    "shadow": true
   },
   "attributes": {
     "attachmentId": {
