@@ -40,6 +40,7 @@ import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
 
 import { flattenPresets } from '../shared/flatten-presets';
+import { useAutoPickMapId } from './use-auto-pick-map-id';
 
 /**
  * Attributes for the GPX Elevation block.
@@ -280,10 +281,12 @@ function TypographyToolsPanel( {
  * @since 1.0.0
  *
  * @param {Object}   props               Standard Gutenberg block edit props.
+ * @param {string}   props.clientId      This block's unique client ID.
  * @param {Object}   props.attributes    Current block attributes.
  * @param {Function} props.setAttributes Attribute setter.
  */
 export const ElevationEdit = ( {
+	clientId,
 	attributes,
 	setAttributes,
 }: BlockEditProps< ElevationAttributes > ): JSX.Element => {
@@ -304,6 +307,13 @@ export const ElevationEdit = ( {
 		tooltipFontWeight,
 		tooltipFontStyle,
 	} = attributes;
+
+	// Pre-bind a freshly inserted block to the closest preceding GPX Map in
+	// document order. One-shot — see `useAutoPickMapId` for the guard
+	// semantics. When no Map precedes the Elevation, the attribute stays as
+	// the default `'auto'` and the existing single-map resolution path takes
+	// over downstream.
+	useAutoPickMapId( clientId, mapId, ( next ) => setAttributes( next ) );
 
 	// Pull the merged theme typography presets so the unified Typography
 	// panels expose the same Standard/preset choices as core Paragraph/Group.
@@ -453,14 +463,49 @@ export const ElevationEdit = ( {
 		innerBlocks: [],
 	} ) );
 
-	// Prepend the auto option so it is always first in the list.
-	const sourceOptions = [
-		{
-			label: __( 'Auto (single map on page)', 'kntnt-gpx-blocks' ),
-			value: 'auto',
-		},
-		...mapOptions,
-	];
+	// Build the picker option list. With two or more configured maps the
+	// "Auto" entry is omitted: it cannot resolve, so surfacing it as a
+	// selectable value would only invite an error state. With zero or one
+	// configured maps the picker is hidden altogether (see below), so the
+	// `sourceOptions` array is consumed only when the entries are real maps.
+	const showPicker = configuredMapBlocks.length >= 2;
+	const sourceOptions = showPicker
+		? mapOptions
+		: [
+				{
+					label: __(
+						'Auto (single map on page)',
+						'kntnt-gpx-blocks'
+					),
+					value: 'auto',
+				},
+				...mapOptions,
+		  ];
+
+	// Auto-bind to the single configured map. When exactly one Map block is
+	// configured on the page the picker is hidden and the user has no way to
+	// pick anything else, so the attribute is kept aligned with that map's
+	// id. The check is symmetric: we only write when the current value would
+	// produce a different resolution (different id, or the "auto"/"" sentinel
+	// that resolves the same way only by accident of count === 1).
+	const singleMapId =
+		configuredMapBlocks.length === 1
+			? ( configuredMapBlocks[ 0 ].attributes.mapId as
+					| string
+					| undefined ) ?? ''
+			: '';
+	useEffect( () => {
+		if ( configuredMapBlocks.length !== 1 ) {
+			return;
+		}
+		if ( singleMapId === '' ) {
+			return;
+		}
+		if ( mapId === singleMapId ) {
+			return;
+		}
+		setAttributes( { mapId: singleMapId } );
+	}, [ configuredMapBlocks.length, singleMapId, mapId, setAttributes ] );
 
 	return (
 		<>
@@ -470,19 +515,21 @@ export const ElevationEdit = ( {
 						{ errorMessage }
 					</Notice>
 				) }
-				<PanelBody
-					title={ __( 'Datakälla', 'kntnt-gpx-blocks' ) }
-					initialOpen={ true }
-				>
-					<SelectControl
-						label={ __( 'Map', 'kntnt-gpx-blocks' ) }
-						value={ mapId }
-						options={ sourceOptions }
-						onChange={ ( value: string ) =>
-							setAttributes( { mapId: value } )
-						}
-					/>
-				</PanelBody>
+				{ showPicker && (
+					<PanelBody
+						title={ __( 'Datakälla', 'kntnt-gpx-blocks' ) }
+						initialOpen={ true }
+					>
+						<SelectControl
+							label={ __( 'Map', 'kntnt-gpx-blocks' ) }
+							value={ mapId }
+							options={ sourceOptions }
+							onChange={ ( value: string ) =>
+								setAttributes( { mapId: value } )
+							}
+						/>
+					</PanelBody>
+				) }
 
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings

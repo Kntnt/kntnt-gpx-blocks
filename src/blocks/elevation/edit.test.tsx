@@ -77,7 +77,11 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Mock @wordpress/data — useSelect is the only entry point used.
+// Mock @wordpress/data — useSelect is the only entry point used. The select
+// callback returns the merged surface every consumer needs: `getBlocks` and
+// `getMedia` for the inspector / preview wiring, plus the `getBlockOrder` /
+// `getBlockName` / `getBlockAttributes` trio that `useAutoPickMapId` reads
+// when deciding whether to pre-bind this block to a preceding Map.
 jest.mock(
 	'@wordpress/data',
 	() => ( {
@@ -86,6 +90,9 @@ jest.mock(
 			const select = () => ( {
 				getBlocks: () => [],
 				getMedia: () => undefined,
+				getBlockOrder: () => [],
+				getBlockName: () => undefined,
+				getBlockAttributes: () => undefined,
 			} );
 			return fn( select );
 		},
