@@ -30,6 +30,10 @@
       "style": true,
       "width": true
     },
+    "dimensions": {
+      "aspectRatio": true,
+      "minHeight": true
+    },
     "shadow": true,
     "spacing": {
       "margin": true
@@ -41,18 +45,6 @@
       "default": 0
     },
     "mapId": {
-      "type": "string",
-      "default": ""
-    },
-    "aspectRatio": {
-      "type": "string",
-      "default": "16/9"
-    },
-    "minHeight": {
-      "type": "string",
-      "default": "240px"
-    },
-    "maxHeight": {
       "type": "string",
       "default": ""
     },

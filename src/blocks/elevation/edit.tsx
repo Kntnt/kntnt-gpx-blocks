@@ -1,11 +1,13 @@
 /**
  * GPX Elevation edit component.
  *
- * Renders a data-source picker, layout controls, colour settings, and
- * typography panels in the inspector sidebar, and a live ServerSideRender
- * preview in the block canvas. Colour and typography changes are injected as
- * inline CSS variables on the wrapper div so the editor preview updates
- * instantly without a round-trip to ServerSideRender.
+ * Renders a data-source picker, colour settings, and typography panels in
+ * the inspector sidebar, and a live ServerSideRender preview in the block
+ * canvas. Sizing is delegated to core's `dimensions` block supports — the
+ * standard Dimensions panel surfaces aspect-ratio and min-height controls.
+ * Colour and typography changes are injected as inline CSS variables on the
+ * wrapper div so the editor preview updates instantly without a round-trip
+ * to ServerSideRender.
  *
  * @since 1.0.0
  */
@@ -27,7 +29,6 @@ import {
 	Notice,
 	PanelBody,
 	SelectControl,
-	TextControl,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
 	__experimentalToolsPanel as ToolsPanel,
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
@@ -47,8 +48,6 @@ import { flattenPresets } from '../shared/flatten-presets';
  */
 interface ElevationAttributes {
 	mapId: string;
-	aspectRatio: string;
-	minHeight: string;
 	backgroundColor: string;
 	axisColor: string;
 	axisLabelColor: string;
@@ -101,45 +100,6 @@ interface FontSizePreset {
 	slug: string;
 	size: string;
 }
-
-/**
- * Preset aspect-ratio options for the Layout panel dropdown.
- *
- * Elevation profiles are typically wider than tall (default `4/1`), but the
- * dropdown exposes the same unified list as GPX Map so editors get a
- * consistent set of presets across both blocks. The "Custom" sentinel causes
- * a TextControl to appear.
- *
- * @since 1.0.0
- */
-const ASPECT_RATIO_OPTIONS = [
-	{ label: '1 / 1', value: '1/1' },
-	{ label: '4 / 3', value: '4/3' },
-	{ label: '3 / 2', value: '3/2' },
-	{ label: '16 / 9', value: '16/9' },
-	{ label: '2 / 1', value: '2/1' },
-	{ label: '21 / 9', value: '21/9' },
-	{ label: '3 / 1', value: '3/1' },
-	{ label: '4 / 1', value: '4/1' },
-	{ label: __( 'Custom', 'kntnt-gpx-blocks' ), value: 'custom' },
-];
-
-/**
- * Sentinel value used in the aspect-ratio dropdown to mean "type your own".
- *
- * @since 1.0.0
- */
-const CUSTOM_RATIO_SENTINEL = 'custom';
-
-/**
- * Regex for basic CSS length validation in the min-height TextControl.
- *
- * Accepts values like `120px`, `12.5em`, `10rem`, `50%`. An empty string is
- * always valid (means "use the PHP-side default").
- *
- * @since 1.0.0
- */
-const CSS_LENGTH_RE = /^\d+(\.\d+)?(px|em|rem|%)$/;
 
 /**
  * Recursively collects all GPX Map blocks from a block tree.
@@ -330,8 +290,6 @@ export const ElevationEdit = ( {
 }: BlockEditProps< ElevationAttributes > ): JSX.Element => {
 	const {
 		mapId,
-		aspectRatio,
-		minHeight,
 		backgroundColor,
 		axisColor,
 		axisLabelColor,
@@ -416,6 +374,7 @@ export const ElevationEdit = ( {
 	}
 
 	const blockProps = useBlockProps( {
+		className: 'kntnt-gpx-blocks-elevation',
 		style: inlineStyle as React.CSSProperties,
 	} );
 
@@ -508,15 +467,6 @@ export const ElevationEdit = ( {
 		...mapOptions,
 	];
 
-	// Determine which dropdown value is active. When the stored aspect-ratio
-	// matches a preset, show the preset; otherwise show "Custom".
-	const presetValues = ASPECT_RATIO_OPTIONS.filter(
-		( o ) => o.value !== CUSTOM_RATIO_SENTINEL
-	).map( ( o ) => o.value );
-	const aspectRatioDropdown = presetValues.includes( aspectRatio )
-		? aspectRatio
-		: CUSTOM_RATIO_SENTINEL;
-
 	return (
 		<>
 			<InspectorControls>
@@ -535,58 +485,6 @@ export const ElevationEdit = ( {
 						options={ sourceOptions }
 						onChange={ ( value: string ) =>
 							setAttributes( { mapId: value } )
-						}
-					/>
-				</PanelBody>
-
-				<PanelBody title={ __( 'Layout', 'kntnt-gpx-blocks' ) }>
-					<SelectControl
-						label={ __( 'Aspect ratio', 'kntnt-gpx-blocks' ) }
-						value={ aspectRatioDropdown }
-						options={ ASPECT_RATIO_OPTIONS }
-						onChange={ ( value ) => {
-							if ( value !== CUSTOM_RATIO_SENTINEL ) {
-								setAttributes( { aspectRatio: value } );
-							} else {
-								// Keep the current stored value so the TextControl is
-								// pre-filled when the user switches to Custom.
-								setAttributes( { aspectRatio: '' } );
-							}
-						} }
-					/>
-					{ aspectRatioDropdown === CUSTOM_RATIO_SENTINEL && (
-						<TextControl
-							label={ __(
-								'Custom aspect ratio',
-								'kntnt-gpx-blocks'
-							) }
-							value={ aspectRatio }
-							placeholder="e.g. 5/1"
-							onChange={ ( value ) =>
-								setAttributes( { aspectRatio: value } )
-							}
-						/>
-					) }
-					<TextControl
-						label={ __( 'Minimum height', 'kntnt-gpx-blocks' ) }
-						value={ minHeight }
-						placeholder="e.g. 120px"
-						help={
-							minHeight !== '' &&
-							! CSS_LENGTH_RE.test( minHeight )
-								? __(
-										'Enter a valid CSS length, e.g. 120px, 12em, 50%.',
-										'kntnt-gpx-blocks'
-								  )
-								: ''
-						}
-						onChange={ ( value ) =>
-							setAttributes( {
-								minHeight:
-									value === '' || CSS_LENGTH_RE.test( value )
-										? value
-										: minHeight,
-							} )
 						}
 					/>
 				</PanelBody>
@@ -708,9 +606,13 @@ export const ElevationEdit = ( {
 					<ServerSideRender
 						block="kntnt-gpx-blocks/elevation"
 						attributes={ {
+							// Forward the block-supports-managed `style`
+							// attribute verbatim so server-side
+							// `get_block_wrapper_attributes()` re-emits the
+							// editor's chosen dimensions / border / shadow /
+							// spacing on the SSR-rendered wrapper.
+							style: attributes.style,
 							mapId,
-							aspectRatio,
-							minHeight,
 							backgroundColor,
 							axisColor,
 							axisLabelColor,

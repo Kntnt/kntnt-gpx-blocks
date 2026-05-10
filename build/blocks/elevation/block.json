@@ -32,6 +32,10 @@
       "style": true,
       "width": true
     },
+    "dimensions": {
+      "aspectRatio": true,
+      "minHeight": true
+    },
     "shadow": true,
     "spacing": {
       "padding": true,
@@ -42,14 +46,6 @@
     "mapId": {
       "type": "string",
       "default": "auto"
-    },
-    "aspectRatio": {
-      "type": "string",
-      "default": "4/1"
-    },
-    "minHeight": {
-      "type": "string",
-      "default": "120px"
     },
     "backgroundColor": {
       "type": "string",

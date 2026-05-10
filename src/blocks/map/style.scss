@@ -1,15 +1,20 @@
 // Styles shared between the editor and the frontend for the GPX Map block.
-// The block container's dimensions are driven by CSS custom properties so
-// that the PHP render callback's inline style is the single source of truth.
-// Leaflet's own stylesheet is imported in view.ts so that @wordpress/scripts
-// bundles it into the view-side CSS asset rather than the editor stylesheet.
+// Layout dimensions (`aspect-ratio`, `min-height`) come from core's
+// `dimensions` block supports, which emit the editor-chosen values inline on
+// the wrapper at render time. The `aspect-ratio: 3 / 1; min-height: 240px;`
+// rule below is the baseline shape applied when the editor leaves both
+// dimensions empty; the inline style from core's block supports overrides it
+// when set. Leaflet's own stylesheet is imported in view.ts so that
+// @wordpress/scripts bundles it into the view-side CSS asset rather than the
+// editor stylesheet.
 
 .kntnt-gpx-blocks-map {
-	// Layout driven by PHP-supplied CSS custom properties.
+	// Layout baseline; overridden inline by core's `dimensions` block supports
+	// when the editor sets either field.
 	display: block;
 	width: 100%;
-	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 16 / 9);
-	min-height: var(--kntnt-gpx-blocks-min-height, 240px);
+	aspect-ratio: 3 / 1;
+	min-height: 240px;
 
 	// Clip Leaflet's absolutely-positioned tile layers to the block's rounded
 	// corners when the editor sets a border-radius via the core Border panel.

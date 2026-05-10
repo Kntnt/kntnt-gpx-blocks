@@ -56,15 +56,18 @@ interface ApiError {
  * Attributes the preview reads. A subset of the Map block's attribute set —
  * only the ones that affect preview appearance.
  *
+ * Dimensions (`aspect-ratio`, `min-height`) are not listed here: the Map
+ * block delegates them to core's `dimensions` block supports, and the
+ * wrapper element produced by `useBlockProps()` in `edit.tsx` already
+ * carries the resulting inline style. Track and waypoint colours, by
+ * contrast, must be passed explicitly because Leaflet's canvas-rendered
+ * paths take their colour from JS path options rather than CSS.
+ *
  * @since 1.0.0
  */
 interface PreviewAttributes {
 	attachmentId: number;
-	aspectRatio: string;
-	minHeight: string;
-	maxHeight: string;
 	trackColor: string;
-	trackCursorColor: string;
 	waypointColor: string;
 }
 
@@ -111,41 +114,6 @@ const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
  */
 const TILE_ATTRIBUTION =
 	'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-/**
- * Build the inline style object that mirrors what Render_Map sets on the
- * frontend wrapper, so the editor preview occupies the same dimensions and
- * inherits the same CSS custom properties.
- *
- * @since 1.0.0
- *
- * @param attributes Preview attribute subset.
- * @return React inline-style object for the wrapper div.
- */
-function buildWrapperStyle(
-	attributes: PreviewAttributes
-): React.CSSProperties {
-	const style: Record< string, string | number > = {
-		'--kntnt-gpx-blocks-aspect-ratio': attributes.aspectRatio || '16/9',
-		'--kntnt-gpx-blocks-min-height': attributes.minHeight || '240px',
-	};
-
-	if ( attributes.maxHeight ) {
-		style.maxHeight = attributes.maxHeight;
-	}
-	if ( attributes.trackColor ) {
-		style[ '--kntnt-gpx-blocks-track-color' ] = attributes.trackColor;
-	}
-	if ( attributes.trackCursorColor ) {
-		style[ '--kntnt-gpx-blocks-track-cursor-color' ] =
-			attributes.trackCursorColor;
-	}
-	if ( attributes.waypointColor ) {
-		style[ '--kntnt-gpx-blocks-waypoint-color' ] = attributes.waypointColor;
-	}
-
-	return style as React.CSSProperties;
-}
 
 /**
  * Editor preview for the GPX Map block.
@@ -345,19 +313,24 @@ export const MapEditorPreview = ( {
 		};
 	}, [] );
 
-	// Build the wrapper style once per render so attribute changes (aspect
-	// ratio, min-height, max-height) take effect immediately.
-	const wrapperStyle = buildWrapperStyle( attributes );
+	// The wrapper element produced by `useBlockProps()` in `edit.tsx` already
+	// carries the layout: dimensions come from core's `dimensions` block
+	// supports and the project class triggers the shared style.scss baseline.
+	// MapEditorPreview's own elements simply fill that wrapper without
+	// asserting their own dimensions, so the editor's chosen aspect-ratio and
+	// min-height stay in effect both for the wrapper itself and for the
+	// Leaflet host inside it.
+	const fillParentStyle: React.CSSProperties = {
+		width: '100%',
+		height: '100%',
+	};
 
-	// Loading and error are intentionally rendered inside the same wrapper
-	// that hosts the map so the editor sees consistent dimensions throughout
-	// the load lifecycle — no layout jump when the map mounts.
+	// Loading and error are intentionally rendered inside the same fill-parent
+	// host that holds the map so the editor sees consistent dimensions
+	// throughout the load lifecycle — no layout jump when the map mounts.
 	if ( error ) {
 		return (
-			<div
-				className="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"
-				style={ wrapperStyle }
-			>
+			<div style={ fillParentStyle }>
 				<div className="kntnt-gpx-blocks-error">
 					<p>
 						<strong>
@@ -377,8 +350,7 @@ export const MapEditorPreview = ( {
 	return (
 		<div
 			ref={ containerRef }
-			className="wp-block-kntnt-gpx-blocks-map kntnt-gpx-blocks-map"
-			style={ wrapperStyle }
+			style={ fillParentStyle }
 			aria-busy={ loading ? 'true' : 'false' }
 		/>
 	);

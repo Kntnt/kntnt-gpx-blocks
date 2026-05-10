@@ -30,22 +30,6 @@ use Kntnt\Gpx_Blocks\Plugin;
 final class Render_Map {
 
 	/**
-	 * Default CSS aspect-ratio when the attribute is absent or invalid.
-	 *
-	 * @since 1.0.0
-	 * @var string
-	 */
-	private const DEFAULT_ASPECT_RATIO = '16/9';
-
-	/**
-	 * Default CSS min-height when the attribute is absent.
-	 *
-	 * @since 1.0.0
-	 * @var string
-	 */
-	private const DEFAULT_MIN_HEIGHT = '240px';
-
-	/**
 	 * Default Douglas-Peucker tolerance in metres when the filter returns
 	 * a non-numeric value.
 	 *
@@ -96,13 +80,6 @@ final class Render_Map {
 		$raw_map_id    = $attributes['mapId'] ?? '';
 		$map_id        = is_string( $raw_map_id ) && '' !== $raw_map_id ? $raw_map_id : 'map-default';
 
-		// Read and validate layout attributes.
-		$raw_ratio    = $attributes['aspectRatio'] ?? '';
-		$raw_mh       = $attributes['minHeight'] ?? '';
-		$raw_maxh     = $attributes['maxHeight'] ?? '';
-		$min_height   = is_string( $raw_mh ) && '' !== $raw_mh ? $raw_mh : self::DEFAULT_MIN_HEIGHT;
-		$max_height   = is_string( $raw_maxh ) ? $raw_maxh : '';
-
 		// Read the four control-overlay flags; coerce to bool with documented defaults.
 		$show_zoom_buttons = isset( $attributes['showZoomButtons'] ) ? (bool) $attributes['showZoomButtons'] : true;
 		$show_scale        = isset( $attributes['showScale'] ) ? (bool) $attributes['showScale'] : true;
@@ -131,13 +108,6 @@ final class Render_Map {
 		$waypoint_label_size     = self::sanitize_font_size( $attributes['waypointLabelFontSize'] ?? '' );
 		$waypoint_label_weight   = self::sanitize_font_weight( $attributes['waypointLabelFontWeight'] ?? '' );
 		$waypoint_label_style    = self::sanitize_font_style( $attributes['waypointLabelFontStyle'] ?? '' );
-
-		// Validate the aspect-ratio string against the whitelist pattern from
-		// docs/security.md; fall back to the default on any mismatch.
-		$aspect_ratio_input = is_string( $raw_ratio ) ? $raw_ratio : '';
-		$aspect_ratio       = preg_match( '/^\d+\s*\/\s*\d+$/', $aspect_ratio_input )
-			? $aspect_ratio_input
-			: self::DEFAULT_ASPECT_RATIO;
 
 		// No attachment configured yet — the editor shows MediaPlaceholder instead.
 		if ( $attachment_id <= 0 ) {
@@ -236,18 +206,13 @@ final class Render_Map {
 			],
 		] );
 
-		// Build the inline style string from the validated layout attributes.
-		// Dimensions are expressed as CSS custom properties so the SCSS picks them
-		// up via var() — keeping the PHP render callback as the single source of
-		// truth without duplicating the CSS logic.
-		// $min_height is always non-empty (falls back to DEFAULT_MIN_HEIGHT).
-		$style_parts = [
-			'--kntnt-gpx-blocks-aspect-ratio: ' . esc_attr( $aspect_ratio ),
-			'--kntnt-gpx-blocks-min-height: ' . esc_attr( $min_height ),
-		];
-		if ( '' !== $max_height ) {
-			$style_parts[] = 'max-height: ' . esc_attr( $max_height );
-		}
+		// Build the inline style string from the validated theming attributes.
+		// Dimensions (`aspect-ratio`, `min-height`) are emitted by core's
+		// `dimensions` block supports — the wrapper attributes returned by
+		// `get_block_wrapper_attributes()` already carry them, so this render
+		// callback only needs to contribute the colour and typography custom
+		// properties on top.
+		$style_parts = [];
 
 		// Append CSS custom properties for track and cursor colours when set.
 		// Empty strings fall back to the hardcoded defaults in style.scss.
@@ -294,17 +259,21 @@ final class Render_Map {
 
 		// Build the block wrapper attributes via core's helper so that editor-UI
 		// affordances (HTML anchor, additional CSS class, theme-supplied
-		// alignwide/alignfull, third-party render_block_data filters) reach the
-		// frontend. The wp-block-kntnt-gpx-blocks-map class is supplied by core
-		// from block.json and need not be repeated here.
-		$wrapper = get_block_wrapper_attributes( [
-			'class' => 'kntnt-gpx-blocks-map',
-			'style' => $style,
-		] );
+		// alignwide/alignfull, the dimensions / border / shadow / spacing block
+		// supports, third-party render_block_data filters) reach the frontend.
+		// The wp-block-kntnt-gpx-blocks-map class is supplied by core from
+		// block.json and need not be repeated here.
+		$wrapper_args = [ 'class' => 'kntnt-gpx-blocks-map' ];
+		if ( '' !== $style ) {
+			$wrapper_args['style'] = $style;
+		}
+		$wrapper = get_block_wrapper_attributes( $wrapper_args );
 
-		// Return the block element. Leaflet mounts directly into this wrapper —
-		// the wrapper has explicit width / aspect-ratio / min-height via inline
-		// style (carried inside $wrapper), so Leaflet always sees a correctly
+		// Return the block element. Leaflet mounts directly into this wrapper.
+		// Width is 100% via the SCSS baseline; aspect-ratio and min-height come
+		// from core's `dimensions` block supports — either as the editor's
+		// override carried in `$wrapper`'s inline style, or as the SCSS fallback
+		// (`3 / 1` and `240px`). Either way Leaflet always sees a correctly
 		// sized container.
 		// role="application" and aria-label expose the interactive map to assistive
 		// technology. <noscript> is shown only when JS is disabled.

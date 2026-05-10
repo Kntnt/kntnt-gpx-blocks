@@ -36,22 +36,6 @@ use Kntnt\Gpx_Blocks\Plugin;
 final class Render_Elevation {
 
 	/**
-	 * Default CSS aspect-ratio when the attribute is absent or invalid.
-	 *
-	 * @since 1.0.0
-	 * @var string
-	 */
-	private const DEFAULT_ASPECT_RATIO = '4/1';
-
-	/**
-	 * Default CSS min-height when the attribute is absent.
-	 *
-	 * @since 1.0.0
-	 * @var string
-	 */
-	private const DEFAULT_MIN_HEIGHT = '120px';
-
-	/**
 	 * Default LTTB target point count when the filter returns a non-positive
 	 * value.
 	 *
@@ -155,18 +139,6 @@ final class Render_Elevation {
 		$raw_map_id = $attributes['mapId'] ?? 'auto';
 		$map_id     = is_string( $raw_map_id ) && '' !== $raw_map_id ? $raw_map_id : 'auto';
 
-		// Read and validate the layout attributes.
-		$raw_ratio = $attributes['aspectRatio'] ?? '';
-		$raw_mh    = $attributes['minHeight'] ?? '';
-
-		// Validate the aspect-ratio string against the whitelist pattern from
-		// docs/security.md; fall back to the default on any mismatch.
-		$aspect_ratio_input = is_string( $raw_ratio ) ? $raw_ratio : '';
-		$aspect_ratio       = preg_match( '/^\d+\s*\/\s*\d+$/', $aspect_ratio_input )
-			? $aspect_ratio_input
-			: self::DEFAULT_ASPECT_RATIO;
-		$min_height = is_string( $raw_mh ) && '' !== $raw_mh ? $raw_mh : self::DEFAULT_MIN_HEIGHT;
-
 		// Read and sanitize the seven colour attributes.
 		$background_color  = self::sanitize_color( $attributes['backgroundColor'] ?? '' );
 		$axis_color        = self::sanitize_color( $attributes['axisColor'] ?? '' );
@@ -237,11 +209,7 @@ final class Render_Elevation {
 		// No usable elevation in the source — render the translated empty state
 		// in place of the chart.
 		if ( count( $series ) < 2 ) {
-			return self::render_empty_state(
-				$aspect_ratio,
-				$min_height,
-				$background_color,
-			);
+			return self::render_empty_state( $background_color );
 		}
 
 		// Downsample the series via LTTB to a configurable target point count.
@@ -278,12 +246,12 @@ final class Render_Elevation {
 		$svg          = self::build_svg( $downsampled, $payload['statistics'], $desc_id, $y_min, $y_max );
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
 
-		// Assemble the inline style: layout dimensions first, then any non-empty
-		// theming custom properties. Empty values fall back to the SCSS defaults.
-		$style_parts = [
-			'--kntnt-gpx-blocks-aspect-ratio: ' . $aspect_ratio,
-			'--kntnt-gpx-blocks-min-height: ' . $min_height,
-		];
+		// Assemble the inline style with non-empty theming custom properties.
+		// Dimensions (`aspect-ratio`, `min-height`) are emitted by core's
+		// `dimensions` block supports — the wrapper attributes returned by
+		// `get_block_wrapper_attributes()` already carry them. Empty colour /
+		// typography values fall back to the SCSS defaults.
+		$style_parts = [];
 
 		if ( '' !== $background_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-background-color: ' . $background_color;
@@ -339,13 +307,15 @@ final class Render_Elevation {
 
 		// Build the block wrapper attributes via core's helper so that editor-UI
 		// affordances (HTML anchor, additional CSS class, theme-supplied
-		// alignwide/alignfull, third-party render_block_data filters) reach the
-		// frontend. The wp-block-kntnt-gpx-blocks-elevation class is supplied by
-		// core from block.json and need not be repeated here.
-		$wrapper = get_block_wrapper_attributes( [
-			'class' => 'kntnt-gpx-blocks-elevation',
-			'style' => $style,
-		] );
+		// alignwide/alignfull, the dimensions / border / shadow / spacing block
+		// supports, third-party render_block_data filters) reach the frontend.
+		// The wp-block-kntnt-gpx-blocks-elevation class is supplied by core
+		// from block.json and need not be repeated here.
+		$wrapper_args = [ 'class' => 'kntnt-gpx-blocks-elevation' ];
+		if ( '' !== $style ) {
+			$wrapper_args['style'] = $style;
+		}
+		$wrapper = get_block_wrapper_attributes( $wrapper_args );
 
 		return sprintf(
 			'<div %1$s'
@@ -821,35 +791,33 @@ final class Render_Elevation {
 	/**
 	 * Renders the empty-state container shown when the track has no elevation.
 	 *
+	 * Dimensions (`aspect-ratio`, `min-height`) are emitted by core's
+	 * `dimensions` block supports and reach the wrapper through
+	 * `get_block_wrapper_attributes()`; this method only contributes the
+	 * optional background-colour custom property.
+	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $aspect_ratio      Validated aspect ratio.
-	 * @param string $min_height        Validated min-height.
-	 * @param string $background_color  Validated background colour (may be empty).
+	 * @param string $background_color Validated background colour (may be empty).
 	 *
 	 * @return string
 	 */
-	private static function render_empty_state(
-		string $aspect_ratio,
-		string $min_height,
-		string $background_color = '',
-	): string {
+	private static function render_empty_state( string $background_color = '' ): string {
 
-		$style_parts = [
-			'--kntnt-gpx-blocks-aspect-ratio: ' . $aspect_ratio,
-			'--kntnt-gpx-blocks-min-height: ' . $min_height,
-		];
+		$style_parts = [];
 		if ( '' !== $background_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-background-color: ' . $background_color;
 		}
 		$style = implode( '; ', $style_parts );
 
 		// Build the block wrapper attributes via core's helper so that editor-UI
-		// affordances reach the frontend even on the empty-data path.
-		$wrapper = get_block_wrapper_attributes( [
-			'class' => 'kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation--empty',
-			'style' => $style,
-		] );
+		// affordances and the dimensions/border/shadow/spacing block supports
+		// reach the frontend even on the empty-data path.
+		$wrapper_args = [ 'class' => 'kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation--empty' ];
+		if ( '' !== $style ) {
+			$wrapper_args['style'] = $style;
+		}
+		$wrapper = get_block_wrapper_attributes( $wrapper_args );
 
 		return sprintf(
 			'<div %s>%s</div>',

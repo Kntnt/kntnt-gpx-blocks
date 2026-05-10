@@ -71,7 +71,6 @@ Every piece of derived data is escaped at the point of HTML output:
 | GPX file URL for download control | URL in `<a href>` | `esc_url()` (and the URL is `wp_get_attachment_url()` which is already validated) |
 | Editor-supplied colour values | CSS custom property value | `sanitize_hex_color()` then `esc_attr()` |
 | Editor-supplied font references | CSS custom property value | Whitelist regex (matches CSS variable references and a handful of keywords); fallback to default if outside the whitelist |
-| Editor-supplied aspect ratio | CSS `aspect-ratio` value | Whitelist regex `/^\d+\s*\/\s*\d+$/` |
 | Block class names | HTML attribute | `sanitize_html_class()` for any user-derived parts; static classes are concatenated as-is |
 | Statistics values | Element text | `esc_html()` after `number_format_i18n()` |
 | GeoJSON in `wp_interactivity_state()` | JSON literal in `<script>` | Auto-encoded by WordPress; never interpolated as HTML |

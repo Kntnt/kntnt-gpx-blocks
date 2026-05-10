@@ -1,15 +1,21 @@
 // Shared styles (editor + frontend) for the GPX Elevation block.
 // The wrapper sets the layout box; the inline SVG fills that box completely
-// via width: 100% / height: 100%. Per-block theming is driven by the CSS
-// custom properties declared below. Inline style on the wrapper overrides any
-// property that the editor or the server-side renderer has set explicitly;
-// everything else falls back to the hardcoded defaults here.
+// via width: 100% / height: 100%. Layout dimensions (`aspect-ratio`,
+// `min-height`) come from core's `dimensions` block supports, which emit the
+// editor-chosen values inline on the wrapper at render time. The
+// `aspect-ratio: 4 / 1; min-height: 120px;` rule below is the baseline shape
+// applied when the editor leaves both dimensions empty; the inline style
+// from core's block supports overrides it when set. Per-block theming
+// (colours, typography) is driven by the CSS custom properties declared
+// below; empty editor fields fall back to the hardcoded defaults here.
 
 .kntnt-gpx-blocks-elevation {
-	// ─── Layout variables ─────────────────────────────────────────────────
+	// ─── Layout baseline ──────────────────────────────────────────────────
+	// Overridden inline by core's `dimensions` block supports when the editor
+	// sets either field.
 	width: 100%;
-	aspect-ratio: var(--kntnt-gpx-blocks-aspect-ratio, 4 / 1);
-	min-height: var(--kntnt-gpx-blocks-min-height, 120px);
+	aspect-ratio: 4 / 1;
+	min-height: 120px;
 
 	// Clip the inline SVG to the block's rounded corners when the editor
 	// sets a border-radius via the core Border panel. `box-shadow` is
