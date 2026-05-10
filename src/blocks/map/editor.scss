@@ -20,6 +20,20 @@
 		cursor: default;
 	}
 
+	// Editor-only Notice region rendered above the preview canvas. Holds the
+	// dismissible warnings for an unknown saved tile-provider id and for a
+	// paid provider with no API key set (see editor-preview.tsx). The
+	// `Notice` component from `@wordpress/components` brings its own colours
+	// and spacing; this rule only stacks consecutive Notices vertically and
+	// gives the region a small bottom margin so the preview canvas does not
+	// sit flush against the last Notice's border.
+	.kntnt-gpx-blocks-editor-notices {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+
 	// Floating waypoint-info preview — a non-interactive WYSIWYG hint anchored
 	// to the lower-right corner of the map host so editors see live feedback
 	// while they adjust the *Waypoint info* styling controls. The preview

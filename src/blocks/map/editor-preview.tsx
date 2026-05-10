@@ -23,7 +23,8 @@
 
 import { useEffect, useRef, useState } from '@wordpress/element';
 import apiFetch from '@wordpress/api-fetch';
-import { __ } from '@wordpress/i18n';
+import { Notice } from '@wordpress/components';
+import { __, sprintf } from '@wordpress/i18n';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -131,10 +132,35 @@ interface PreviewAttributes {
 /**
  * Props for the MapEditorPreview component.
  *
+ * `unknownProviderFallbackLabel` and `missingKey` are detection flags
+ * computed in `edit.tsx` via `detectPreviewNotices()` (see
+ * `preview-notices.ts`). They drive editor-only warning Notices rendered
+ * above the preview canvas; the canvas itself stays unchanged below the
+ * Notices, so the editor sees both the diagnostic and the resulting
+ * (fallback / failing) preview at the same time.
+ *
+ * Both flags are optional — when omitted, neither Notice renders. This
+ * keeps the component safe to call from contexts that have not yet wired
+ * the detection (none in v1, but it makes the Notice surface a strict
+ * superset of the previous API).
+ *
  * @since 1.0.0
  */
 interface MapEditorPreviewProps {
 	attributes: PreviewAttributes;
+	/**
+	 * Display label of the canonical fallback provider when the saved
+	 * `tileProvider` id is no longer in the registry; `null` when the
+	 * saved id is recognised. Carries the registry's label rather than a
+	 * hardcoded string so a renamed OSM entry surfaces correctly in the
+	 * Notice copy.
+	 */
+	unknownProviderFallbackLabel?: string | null;
+	/**
+	 * `true` when the resolved provider requires an API key
+	 * (`requiresKey === true`) and the per-block `tileApiKey` is empty.
+	 */
+	missingKey?: boolean;
 }
 
 /**
@@ -172,11 +198,25 @@ const DEFAULT_WAYPOINT_COLOR = '#d63638';
  *
  * @since 1.0.0
  *
- * @param props            Component props.
- * @param props.attributes The preview attribute subset.
+ * @param props                              Component props.
+ * @param props.attributes                   The preview attribute subset.
+ * @param props.unknownProviderFallbackLabel Fallback provider's display
+ *                                           label when the saved provider
+ *                                           id is unknown; `null` when it
+ *                                           is recognised. Drives the
+ *                                           dismissible "Unknown tile
+ *                                           provider" Notice rendered
+ *                                           above the canvas.
+ * @param props.missingKey                   `true` when the resolved
+ *                                           provider requires an API key
+ *                                           and the per-block key is
+ *                                           empty. Drives the dismissible
+ *                                           "missing API key" Notice.
  */
 export const MapEditorPreview = ( {
 	attributes,
+	unknownProviderFallbackLabel = null,
+	missingKey = false,
 }: MapEditorPreviewProps ): JSX.Element => {
 	const containerRef = useRef< HTMLDivElement >( null );
 	const mapRef = useRef< L.Map | null >( null );
@@ -186,6 +226,15 @@ export const MapEditorPreview = ( {
 	const [ payload, setPayload ] = useState< PreviewPayload | null >( null );
 	const [ error, setError ] = useState< ApiError | null >( null );
 	const [ loading, setLoading ] = useState< boolean >( true );
+
+	// Per-Notice dismissal state, scoped to this block instance for the
+	// remainder of the editor session. Each Notice tracks its own flag so
+	// dismissing one does not affect the other. Saving the post with a
+	// fresh provider/key choice naturally clears the underlying detection,
+	// so no extra logic is needed to reset these on save — the detection
+	// flag flips to `false` and the Notice has no reason to render.
+	const [ unknownDismissed, setUnknownDismissed ] = useState( false );
+	const [ missingKeyDismissed, setMissingKeyDismissed ] = useState( false );
 
 	const {
 		attachmentId,
@@ -489,25 +538,78 @@ export const MapEditorPreview = ( {
 		height: '100%',
 	};
 
+	// Compose the warning Notices that sit above the preview canvas. Each
+	// Notice is rendered conditionally on its detection flag AND its local
+	// dismissal flag, so dismissing one within the editor session keeps it
+	// hidden until the underlying condition clears (e.g. the editor picks a
+	// different provider in the Inspector). The unknown-id template
+	// interpolates the registry's fallback label via `sprintf` so a renamed
+	// OSM entry surfaces with its renamed name — the literal "OpenStreetMap"
+	// is not hardcoded here.
+	const showUnknownNotice =
+		unknownProviderFallbackLabel !== null && ! unknownDismissed;
+	const showMissingKeyNotice = missingKey && ! missingKeyDismissed;
+	const notices =
+		showUnknownNotice || showMissingKeyNotice ? (
+			<div className="kntnt-gpx-blocks-editor-notices">
+				{ showUnknownNotice && (
+					<Notice
+						status="warning"
+						isDismissible
+						onRemove={ () => setUnknownDismissed( true ) }
+					>
+						{ sprintf(
+							/* translators: %s: display label of the fallback tile provider, sourced from the registry. */
+							__(
+								'Unknown tile provider. Falling back to %s.',
+								'kntnt-gpx-blocks'
+							),
+							unknownProviderFallbackLabel
+						) }
+					</Notice>
+				) }
+				{ showMissingKeyNotice && (
+					<Notice
+						status="warning"
+						isDismissible
+						onRemove={ () => setMissingKeyDismissed( true ) }
+					>
+						{ __(
+							'This provider requires an API key. Set it in the Inspector.',
+							'kntnt-gpx-blocks'
+						) }
+					</Notice>
+				) }
+			</div>
+		) : null;
+
 	// Loading and error are intentionally rendered inside the same fill-parent
 	// host that holds the map so the editor sees consistent dimensions
 	// throughout the load lifecycle — no layout jump when the map mounts.
+	// Notices render above the error host as well so a stale `tileProvider`
+	// surfaces even when the GPX payload itself fails to load.
 	if ( error ) {
 		return (
-			<div style={ fillParentStyle }>
-				<div className="kntnt-gpx-blocks-error">
-					<p>
-						<strong>
-							{ __( 'Kntnt GPX Blocks:', 'kntnt-gpx-blocks' ) }
-						</strong>{ ' ' }
-						{ error.message }{ ' ' }
-						<code>
-							({ __( 'code:', 'kntnt-gpx-blocks' ) }{ ' ' }
-							{ error.code })
-						</code>
-					</p>
+			<>
+				{ notices }
+				<div style={ fillParentStyle }>
+					<div className="kntnt-gpx-blocks-error">
+						<p>
+							<strong>
+								{ __(
+									'Kntnt GPX Blocks:',
+									'kntnt-gpx-blocks'
+								) }
+							</strong>{ ' ' }
+							{ error.message }{ ' ' }
+							<code>
+								({ __( 'code:', 'kntnt-gpx-blocks' ) }{ ' ' }
+								{ error.code })
+							</code>
+						</p>
+					</div>
 				</div>
-			</div>
+			</>
 		);
 	}
 
@@ -525,28 +627,31 @@ export const MapEditorPreview = ( {
 		__( 'Sample description', 'kntnt-gpx-blocks' );
 
 	return (
-		<div style={ hostStyle }>
-			<div
-				ref={ containerRef }
-				style={ fillParentStyle }
-				aria-busy={ loading ? 'true' : 'false' }
-			/>
-			<div
-				className="kntnt-gpx-blocks-tooltip-preview"
-				aria-hidden="true"
-			>
-				{ tooltipShowName && (
-					<div className="kntnt-gpx-blocks-tooltip-name">
-						{ sampleName }
-					</div>
-				) }
-				{ tooltipShowDesc && (
-					<div className="kntnt-gpx-blocks-tooltip-desc">
-						{ sampleDesc }
-					</div>
-				) }
+		<>
+			{ notices }
+			<div style={ hostStyle }>
+				<div
+					ref={ containerRef }
+					style={ fillParentStyle }
+					aria-busy={ loading ? 'true' : 'false' }
+				/>
+				<div
+					className="kntnt-gpx-blocks-tooltip-preview"
+					aria-hidden="true"
+				>
+					{ tooltipShowName && (
+						<div className="kntnt-gpx-blocks-tooltip-name">
+							{ sampleName }
+						</div>
+					) }
+					{ tooltipShowDesc && (
+						<div className="kntnt-gpx-blocks-tooltip-desc">
+							{ sampleDesc }
+						</div>
+					) }
+				</div>
 			</div>
-		</div>
+		</>
 	);
 };
 

@@ -61,6 +61,7 @@ import {
 } from './editor-preview';
 import { flattenPresets } from '../shared/flatten-presets';
 import { substituteTileApiKey } from './tile-key';
+import { detectPreviewNotices } from './preview-notices';
 
 // ─── Editor data global (window.kntntGpxBlocks) ─────────────────────────────
 
@@ -1252,6 +1253,12 @@ export const MapEdit = ( {
 						),
 						overlays: resolveOverlaysForPreview( tileOverlays ),
 					} }
+					{ ...detectPreviewNotices(
+						tileProvider,
+						tileApiKey,
+						window.kntntGpxBlocks?.providers ?? {},
+						FALLBACK_PROVIDER_ID
+					) }
 				/>
 			</div>
 		</>
