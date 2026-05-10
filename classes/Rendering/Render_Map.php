@@ -139,17 +139,23 @@ final class Render_Map {
 		$tooltip_desc_text_decoration = self::sanitize_text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
 		$tooltip_desc_text_transform  = self::sanitize_text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
 
-		// Read the saved tile-provider id and the per-provider API-key map.
-		// The id is resolved against the validated registry below; an unknown
-		// id falls back silently to OpenStreetMap with a warning. The key map
-		// stores one entry per provider so switching between paid providers
-		// preserves each provider's key; the lookup pulls the current
-		// provider's key (or empty string when the entry is missing or the
-		// map is malformed) and forwards it verbatim to the registry, which
-		// substitutes it into the URL.
+		// Read the saved tile-provider id, style id, and the per-provider
+		// API-key map. The provider/style ids are resolved against the
+		// validated registry below; an unknown provider falls back to
+		// OpenStreetMap (and to its default style), an unknown style id
+		// inside a known provider falls back to the provider's own default
+		// style — both fallbacks emit a `Plugin::warning()`. The key map
+		// stores one entry per provider id so switching between paid
+		// providers preserves each provider's key; the lookup pulls the
+		// current provider's key (or empty string when the entry is missing
+		// or the map is malformed) and forwards it verbatim to the registry,
+		// which substitutes it into the URL.
 		$tile_provider_id = isset( $attributes['tileProvider'] ) && is_string( $attributes['tileProvider'] ) && '' !== $attributes['tileProvider']
 			? $attributes['tileProvider']
 			: Tile_Layer_Registry::FALLBACK_PROVIDER_ID;
+		$tile_style_id = isset( $attributes['tileStyle'] ) && is_string( $attributes['tileStyle'] ) && '' !== $attributes['tileStyle']
+			? $attributes['tileStyle']
+			: '';
 		$raw_tile_api_keys = $attributes['tileApiKeys'] ?? [];
 		$tile_api_keys     = is_array( $raw_tile_api_keys ) ? $raw_tile_api_keys : [];
 		$raw_tile_api_key  = $tile_api_keys[ $tile_provider_id ] ?? '';
@@ -226,31 +232,37 @@ final class Render_Map {
 		// editor preview is being rendered, irrespective of consent state.
 		$bypass_consent = defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'edit_posts' );
 
-		// Resolve the tile-layer records for the per-block Interactivity state.
-		// The registry validates the filtered defaults, substitutes the
-		// per-block API key into `{KEY}`, and falls back silently to
-		// `osm-standard` on unknown provider ids (with a warning log). Overlay
-		// records mirror the provider shape minus the API-key handling. The
-		// view module reads url/attribution/maxZoom/subdomains from these
-		// records to build its tile layer; the {KEY}-substituted URL is the
-		// only place the API key reaches the browser.
+		// Resolve the tile-layer records for the per-block Interactivity
+		// state. The registry validates the filtered defaults, walks the
+		// (provider, style) pair down the nested map, substitutes the
+		// per-provider API key into `{KEY}`, and falls back silently to
+		// `openstreetmap` on unknown provider ids (with a warning log).
+		// Overlay records mirror the provider shape minus the API-key
+		// handling. The view module reads url/attribution/maxZoom/
+		// subdomains from these records to build its tile layer; the
+		// {KEY}-substituted URL is the only place the API key reaches the
+		// browser.
 		$tile_registry = new Tile_Layer_Registry();
-		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_api_key );
+		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_style_id, $tile_api_key );
 		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_ids );
 
-		// Polyline-only gate: when the resolved provider requires an API key
-		// and the per-provider entry in `tileApiKeys` is empty, null out the URL so the
-		// frontend view module ships polyline-only instead of issuing failing
-		// tile requests with a bare `apikey=` query parameter. The rest of
-		// the record (id, attribution, maxZoom, subdomains) survives so JS
-		// keeps the metadata for diagnostics; the documented contract is
-		// `url === null` ⇒ no base tile layer. This rule applies to the
-		// editor preview path too — `bypassConsent === true` only governs
-		// the consent gate, not the missing-key gate. See docs/consent.md
-		// "What the plugin renders" and the issue #81 acceptance criteria.
-		$resolved_record  = $tile_registry->get_providers()[ $tile_provider['id'] ] ?? null;
-		$requires_key     = $resolved_record !== null ? $resolved_record['requiresKey'] : false;
-		$key_is_empty     = '' === trim( $tile_api_key );
+		// Polyline-only gate: when the resolved provider requires an API
+		// key and the per-provider entry in `tileApiKeys` is empty, null
+		// out the URL so the frontend view module ships polyline-only
+		// instead of issuing failing tile requests with a bare `apikey=`
+		// query parameter. The rest of the record (attribution, maxZoom,
+		// subdomains) survives so JS keeps the metadata for diagnostics;
+		// the documented contract is `url === null` ⇒ no base tile layer.
+		// This rule applies to the editor preview path too —
+		// `bypassConsent === true` only governs the consent gate, not the
+		// missing-key gate. The provider's `requiresKey` flag is read from
+		// the validated registry against the *requested* provider id — not
+		// the resolved one — so a key-required provider that falls through
+		// to OpenStreetMap due to an unknown style still emits the null URL
+		// when the editor has not entered a key.
+		$resolved_provider_record = $tile_registry->get_providers()[ $tile_provider_id ] ?? null;
+		$requires_key             = $resolved_provider_record !== null ? $resolved_provider_record['requiresKey'] : false;
+		$key_is_empty             = '' === trim( $tile_api_key );
 		if ( $requires_key && $key_is_empty ) {
 			$tile_provider['url'] = null;
 		}

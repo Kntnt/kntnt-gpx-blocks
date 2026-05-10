@@ -33,10 +33,12 @@
  * Editor-side provider record shape — narrowed to the fields the helper
  * inspects.
  *
- * Mirrors `Editor_Data_Enqueuer::shape_providers()`'s output. The full
- * shape is declared in `edit.tsx`; only the two fields read here are
- * required for the detection logic, which keeps the helper trivially
- * mockable from tests.
+ * Mirrors `Editor_Data_Enqueuer::shape_providers()`'s output, keyed by
+ * provider id (one entry per provider, not per composite provider/style
+ * combination). The full shape (with the nested `styles` map) is
+ * declared in `edit.tsx`; only the two fields read here are required for
+ * the detection logic, which keeps the helper trivially mockable from
+ * tests.
  *
  * @since 1.0.0
  */
@@ -91,7 +93,7 @@ const DEFAULT_FALLBACK_LABEL = 'OpenStreetMap';
  * @param providerId         - Saved `tileProvider` attribute. The empty
  *                           string is the "no choice yet" sentinel and is
  *                           never treated as unknown — block.json's default
- *                           is `osm-standard`, so an empty value here means
+ *                           is `openstreetmap`, so an empty value here means
  *                           pre-default state, not a stale id.
  * @param apiKey             - Per-provider API key looked up from
  *                           `tileApiKeys[ providerId ]`.

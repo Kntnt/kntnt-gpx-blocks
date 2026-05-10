@@ -1198,10 +1198,10 @@ test( 'wrapper carries the user-supplied additional CSS class', function (): voi
 } );
 
 // ---------------------------------------------------------------------------
-// Tile-layer registry — default (no tileProvider) resolves to osm-standard
+// Tile-layer registry — default (no tileProvider) resolves to openstreetmap/mapnik
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state carries osm-standard tile provider when no attribute is saved', function (): void {
+test( 'wp_interactivity_state carries openstreetmap/mapnik tile provider when no attribute is saved', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 200, $coords );
@@ -1230,15 +1230,20 @@ test( 'wp_interactivity_state carries osm-standard tile provider when no attribu
 
 	expect( $slice )->not->toBeNull();
 	expect( $slice )->toHaveKey( 'tileProvider' );
-	expect( $slice['tileProvider']['id'] )->toBe( 'osm-standard' );
 	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
 	expect( $slice['tileProvider']['attribution'] )->toContain( 'OpenStreetMap' );
 	expect( $slice['tileProvider']['url'] )->not->toContain( '{KEY}' );
+	expect( $slice['tileProvider']['subdomains'] )->toBe( [ 'a', 'b', 'c' ] );
+
+	// The resolved record carries only the four Leaflet-facing fields —
+	// no embedded id, no requiresKey, no styles map.
+	expect( $slice['tileProvider'] )->not->toHaveKey( 'id' );
+	expect( $slice['tileProvider'] )->not->toHaveKey( 'requiresKey' );
 
 } );
 
 // ---------------------------------------------------------------------------
-// Tile-layer registry — explicit provider plus API key substitutes {KEY}
+// Tile-layer registry — explicit (provider, style) plus API key substitutes {KEY}
 // ---------------------------------------------------------------------------
 
 test( 'wp_interactivity_state substitutes the per-provider tileApiKeys entry into {KEY}', function (): void {
@@ -1261,10 +1266,11 @@ test( 'wp_interactivity_state substitutes the per-provider tileApiKeys entry int
 		[
 			'attachmentId' => 201,
 			'mapId'        => 'map-thunderforest',
-			'tileProvider' => 'thunderforest-outdoors',
+			'tileProvider' => 'thunderforest',
+			'tileStyle'    => 'outdoor',
 			'tileApiKeys'  => [
-				'thunderforest-outdoors' => 'ABC123',
-				'maptiler-outdoor'       => 'OTHER_PROVIDER_KEY',
+				'thunderforest' => 'ABC123',
+				'maptiler'      => 'OTHER_PROVIDER_KEY',
 			],
 		],
 		'',
@@ -1274,11 +1280,47 @@ test( 'wp_interactivity_state substitutes the per-provider tileApiKeys entry int
 	$slice = $captured_state['map-thunderforest'] ?? null;
 
 	expect( $slice )->not->toBeNull();
-	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
 	expect( $slice['tileProvider']['url'] )->not->toContain( '{KEY}' );
 	expect( $slice['tileProvider']['url'] )->toContain( 'apikey=ABC123' );
 	// Keys for other providers must not leak into the rendered URL.
 	expect( $slice['tileProvider']['url'] )->not->toContain( 'OTHER_PROVIDER_KEY' );
+
+} );
+
+test( 'wp_interactivity_state falls back to the provider default style when tileStyle is unknown', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 230, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 230, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	// `openstreetmap`'s default is `mapnik`; orphan style id should
+	// resolve to the mapnik URL.
+	Render_Map::render(
+		[
+			'attachmentId' => 230,
+			'mapId'        => 'map-orphan-style',
+			'tileProvider' => 'openstreetmap',
+			'tileStyle'    => 'no-such-style',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-orphan-style'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
+	expect( $slice['tileProvider']['url'] )->not->toContain( 'cyclosm' );
 
 } );
 
@@ -1306,7 +1348,8 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 		[
 			'attachmentId' => 210,
 			'mapId'        => 'map-paid-no-key',
-			'tileProvider' => 'thunderforest-outdoors',
+			'tileProvider' => 'thunderforest',
+			'tileStyle'    => 'outdoor',
 			'tileApiKeys'  => [],
 		],
 		'',
@@ -1319,7 +1362,6 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 	// URL is omitted so the view module ships polyline-only.
 	expect( $slice )->not->toBeNull();
 	expect( $slice )->toHaveKey( 'tileProvider' );
-	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
 	expect( $slice['tileProvider']['url'] )->toBeNull();
 	expect( $slice['tileProvider']['attribution'] )->toContain( 'Thunderforest' );
 	expect( $slice['tileProvider']['maxZoom'] )->toBe( 22 );
@@ -1349,8 +1391,9 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 		[
 			'attachmentId' => 211,
 			'mapId'        => 'map-paid-whitespace-key',
-			'tileProvider' => 'mapbox-outdoors',
-			'tileApiKeys'  => [ 'mapbox-outdoors' => "  \t\n  " ],
+			'tileProvider' => 'mapbox',
+			'tileStyle'    => 'outdoors',
+			'tileApiKeys'  => [ 'mapbox' => "  \t\n  " ],
 		],
 		'',
 		map_fake_block(),
@@ -1365,7 +1408,7 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 
 } );
 
-test( 'wp_interactivity_state still carries a usable URL when requiresKey provider has an empty key but the bypassConsent path is on', function (): void {
+test( 'wp_interactivity_state still emits a null URL when requiresKey provider has an empty key on the bypassConsent path', function (): void {
 
 	// Editor preview path mirrors the frontend gate: missing key produces a
 	// null URL even when bypassConsent is true. The editor surface shows a
@@ -1396,7 +1439,8 @@ test( 'wp_interactivity_state still carries a usable URL when requiresKey provid
 		[
 			'attachmentId' => 212,
 			'mapId'        => 'map-editor-paid-no-key',
-			'tileProvider' => 'stadia-outdoors',
+			'tileProvider' => 'stadia-maps',
+			'tileStyle'    => 'outdoors',
 			'tileApiKeys'  => [],
 		],
 		'',
@@ -1435,7 +1479,8 @@ test( 'wp_interactivity_state still substitutes the URL for free providers regar
 		[
 			'attachmentId' => 213,
 			'mapId'        => 'map-free-no-key',
-			'tileProvider' => 'osm-standard',
+			'tileProvider' => 'openstreetmap',
+			'tileStyle'    => 'mapnik',
 			'tileApiKeys'  => [],
 		],
 		'',
@@ -1451,10 +1496,10 @@ test( 'wp_interactivity_state still substitutes the URL for free providers regar
 } );
 
 // ---------------------------------------------------------------------------
-// Tile-layer registry — unknown provider id falls back to osm-standard
+// Tile-layer registry — unknown provider id falls back to openstreetmap
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state falls back to osm-standard for an unknown tileProvider', function (): void {
+test( 'wp_interactivity_state falls back to openstreetmap for an unknown tileProvider (orphan provider id)', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 202, $coords );
@@ -1475,6 +1520,7 @@ test( 'wp_interactivity_state falls back to osm-standard for an unknown tileProv
 			'attachmentId' => 202,
 			'mapId'        => 'map-unknown-tile',
 			'tileProvider' => 'definitely-not-a-real-provider',
+			'tileStyle'    => 'whatever',
 		],
 		'',
 		map_fake_block(),
@@ -1483,7 +1529,6 @@ test( 'wp_interactivity_state falls back to osm-standard for an unknown tileProv
 	$slice = $captured_state['map-unknown-tile'] ?? null;
 
 	expect( $slice )->not->toBeNull();
-	expect( $slice['tileProvider']['id'] )->toBe( 'osm-standard' );
 	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
 
 } );
@@ -1497,9 +1542,9 @@ test( 'wp_interactivity_state falls back to osm-standard for an unknown tileProv
 
 test( 'wp_interactivity_state picks the per-provider key from tileApiKeys for the selected provider', function (): void {
 
-	// Two paid providers configured at once; only the selected provider's key
-	// should reach the rendered URL. Switching tileProvider to the other id
-	// is the editor's job — the render path simply reads attributes — but
+	// Three paid providers configured at once; only the selected provider's
+	// key should reach the rendered URL. Switching tileProvider to another
+	// id is the editor's job — the render path simply reads attributes — but
 	// this test verifies the lookup picks the right entry.
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 220, $coords );
@@ -1519,11 +1564,12 @@ test( 'wp_interactivity_state picks the per-provider key from tileApiKeys for th
 		[
 			'attachmentId' => 220,
 			'mapId'        => 'map-multi-provider-keys',
-			'tileProvider' => 'maptiler-outdoor',
+			'tileProvider' => 'maptiler',
+			'tileStyle'    => 'outdoor',
 			'tileApiKeys'  => [
-				'thunderforest-outdoors' => 'THUNDER_KEY',
-				'maptiler-outdoor'       => 'MAPTILER_KEY',
-				'mapbox-outdoors'        => 'MAPBOX_KEY',
+				'thunderforest' => 'THUNDER_KEY',
+				'maptiler'      => 'MAPTILER_KEY',
+				'mapbox'        => 'MAPBOX_KEY',
 			],
 		],
 		'',
@@ -1533,7 +1579,6 @@ test( 'wp_interactivity_state picks the per-provider key from tileApiKeys for th
 	$slice = $captured_state['map-multi-provider-keys'] ?? null;
 
 	expect( $slice )->not->toBeNull();
-	expect( $slice['tileProvider']['id'] )->toBe( 'maptiler-outdoor' );
 	expect( $slice['tileProvider']['url'] )->toContain( 'key=MAPTILER_KEY' );
 	expect( $slice['tileProvider']['url'] )->not->toContain( 'THUNDER_KEY' );
 	expect( $slice['tileProvider']['url'] )->not->toContain( 'MAPBOX_KEY' );
@@ -1562,7 +1607,8 @@ test( 'wp_interactivity_state treats a null tileApiKeys attribute as empty witho
 		[
 			'attachmentId' => 221,
 			'mapId'        => 'map-null-keys',
-			'tileProvider' => 'thunderforest-outdoors',
+			'tileProvider' => 'thunderforest',
+			'tileStyle'    => 'outdoor',
 			'tileApiKeys'  => null,
 		],
 		'',
@@ -1572,7 +1618,6 @@ test( 'wp_interactivity_state treats a null tileApiKeys attribute as empty witho
 	$slice = $captured_state['map-null-keys'] ?? null;
 
 	expect( $slice )->not->toBeNull();
-	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
 	// Missing key → polyline-only fall-back (null URL).
 	expect( $slice['tileProvider']['url'] )->toBeNull();
 
@@ -1599,7 +1644,8 @@ test( 'wp_interactivity_state treats a non-object tileApiKeys attribute as empty
 		[
 			'attachmentId' => 222,
 			'mapId'        => 'map-string-keys',
-			'tileProvider' => 'mapbox-outdoors',
+			'tileProvider' => 'mapbox',
+			'tileStyle'    => 'outdoors',
 			'tileApiKeys'  => 'not-an-object',
 		],
 		'',
@@ -1636,8 +1682,9 @@ test( 'wp_interactivity_state coerces a non-string tileApiKeys entry to empty', 
 		[
 			'attachmentId' => 223,
 			'mapId'        => 'map-non-string-key',
-			'tileProvider' => 'thunderforest-outdoors',
-			'tileApiKeys'  => [ 'thunderforest-outdoors' => 12345 ],
+			'tileProvider' => 'thunderforest',
+			'tileStyle'    => 'outdoor',
+			'tileApiKeys'  => [ 'thunderforest' => 12345 ],
 		],
 		'',
 		map_fake_block(),

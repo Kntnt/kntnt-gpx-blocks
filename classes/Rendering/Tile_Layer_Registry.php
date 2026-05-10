@@ -3,20 +3,29 @@
  * Server-side registry of Leaflet tile-layer providers and overlay layers.
  *
  * Owns the canonical list of base providers (OpenStreetMap, OpenTopoMap,
- * Thunderforest, Stadia Maps, MapTiler, Mapbox, …) and overlay layers
- * (Waymarked Trails Hiking) that the GPX Map block can choose between, and
- * exposes two public PHP filters — `kntnt_gpx_blocks_tile_providers` and
- * `kntnt_gpx_blocks_tile_overlays` — for site builders to add, replace, or
- * remove records. The registry is **PHP-canonical**: the JS view module reads
- * the resolved record from the per-block Interactivity state, never from a
- * JS-side registry.
+ * Carto, Esri, Stadia Maps, Jawg Maps, MapTiler, Mapbox, Thunderforest) and
+ * overlay layers (Waymarked Trails, OpenSeaMap, OpenSnowMap) that the GPX
+ * Map block can choose between, and exposes two public PHP filters —
+ * `kntnt_gpx_blocks_tile_providers` and `kntnt_gpx_blocks_tile_overlays` —
+ * for site builders to add, replace, or remove records. The registry is
+ * **PHP-canonical**: the JS view module reads the resolved record from the
+ * per-block Interactivity state, never from a JS-side registry.
  *
- * Validation is deterministic and runs at filter-application time. Every
- * surviving record is guaranteed to have an `https://` URL containing the
- * `{z}/{x}/{y}` placeholders; for base providers the `{KEY}` placeholder is
- * present iff `requiresKey === true`. Invalid records are dropped with a
- * `Plugin::warning()` log so a misconfigured filter callback fails loudly in
- * the log without breaking the page.
+ * The provider registry is a two-level hierarchy: each provider carries a
+ * shared `label`, `requiresKey` flag (one API key per provider, shared
+ * across all that provider's styles), `default` style id, optional
+ * `signupUrl`, optional `subdomains` (inherited by every style of that
+ * provider whose URL contains `{s}`), and a `styles` map keyed by style id
+ * with per-style `label`, `url`, `attribution`, `maxZoom`. Overlays remain
+ * a single-level map keyed by overlay id.
+ *
+ * Validation is deterministic and follows a drop-the-narrowest-unit rule.
+ * A bad single style drops just that style; provider-level failures
+ * (missing required field, `default` resolves to a dropped style, empty
+ * styles map, `{s}`-using style without provider-level `subdomains`) drop
+ * the whole provider. Every drop emits one `Plugin::warning()` log naming
+ * the failing id and the failing constraint so the integrator can locate
+ * the mistake quickly.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -29,21 +38,27 @@ namespace Kntnt\Gpx_Blocks\Rendering;
 use Kntnt\Gpx_Blocks\Plugin;
 
 /**
- * Registry of base-tile providers and overlay layers for the GPX Map block.
+ * Registry of base-tile providers (provider/style hierarchy) and overlay
+ * layers for the GPX Map block.
  *
- * Caches the validated arrays per request so the filter chain runs once per
- * registry instance even when the registry is consulted multiple times during
- * a single render pass.
+ * Caches the validated arrays per request so the filter chain runs once
+ * per registry instance even when the registry is consulted multiple
+ * times during a single render pass.
  *
  * @package Kntnt\Gpx_Blocks
  * @since 1.0.0
  *
- * @phpstan-type ProviderRecord array{
+ * @phpstan-type StyleRecord array{
  *     label: string,
  *     url: string,
  *     attribution: string,
  *     maxZoom: int,
+ * }
+ * @phpstan-type ProviderRecord array{
+ *     label: string,
  *     requiresKey: bool,
+ *     default: string,
+ *     styles: array<string, StyleRecord>,
  *     signupUrl?: string,
  *     subdomains?: list<string>,
  * }
@@ -55,7 +70,6 @@ use Kntnt\Gpx_Blocks\Plugin;
  *     subdomains?: list<string>,
  * }
  * @phpstan-type ResolvedProvider array{
- *     id: string,
  *     url: string,
  *     attribution: string,
  *     maxZoom: int,
@@ -75,20 +89,20 @@ final class Tile_Layer_Registry {
 	 * Identifier for the canonical fallback provider.
 	 *
 	 * Always present in the validated provider list. `resolve_provider()`
-	 * falls back to this id (with a warning log) when an unknown provider is
-	 * requested or when, as a last resort, the configured filter has dropped
-	 * every default record.
+	 * falls back to this id (with a warning log) when an unknown provider
+	 * id is requested, or — defensively — when a provider's own `default`
+	 * style cannot be resolved.
 	 *
 	 * @since 1.0.0
 	 * @var string
 	 */
-	public const FALLBACK_PROVIDER_ID = 'osm-standard';
+	public const FALLBACK_PROVIDER_ID = 'openstreetmap';
 
 	/**
-	 * Regex matching a valid provider identifier.
+	 * Regex matching a valid provider or style identifier.
 	 *
-	 * Lowercase letters, digits, and hyphens only — the same alphabet as the
-	 * plugin's CSS class prefix and REST namespace segments.
+	 * Lowercase letters, digits, and hyphens only — the same alphabet as
+	 * the plugin's CSS class prefix and REST namespace segments.
 	 *
 	 * @since 1.0.0
 	 * @var string
@@ -98,9 +112,9 @@ final class Tile_Layer_Registry {
 	/**
 	 * Hard upper bound on `maxZoom` accepted by the validator.
 	 *
-	 * Leaflet supports up to zoom 22 in practice. Values above this cap are
-	 * rejected because no real tile provider serves them and they likely
-	 * indicate a typo.
+	 * Leaflet supports up to zoom 22 in practice. Values above this cap
+	 * are rejected because no real tile provider serves them and they
+	 * likely indicate a typo.
 	 *
 	 * @since 1.0.0
 	 * @var int
@@ -110,10 +124,10 @@ final class Tile_Layer_Registry {
 	/**
 	 * Cached, validated provider list for the current request.
 	 *
-	 * Lazily populated on the first call to `get_providers()`. `null` means
-	 * "not yet resolved"; an empty array means "filter dropped every record"
-	 * but is never observed in practice because the registry restores the
-	 * fallback provider before returning.
+	 * Lazily populated on the first call to `get_providers()`. `null`
+	 * means "not yet resolved"; an empty array means "filter dropped
+	 * every record" but is never observed in practice because the
+	 * registry restores the fallback provider before returning.
 	 *
 	 * @since 1.0.0
 	 * @var array<string, ProviderRecord>|null
@@ -133,10 +147,11 @@ final class Tile_Layer_Registry {
 	/**
 	 * Returns the validated provider registry, applying the filter on first call.
 	 *
-	 * The result is keyed by provider id. Each value is the validated record
-	 * with `label`, `url`, `attribution`, `maxZoom`, `requiresKey`, and the
-	 * optional `signupUrl` and `subdomains` keys. The `{KEY}` placeholder is
-	 * left as-is in the URL; substitution happens in `resolve_provider()`.
+	 * The result is keyed by provider id. Each value is the validated
+	 * provider record carrying `label`, `requiresKey`, `default` style
+	 * id, the per-style `styles` map, and the optional `signupUrl` and
+	 * `subdomains` keys. The `{KEY}` placeholder is left as-is in the
+	 * per-style URL; substitution happens in `resolve_provider()`.
 	 *
 	 * @since 1.0.0
 	 *
@@ -163,7 +178,7 @@ final class Tile_Layer_Registry {
 	/**
 	 * Returns the validated overlay registry, applying the filter on first call.
 	 *
-	 * Result shape mirrors `get_providers()`, minus `requiresKey` and
+	 * Result shape mirrors the per-style record, minus `requiresKey` and
 	 * `signupUrl` — overlays in v1 do not carry an API key.
 	 *
 	 * @since 1.0.0
@@ -186,60 +201,104 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Resolves a saved provider id to a runtime tile-layer record.
+	 * Resolves a saved (provider id, style id) pair to a runtime tile-layer record.
 	 *
-	 * Returns the validated record with `{KEY}` substituted for the supplied
-	 * API key. Unknown ids fall back silently to the canonical OSM provider
-	 * with a `Plugin::warning()` log so the rendered map keeps working while
-	 * the misconfiguration is surfaced.
+	 * Returns the validated record with `{KEY}` substituted for the
+	 * supplied API key. The resolved record carries only the four
+	 * Leaflet-facing fields (`url`, `attribution`, `maxZoom`, optional
+	 * `subdomains`) — the input ids are not embedded because the caller
+	 * already has them in the block attributes.
 	 *
-	 * The returned record carries an `id` key in addition to the validated
-	 * provider fields so the caller can write it into Interactivity state
-	 * without re-deriving the id from the surrounding context.
+	 * Resolution fall-backs, in order:
+	 *
+	 * 1. Unknown provider id → fall back to the global
+	 *    `FALLBACK_PROVIDER_ID` and its `default` style.
+	 * 2. Known provider, unknown style id → fall back to the provider's
+	 *    own `default` style.
+	 * 3. Defensive: if the provider's own `default` style is missing
+	 *    (should not happen post-validation, but `resolve_provider`
+	 *    doesn't trust the impossible) → fall back to the global
+	 *    fallback provider's default style.
+	 *
+	 * Every fall-back emits one `Plugin::warning()` log so the
+	 * misconfiguration surfaces in the log without breaking the page.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $id      Provider id from saved block attributes.
-	 * @param string $api_key Per-block tile API key (empty when not required).
+	 * @param string $provider_id Provider id from saved block attributes.
+	 * @param string $style_id    Style id from saved block attributes.
+	 * @param string $api_key     Per-provider tile API key (empty when
+	 *                            the provider does not require one).
 	 *
 	 * @return ResolvedProvider
 	 */
-	public function resolve_provider( string $id, string $api_key ): array {
+	public function resolve_provider( string $provider_id, string $style_id, string $api_key ): array {
 
-		// Look up the validated record; fall back to OSM on any miss. The
-		// fallback is guaranteed to exist by `ensure_fallback_provider()`.
-		$providers   = $this->get_providers();
-		$record      = $providers[ $id ] ?? null;
-		$resolved_id = $id;
-		if ( $record === null ) {
+		$providers = $this->get_providers();
+
+		// Locate the provider record; fall back to the global fallback on miss.
+		$provider = $providers[ $provider_id ] ?? null;
+		if ( $provider === null ) {
 			Plugin::warning(
-				sprintf( 'Tile_Layer_Registry: unknown tile provider "%s"; falling back to %s.', $id, self::FALLBACK_PROVIDER_ID )
+				sprintf(
+					'Tile_Layer_Registry: unknown tile provider "%s"; falling back to %s.',
+					$provider_id,
+					self::FALLBACK_PROVIDER_ID
+				)
 			);
-			$resolved_id = self::FALLBACK_PROVIDER_ID;
-			$record      = $providers[ self::FALLBACK_PROVIDER_ID ];
+			$provider = $providers[ self::FALLBACK_PROVIDER_ID ];
+			$style_id = $provider['default'];
 		}
 
-		// Substitute the API key into the URL when the provider requires one.
-		// `requiresKey === true` guarantees the URL contains a literal `{KEY}`
-		// (validator contract); when it is false, the URL has no `{KEY}` and
-		// `str_replace()` is a no-op.
-		$url = $record['url'];
-		if ( $record['requiresKey'] ) {
+		// Locate the style record within the provider; fall back to the provider's default on miss.
+		$style = $provider['styles'][ $style_id ] ?? null;
+		if ( $style === null ) {
+			Plugin::warning(
+				sprintf(
+					'Tile_Layer_Registry: unknown style "%s" for provider "%s"; falling back to %s.',
+					$style_id,
+					$provider_id,
+					$provider['default']
+				)
+			);
+			$style = $provider['styles'][ $provider['default'] ] ?? null;
+		}
+
+		// Defensive: if the provider's own default cannot be resolved
+		// (shouldn't happen post-validation, but a future filter mutation
+		// could break the invariant), fall through to the global fallback.
+		if ( $style === null ) {
+			Plugin::warning(
+				sprintf(
+					'Tile_Layer_Registry: provider "%s" has unresolvable default style; falling back to %s.',
+					$provider_id,
+					self::FALLBACK_PROVIDER_ID
+				)
+			);
+			$provider = $providers[ self::FALLBACK_PROVIDER_ID ];
+			$style    = $provider['styles'][ $provider['default'] ];
+		}
+
+		// Substitute the API key when the provider requires one. The
+		// validator's contract guarantees the URL contains a literal
+		// `{KEY}` when `requiresKey === true`; on the other branch the
+		// URL has no `{KEY}` and `str_replace()` is a no-op.
+		$url = $style['url'];
+		if ( $provider['requiresKey'] ) {
 			$url = str_replace( '{KEY}', $api_key, $url );
 		}
 
-		// Compose the runtime record. Every field that survives validation is
-		// passed through verbatim except for the substituted URL and the
-		// embedded id — `subdomains` survives only when present in the
-		// validated record so the JS side can branch on it.
+		// Compose the runtime record. `subdomains` is inherited from the
+		// provider (validator contract: a `{s}`-using style requires its
+		// provider to declare `subdomains`) and is forwarded only when
+		// present so the JS side can branch on `record.subdomains`.
 		$out = [
-			'id'          => $resolved_id,
 			'url'         => $url,
-			'attribution' => $record['attribution'],
-			'maxZoom'     => $record['maxZoom'],
+			'attribution' => $style['attribution'],
+			'maxZoom'     => $style['maxZoom'],
 		];
-		if ( isset( $record['subdomains'] ) ) {
-			$out['subdomains'] = $record['subdomains'];
+		if ( isset( $provider['subdomains'] ) ) {
+			$out['subdomains'] = $provider['subdomains'];
 		}
 
 		return $out;
@@ -308,6 +367,10 @@ final class Tile_Layer_Registry {
 	 * array key when the key is a non-empty string; otherwise the record is
 	 * rejected (numeric keys cannot satisfy the `^[a-z0-9-]+$` rule).
 	 *
+	 * Drop-the-narrowest-unit: a bad single style drops just that style
+	 * with a warning; a provider-level failure (no surviving styles, bad
+	 * `default`, etc.) drops the whole provider with a separate warning.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<int|string, mixed> $raw Raw provider set from the filter.
@@ -350,8 +413,8 @@ final class Tile_Layer_Registry {
 	/**
 	 * Validates a raw overlay set as supplied by the filter.
 	 *
-	 * Same contract as `validate_provider_set()` but with the overlay record
-	 * shape.
+	 * Same contract as `validate_provider_set()` but with the overlay
+	 * record shape (a single tile layer, no provider/style hierarchy).
 	 *
 	 * @since 1.0.0
 	 *
@@ -393,13 +456,17 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Validates and normalises a single base-provider record.
+	 * Validates and normalises a single provider record.
 	 *
-	 * Performs the per-field type checks documented in `docs/hooks.md` and
-	 * returns the canonical typed shape on success, or `null` when the record
-	 * is rejected. Rejection emits a `Plugin::warning()` log naming the
-	 * offending id and the failing constraint so the integrator can find
-	 * their mistake quickly.
+	 * Enforces the provider-level constraints — non-empty `label`, bool
+	 * `requiresKey`, non-empty `default` style id, non-empty `styles`
+	 * map, optional `signupUrl` is https, optional `subdomains` is a
+	 * non-empty list of non-empty strings — and then walks the `styles`
+	 * sub-map, dropping individual bad styles with a warning. After per-
+	 * style validation, the provider is rejected when no styles survive,
+	 * when its `default` was dropped, or when any surviving style uses
+	 * `{s}` but the provider declared no `subdomains`. Returns the
+	 * canonical typed shape on success, `null` on rejection.
 	 *
 	 * @since 1.0.0
 	 *
@@ -410,89 +477,198 @@ final class Tile_Layer_Registry {
 	 */
 	private static function validate_and_normalise_provider_record( string $id, array $record ): ?array {
 
-		// label, url, attribution must be non-empty strings.
+		// label, requiresKey, default, styles are required provider-level fields.
 		$label = $record['label'] ?? null;
 		if ( ! is_string( $label ) || '' === $label ) {
 			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — label must be a non-empty string.', $id ) );
 			return null;
 		}
-		$url = $record['url'] ?? null;
-		if ( ! is_string( $url ) || '' === $url ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — url must be a non-empty string.', $id ) );
-			return null;
-		}
-		$attribution = $record['attribution'] ?? null;
-		if ( ! is_string( $attribution ) || '' === $attribution ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — attribution must be a non-empty string.', $id ) );
-			return null;
-		}
-
-		// URL scheme must be https; relative or http URLs leak visitor IPs without TLS.
-		if ( ! str_starts_with( $url, 'https://' ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — url must start with https://.', $id ) );
-			return null;
-		}
-
-		// URL must contain Leaflet's tile-coordinate placeholders verbatim.
-		if ( ! self::url_has_xyz_placeholders( $url ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — url must contain {z}, {x}, and {y} placeholders.', $id ) );
-			return null;
-		}
-
-		// requiresKey must be a bool, and the URL contains {KEY} iff requiresKey is true.
 		$requires_key = $record['requiresKey'] ?? null;
 		if ( ! is_bool( $requires_key ) ) {
 			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — requiresKey must be a bool.', $id ) );
 			return null;
 		}
-		$has_key_placeholder = str_contains( $url, '{KEY}' );
-		if ( $requires_key && ! $has_key_placeholder ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — requiresKey is true but url has no {KEY} placeholder.', $id ) );
+		$default_style_id = $record['default'] ?? null;
+		if ( ! is_string( $default_style_id ) || '' === $default_style_id ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — default must be a non-empty string style id.', $id ) );
 			return null;
 		}
-		if ( ! $requires_key && $has_key_placeholder ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — url has {KEY} placeholder but requiresKey is false.', $id ) );
+		$raw_styles = $record['styles'] ?? null;
+		if ( ! is_array( $raw_styles ) || count( $raw_styles ) === 0 ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — styles must be a non-empty map.', $id ) );
+			return null;
+		}
+
+		// Optional signupUrl, when present, must be an https string.
+		$signup_url = null;
+		if ( array_key_exists( 'signupUrl', $record ) ) {
+			$candidate = $record['signupUrl'];
+			if ( ! is_string( $candidate ) || ! str_starts_with( $candidate, 'https://' ) ) {
+				Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — signupUrl must be an https:// string when present.', $id ) );
+				return null;
+			}
+			$signup_url = $candidate;
+		}
+
+		// Optional subdomains, when present, must be a non-empty list of non-empty strings.
+		$subdomains = null;
+		if ( array_key_exists( 'subdomains', $record ) ) {
+			$candidate = self::normalise_subdomains( $record['subdomains'] );
+			if ( $candidate === null ) {
+				Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — subdomains must be a non-empty list of non-empty strings.', $id ) );
+				return null;
+			}
+			$subdomains = $candidate;
+		}
+
+		// Validate each style with the drop-the-narrowest-unit rule. A
+		// style that fails its own validator is dropped with a warning;
+		// the provider survives so long as at least one style remains.
+		$styles = [];
+		foreach ( $raw_styles as $style_id => $raw_style ) {
+
+			if ( ! is_string( $style_id ) || ! is_array( $raw_style ) ) {
+				Plugin::warning(
+					sprintf( 'Tile_Layer_Registry: provider "%s" style dropped — style key must be a string id and value must be an array.', $id )
+				);
+				continue;
+			}
+
+			if ( ! self::is_valid_id( $style_id ) ) {
+				Plugin::warning(
+					sprintf( 'Tile_Layer_Registry: provider "%s" style id "%s" rejected — must match %s.', $id, $style_id, self::ID_REGEX )
+				);
+				continue;
+			}
+
+			$normalised_style = self::validate_and_normalise_style_record( $id, $style_id, $raw_style, $requires_key, $subdomains );
+			if ( $normalised_style === null ) {
+				continue;
+			}
+
+			$styles[ $style_id ] = $normalised_style;
+
+		}
+
+		// Reject the provider when no styles survive — there's nothing left to resolve.
+		if ( count( $styles ) === 0 ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — no styles survived validation.', $id ) );
+			return null;
+		}
+
+		// Reject the provider when its declared `default` style is not in the surviving set.
+		if ( ! isset( $styles[ $default_style_id ] ) ) {
+			Plugin::warning(
+				sprintf( 'Tile_Layer_Registry: provider "%s" rejected — default style "%s" is not in the surviving styles set.', $id, $default_style_id )
+			);
+			return null;
+		}
+
+		// Compose the canonical typed shape. Optional fields are added only when they passed.
+		$out = [
+			'label'       => $label,
+			'requiresKey' => $requires_key,
+			'default'     => $default_style_id,
+			'styles'      => $styles,
+		];
+		if ( $signup_url !== null ) {
+			$out['signupUrl'] = $signup_url;
+		}
+		if ( $subdomains !== null ) {
+			$out['subdomains'] = $subdomains;
+		}
+
+		return $out;
+
+	}
+
+	/**
+	 * Validates and normalises a single style record within a provider.
+	 *
+	 * Per-style constraints: non-empty `label`, `attribution`, https `url`
+	 * containing `{z}`, `{x}`, `{y}`, `maxZoom` integer in [0, 22]. The
+	 * `{KEY}` placeholder is required iff `$provider_requires_key === true`
+	 * (same iff rule the v0.x flat registry enforced, now scoped to the
+	 * containing provider's flag). When the URL contains `{s}`, the
+	 * provider must have declared `subdomains` — a `{s}`-using style on a
+	 * provider without `subdomains` is dropped.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string                       $provider_id           Containing provider id (for warning context).
+	 * @param string                       $style_id              Style id (already shape-validated).
+	 * @param array<int|string, mixed>     $record                Style record to validate.
+	 * @param bool                         $provider_requires_key Provider-level `requiresKey` flag.
+	 * @param list<string>|null            $provider_subdomains   Provider-level `subdomains`, if declared.
+	 *
+	 * @return StyleRecord|null
+	 */
+	private static function validate_and_normalise_style_record(
+		string $provider_id,
+		string $style_id,
+		array $record,
+		bool $provider_requires_key,
+		?array $provider_subdomains,
+	): ?array {
+
+		$label = $record['label'] ?? null;
+		if ( ! is_string( $label ) || '' === $label ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — label must be a non-empty string.', $provider_id, $style_id ) );
+			return null;
+		}
+		$url = $record['url'] ?? null;
+		if ( ! is_string( $url ) || '' === $url ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — url must be a non-empty string.', $provider_id, $style_id ) );
+			return null;
+		}
+		$attribution = $record['attribution'] ?? null;
+		if ( ! is_string( $attribution ) || '' === $attribution ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — attribution must be a non-empty string.', $provider_id, $style_id ) );
+			return null;
+		}
+
+		// URL scheme must be https; relative or http URLs leak visitor IPs without TLS.
+		if ( ! str_starts_with( $url, 'https://' ) ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — url must start with https://.', $provider_id, $style_id ) );
+			return null;
+		}
+
+		// URL must contain Leaflet's tile-coordinate placeholders verbatim.
+		if ( ! self::url_has_xyz_placeholders( $url ) ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — url must contain {z}, {x}, and {y} placeholders.', $provider_id, $style_id ) );
+			return null;
+		}
+
+		// {KEY} placeholder must match the provider's `requiresKey` flag.
+		$has_key_placeholder = str_contains( $url, '{KEY}' );
+		if ( $provider_requires_key && ! $has_key_placeholder ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — provider requiresKey=true but url has no {KEY} placeholder.', $provider_id, $style_id ) );
+			return null;
+		}
+		if ( ! $provider_requires_key && $has_key_placeholder ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — provider requiresKey=false but url contains {KEY} placeholder.', $provider_id, $style_id ) );
+			return null;
+		}
+
+		// A {s}-using style requires its provider to declare subdomains.
+		if ( str_contains( $url, '{s}' ) && $provider_subdomains === null ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — url contains {s} but provider declares no subdomains.', $provider_id, $style_id ) );
 			return null;
 		}
 
 		// maxZoom must be an int in [0, MAX_ZOOM_LIMIT].
 		$max_zoom = $record['maxZoom'] ?? null;
 		if ( ! self::is_valid_max_zoom( $max_zoom ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — maxZoom must be int in [0, %d].', $id, self::MAX_ZOOM_LIMIT ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" style "%s" dropped — maxZoom must be int in [0, %d].', $provider_id, $style_id, self::MAX_ZOOM_LIMIT ) );
 			return null;
 		}
 
-		// Compose the canonical typed shape. Optional fields are added only
-		// when they pass their per-field validators below.
-		$out = [
+		return [
 			'label'       => $label,
 			'url'         => $url,
 			'attribution' => $attribution,
 			'maxZoom'     => $max_zoom,
-			'requiresKey' => $requires_key,
 		];
-
-		// Optional signupUrl, when present, must be an https string.
-		if ( array_key_exists( 'signupUrl', $record ) ) {
-			$signup_url = $record['signupUrl'];
-			if ( ! is_string( $signup_url ) || ! str_starts_with( $signup_url, 'https://' ) ) {
-				Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — signupUrl must be an https:// string when present.', $id ) );
-				return null;
-			}
-			$out['signupUrl'] = $signup_url;
-		}
-
-		// Optional subdomains, when present, must be a list of non-empty strings.
-		if ( array_key_exists( 'subdomains', $record ) ) {
-			$subdomains = self::normalise_subdomains( $record['subdomains'] );
-			if ( $subdomains === null ) {
-				Plugin::warning( sprintf( 'Tile_Layer_Registry: provider "%s" rejected — subdomains must be a non-empty list of non-empty strings.', $id ) );
-				return null;
-			}
-			$out['subdomains'] = $subdomains;
-		}
-
-		return $out;
 
 	}
 
@@ -569,6 +745,12 @@ final class Tile_Layer_Registry {
 	/**
 	 * Returns the canonical default provider set shipped with the plugin.
 	 *
+	 * Nine providers, ordered alphabetically by display label: Carto,
+	 * Esri, Jawg Maps, Mapbox, MapTiler, OpenStreetMap, OpenTopoMap,
+	 * Stadia Maps, Thunderforest. The first two and the OpenStreetMap /
+	 * OpenTopoMap entries are key-less; the remaining five require a
+	 * per-provider API key shared across all that provider's styles.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @return array<string, ProviderRecord>
@@ -576,173 +758,340 @@ final class Tile_Layer_Registry {
 	private static function default_providers(): array {
 
 		return [
-			'osm-standard'            => [
-				'label'       => __( 'OpenStreetMap (Standard)', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-				'attribution' => '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 19,
+			'carto'         => [
+				'label'       => __( 'Carto', 'kntnt-gpx-blocks' ),
 				'requiresKey' => false,
-				'subdomains'  => [ 'a', 'b', 'c' ],
+				'default'     => 'voyager',
+				'subdomains'  => [ 'a', 'b', 'c', 'd' ],
+				'styles'      => [
+					'dark-matter' => [
+						'label'       => __( 'Dark Matter', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+						'maxZoom'     => 20,
+					],
+					'positron'    => [
+						'label'       => __( 'Positron', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+						'maxZoom'     => 20,
+					],
+					'voyager'     => [
+						'label'       => __( 'Voyager', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+						'maxZoom'     => 20,
+					],
+				],
 			],
-			'opentopomap'             => [
+			'esri'          => [
+				'label'       => __( 'Esri', 'kntnt-gpx-blocks' ),
+				'requiresKey' => false,
+				'default'     => 'topographic',
+				'styles'      => [
+					'dark-gray-canvas'  => [
+						'label'       => __( 'Dark Gray Canvas', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+						'maxZoom'     => 19,
+					],
+					'imagery'           => [
+						'label'       => __( 'Imagery', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+						'maxZoom'     => 19,
+					],
+					'imagery-hybrid'    => [
+						'label'       => __( 'Imagery Hybrid', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+						'maxZoom'     => 19,
+					],
+					'light-gray-canvas' => [
+						'label'       => __( 'Light Gray Canvas', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+						'maxZoom'     => 19,
+					],
+					'navigation'        => [
+						'label'       => __( 'Navigation', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, &copy; OpenStreetMap contributors, and the GIS User Community',
+						'maxZoom'     => 19,
+					],
+					'openstreetmap'     => [
+						'label'       => __( 'OpenStreetMap', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Source: Esri, &copy; OpenStreetMap contributors',
+						'maxZoom'     => 19,
+					],
+					'outdoor'           => [
+						'label'       => __( 'Outdoors', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC',
+						'maxZoom'     => 16,
+					],
+					'streets'           => [
+						'label'       => __( 'Streets', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
+						'maxZoom'     => 19,
+					],
+					'topographic'       => [
+						'label'       => __( 'Topographic', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+						'attribution' => 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
+						'maxZoom'     => 19,
+					],
+				],
+			],
+			'jawg-maps'     => [
+				'label'       => __( 'Jawg Maps', 'kntnt-gpx-blocks' ),
+				'requiresKey' => true,
+				'default'     => 'streets',
+				'signupUrl'   => 'https://www.jawg.io/',
+				'styles'      => [
+					'streets' => [
+						'label'       => __( 'Streets', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.jawg.io/jawg-streets/{z}/{x}/{y}.png?access-token={KEY}',
+						'attribution' => '<a href="https://www.jawg.io" title="Tiles Courtesy of Jawg Maps">&copy; Jawg Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'terrain' => [
+						'label'       => __( 'Terrain', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.jawg.io/jawg-terrain/{z}/{x}/{y}.png?access-token={KEY}',
+						'attribution' => '<a href="https://www.jawg.io" title="Tiles Courtesy of Jawg Maps">&copy; Jawg Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'sunny'   => [
+						'label'       => __( 'Sunny', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.jawg.io/jawg-sunny/{z}/{x}/{y}.png?access-token={KEY}',
+						'attribution' => '<a href="https://www.jawg.io" title="Tiles Courtesy of Jawg Maps">&copy; Jawg Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'light'   => [
+						'label'       => __( 'Light', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.jawg.io/jawg-light/{z}/{x}/{y}.png?access-token={KEY}',
+						'attribution' => '<a href="https://www.jawg.io" title="Tiles Courtesy of Jawg Maps">&copy; Jawg Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'dark'    => [
+						'label'       => __( 'Dark', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.jawg.io/jawg-dark/{z}/{x}/{y}.png?access-token={KEY}',
+						'attribution' => '<a href="https://www.jawg.io" title="Tiles Courtesy of Jawg Maps">&copy; Jawg Maps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+				],
+			],
+			'mapbox'        => [
+				'label'       => __( 'Mapbox', 'kntnt-gpx-blocks' ),
+				'requiresKey' => true,
+				'default'     => 'outdoors',
+				'signupUrl'   => 'https://www.mapbox.com/',
+				'styles'      => [
+					'outdoors'          => [
+						'label'       => __( 'Outdoors', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
+						'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
+						'maxZoom'     => 22,
+					],
+					'streets'           => [
+						'label'       => __( 'Streets', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
+						'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
+						'maxZoom'     => 22,
+					],
+					'satellite-streets' => [
+						'label'       => __( 'Satellite Streets', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
+						'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
+						'maxZoom'     => 22,
+					],
+					'light'             => [
+						'label'       => __( 'Light', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
+						'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
+						'maxZoom'     => 22,
+					],
+					'dark'              => [
+						'label'       => __( 'Dark', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
+						'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
+						'maxZoom'     => 22,
+					],
+				],
+			],
+			'maptiler'      => [
+				'label'       => __( 'MapTiler', 'kntnt-gpx-blocks' ),
+				'requiresKey' => true,
+				'default'     => 'outdoor',
+				'signupUrl'   => 'https://www.maptiler.com/',
+				'styles'      => [
+					'outdoor'       => [
+						'label'       => __( 'Outdoor', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/outdoor-v2/{z}/{x}/{y}.png?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'base'          => [
+						'label'       => __( 'Base', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/basic-v2/{z}/{x}/{y}.png?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'landscape'     => [
+						'label'       => __( 'Landscape', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/landscape/{z}/{x}/{y}.png?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'openstreetmap' => [
+						'label'       => __( 'OpenStreetMap', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.jpg?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'streets'       => [
+						'label'       => __( 'Streets', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'topo'          => [
+						'label'       => __( 'Topo', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/topo-v2/{z}/{x}/{y}.png?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'satellite'     => [
+						'label'       => __( 'Satellite', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'hybrid'        => [
+						'label'       => __( 'Hybrid', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'dataviz'       => [
+						'label'       => __( 'Dataviz', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://api.maptiler.com/maps/dataviz/{z}/{x}/{y}.png?key={KEY}',
+						'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+				],
+			],
+			'openstreetmap' => [
+				'label'       => __( 'OpenStreetMap', 'kntnt-gpx-blocks' ),
+				'requiresKey' => false,
+				'default'     => 'mapnik',
+				'subdomains'  => [ 'a', 'b', 'c' ],
+				'styles'      => [
+					'mapnik'  => [
+						'label'       => __( 'Mapnik', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 19,
+					],
+					'cyclosm' => [
+						'label'       => __( 'CyclOSM', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+						'attribution' => '<a href="https://github.com/cyclosm/cyclosm-cartocss-style/releases">CyclOSM</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 20,
+					],
+				],
+			],
+			'opentopomap'   => [
 				'label'       => __( 'OpenTopoMap', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-				'attribution' => 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
-				'maxZoom'     => 17,
 				'requiresKey' => false,
+				'default'     => 'standard',
 				'subdomains'  => [ 'a', 'b', 'c' ],
+				'styles'      => [
+					'standard' => [
+						'label'       => __( 'Standard', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+						'attribution' => 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+						'maxZoom'     => 17,
+					],
+				],
 			],
-			'cyclosm'                 => [
-				'label'       => __( 'CyclOSM', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-				'attribution' => '<a href="https://github.com/cyclosm/cyclosm-cartocss-style/releases">CyclOSM</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 20,
-				'requiresKey' => false,
-				'subdomains'  => [ 'a', 'b', 'c' ],
-			],
-			'thunderforest-outdoors'  => [
-				'label'       => __( 'Thunderforest Outdoors', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={KEY}',
-				'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
+			'stadia-maps'   => [
+				'label'       => __( 'Stadia Maps', 'kntnt-gpx-blocks' ),
 				'requiresKey' => true,
-				'signupUrl'   => 'https://www.thunderforest.com/',
-			],
-			'thunderforest-landscape' => [
-				'label'       => __( 'Thunderforest Landscape', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey={KEY}',
-				'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.thunderforest.com/',
-			],
-			'thunderforest-atlas'     => [
-				'label'       => __( 'Thunderforest Atlas', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={KEY}',
-				'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.thunderforest.com/',
-			],
-			'thunderforest-opencyclemap' => [
-				'label'       => __( 'Thunderforest OpenCycleMap', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey={KEY}',
-				'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.thunderforest.com/',
-			],
-			'stadia-outdoors'         => [
-				'label'       => __( 'Stadia Maps Outdoors', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tiles.stadiamaps.com/tiles/outdoors/{z}/{x}/{y}.png?api_key={KEY}',
-				'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 20,
-				'requiresKey' => true,
+				'default'     => 'outdoors',
 				'signupUrl'   => 'https://stadiamaps.com/',
+				'styles'      => [
+					'alidade-smooth'      => [
+						'label'       => __( 'Alidade Smooth', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key={KEY}',
+						'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 20,
+					],
+					'alidade-smooth-dark' => [
+						'label'       => __( 'Alidade Smooth Dark', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png?api_key={KEY}',
+						'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 20,
+					],
+					'outdoors'            => [
+						'label'       => __( 'Outdoors', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.stadiamaps.com/tiles/outdoors/{z}/{x}/{y}.png?api_key={KEY}',
+						'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 20,
+					],
+					'osm-bright'          => [
+						'label'       => __( 'OSM Bright', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key={KEY}',
+						'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 20,
+					],
+					'stamen-toner'        => [
+						'label'       => __( 'Stamen Toner', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.stadiamaps.com/tiles/stamen_toner/{z}/{x}/{y}.png?api_key={KEY}',
+						'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://stamen.com/">Stamen Design</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 20,
+					],
+					'stamen-watercolor'   => [
+						'label'       => __( 'Stamen Watercolor', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?api_key={KEY}',
+						'attribution' => '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://stamen.com/">Stamen Design</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 16,
+					],
+				],
 			],
-			'maptiler-outdoor'        => [
-				'label'       => __( 'MapTiler Outdoor', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/outdoor-v2/{z}/{x}/{y}.png?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
+			'thunderforest' => [
+				'label'       => __( 'Thunderforest', 'kntnt-gpx-blocks' ),
 				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-base'           => [
-				'label'       => __( 'MapTiler Base', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/basic-v2/{z}/{x}/{y}.png?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-landscape'      => [
-				'label'       => __( 'MapTiler Landscape', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/landscape/{z}/{x}/{y}.png?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-openstreetmap'  => [
-				'label'       => __( 'MapTiler OpenStreetMap', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.jpg?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-streets'        => [
-				'label'       => __( 'MapTiler Streets', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-topo'           => [
-				'label'       => __( 'MapTiler Topo', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/topo-v2/{z}/{x}/{y}.png?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-satellite'      => [
-				'label'       => __( 'MapTiler Satellite Plain', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'maptiler-hybrid'         => [
-				'label'       => __( 'MapTiler Satellite Hybrid', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key={KEY}',
-				'attribution' => '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.maptiler.com/',
-			],
-			'mapbox-outdoors'         => [
-				'label'       => __( 'Mapbox Outdoors', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
-				'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.mapbox.com/',
-			],
-			'mapbox-streets'          => [
-				'label'       => __( 'Mapbox Streets', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
-				'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.mapbox.com/',
-			],
-			'mapbox-satellite-streets' => [
-				'label'       => __( 'Mapbox Satellite Streets', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
-				'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.mapbox.com/',
-			],
-			'mapbox-light'            => [
-				'label'       => __( 'Mapbox Light', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
-				'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.mapbox.com/',
-			],
-			'mapbox-dark'             => [
-				'label'       => __( 'Mapbox Dark', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
-				'attribution' => '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
-				'maxZoom'     => 22,
-				'requiresKey' => true,
-				'signupUrl'   => 'https://www.mapbox.com/',
+				'default'     => 'outdoor',
+				'signupUrl'   => 'https://www.thunderforest.com/',
+				'styles'      => [
+					'atlas'        => [
+						'label'       => __( 'Atlas', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={KEY}',
+						'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'landscape'    => [
+						'label'       => __( 'Landscape', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey={KEY}',
+						'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'opencyclemap' => [
+						'label'       => __( 'OpenCycleMap', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey={KEY}',
+						'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+					'outdoor'      => [
+						'label'       => __( 'Outdoors', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={KEY}',
+						'attribution' => 'Maps &copy; <a href="https://www.thunderforest.com/">Thunderforest</a>, Data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 22,
+					],
+				],
 			],
 		];
 
@@ -795,10 +1144,10 @@ final class Tile_Layer_Registry {
 	/**
 	 * Re-injects the canonical fallback provider when the validated set lacks it.
 	 *
-	 * The fallback exists so `resolve_provider()` can always return a record,
-	 * even when a misconfigured filter callback has dropped every default
-	 * record. Logs a warning when re-injection happens because losing the
-	 * fallback indicates a serious misconfiguration upstream.
+	 * The fallback exists so `resolve_provider()` can always return a
+	 * record, even when a misconfigured filter callback has dropped every
+	 * default record. Logs a warning when re-injection happens because
+	 * losing the fallback indicates a serious misconfiguration upstream.
 	 *
 	 * @since 1.0.0
 	 *
@@ -818,7 +1167,7 @@ final class Tile_Layer_Registry {
 
 		// Re-validate the canonical default in case the constants drift over
 		// time. The default set is hard-coded above and will normally pass.
-		$defaults = self::default_providers();
+		$defaults  = self::default_providers();
 		$canonical = $defaults[ self::FALLBACK_PROVIDER_ID ] ?? null;
 		if ( $canonical === null ) {
 			return $valid;

@@ -1,25 +1,30 @@
 /**
  * Inspector-shape test for the GPX Map Edit component's Tiles panel
- * (issue #102 — per-provider API keys).
+ * (issue #105 — provider/style hierarchy with per-provider API keys).
  *
- * The Map block previously stored a single `tileApiKey` string scoped to
- * whichever provider was currently selected. Switching from provider A to
- * provider B and back to A forced the editor to re-enter A's key, which
- * was hostile to anyone configuring more than one paid provider. Issue
- * #102 replaces the scalar with a `tileApiKeys` object keyed by provider
- * id; the inspector's TextControl reads and writes the entry for the
- * currently-selected provider, and switching providers preserves the
- * other providers' keys intact.
+ * The Map block now stores its tile-layer choice as a two-step
+ * (provider, style) pair plus a `tileApiKeys` object keyed by provider
+ * id (one API key per provider, shared across all that provider's
+ * styles). The inspector's `TilesPanel` renders two `SelectControl`s
+ * (provider, style) plus a conditional `TextControl` (API key) for
+ * key-required providers.
  *
- * This file mounts MapEdit with the Tiles panel's TextControl captured
- * via a mock, then asserts:
+ * This file mounts `MapEdit` with the Tiles panel's controls captured
+ * via mocks, then asserts:
  *
- * - The displayed value reflects `tileApiKeys[ tileProvider ]`.
- * - Typing in the TextControl writes back a `tileApiKeys` object that
- *   merges the new entry into the existing map without touching keys for
- *   other providers.
- * - Switching the selected provider (via the SelectControl) keeps every
- *   other provider's key intact.
+ * - The provider dropdown lists every validated provider; an orphan
+ *   saved provider id surfaces as a placeholder option in the affected
+ *   dropdown.
+ * - The style dropdown is always rendered (even when the selected
+ *   provider has only one style) and lists every style of the currently
+ *   selected provider, with orphan saved style ids surfacing as a
+ *   placeholder option in the affected dropdown.
+ * - The API-key field appears only for `requiresKey === true` providers,
+ *   reads the value from `tileApiKeys[ tileProvider ]`, and writes back
+ *   a merged map that preserves other providers' keys.
+ * - Switching providers resets `tileStyle` to the new provider's
+ *   `default` unconditionally and preserves every other provider's
+ *   stored API key intact.
  *
  * @since 1.0.0
  */
@@ -28,9 +33,9 @@ import { createElement, createRoot, flushSync } from '@wordpress/element';
 
 /**
  * Captured `TextControl` props payload across every render in the
- * current test. The Tiles panel renders exactly one TextControl when the
- * resolved provider requires a key, so each entry corresponds to one
- * render of the panel.
+ * current test. The Tiles panel renders exactly one TextControl when
+ * the resolved provider requires a key, so each entry corresponds to
+ * one render of the panel.
  *
  * @since 1.0.0
  */
@@ -41,9 +46,9 @@ type CapturedTextControl = {
 };
 
 /**
- * Captured `SelectControl` props payload across every render. The Tiles
- * panel renders one SelectControl listing every provider in the editor
- * registry; assertions key off its `onChange` to flip the selected id.
+ * Captured `SelectControl` props payload across every render. The
+ * Tiles panel renders two SelectControls (provider, style); the test
+ * keys off `label` to find each one.
  *
  * @since 1.0.0
  */
@@ -174,39 +179,91 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Editor data globals — the Tiles-panel test needs both a free provider
-// (osm-standard, no key surface) and two paid providers (Thunderforest
-// Outdoors and MapTiler Outdoor) so the switching-preserves-keys
-// assertion has more than one paid id to flip between.
+// Editor data globals — the Tiles-panel test needs both free providers
+// (openstreetmap with two styles; opentopomap with a single style) and
+// paid providers (Thunderforest with multiple styles, Mapbox with
+// multiple styles) so the switching-preserves-keys assertion has more
+// than one paid provider to flip between, and the single-style
+// assertion has a concrete fixture.
 (
 	globalThis as {
 		kntntGpxBlocks?: { providers: unknown; overlays: unknown };
 	}
  ).kntntGpxBlocks = {
 	providers: {
-		'osm-standard': {
-			label: 'OpenStreetMap Standard',
+		openstreetmap: {
+			label: 'OpenStreetMap',
 			requiresKey: false,
-			url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-			attribution: 'OSM',
-			maxZoom: 19,
+			default: 'mapnik',
 			subdomains: [ 'a', 'b', 'c' ],
+			styles: {
+				mapnik: {
+					label: 'Mapnik',
+					url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+					attribution: 'OSM',
+					maxZoom: 19,
+				},
+				cyclosm: {
+					label: 'CyclOSM',
+					url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+					attribution: 'OSM',
+					maxZoom: 20,
+				},
+			},
 		},
-		'thunderforest-outdoors': {
-			label: 'Thunderforest Outdoors',
+		opentopomap: {
+			label: 'OpenTopoMap',
+			requiresKey: false,
+			default: 'standard',
+			subdomains: [ 'a', 'b', 'c' ],
+			styles: {
+				standard: {
+					label: 'Standard',
+					url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+					attribution: 'OTM',
+					maxZoom: 17,
+				},
+			},
+		},
+		thunderforest: {
+			label: 'Thunderforest',
 			requiresKey: true,
-			url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={KEY}',
-			attribution: 'Thunderforest',
-			maxZoom: 22,
+			default: 'outdoor',
 			signupUrl: 'https://www.thunderforest.com/',
+			styles: {
+				atlas: {
+					label: 'Atlas',
+					url: 'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={KEY}',
+					attribution: 'Thunderforest',
+					maxZoom: 22,
+				},
+				outdoor: {
+					label: 'Outdoors',
+					url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={KEY}',
+					attribution: 'Thunderforest',
+					maxZoom: 22,
+				},
+			},
 		},
-		'maptiler-outdoor': {
-			label: 'MapTiler Outdoor',
+		mapbox: {
+			label: 'Mapbox',
 			requiresKey: true,
-			url: 'https://api.maptiler.com/maps/outdoor-v2/{z}/{x}/{y}.png?key={KEY}',
-			attribution: 'MapTiler',
-			maxZoom: 22,
-			signupUrl: 'https://www.maptiler.com/',
+			default: 'outdoors',
+			signupUrl: 'https://www.mapbox.com/',
+			styles: {
+				outdoors: {
+					label: 'Outdoors',
+					url: 'https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
+					attribution: 'Mapbox',
+					maxZoom: 22,
+				},
+				dark: {
+					label: 'Dark',
+					url: 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
+					attribution: 'Mapbox',
+					maxZoom: 22,
+				},
+			},
 		},
 	},
 	overlays: {},
@@ -261,7 +318,8 @@ function buildAttributes(
 		tooltipDescLetterSpacing: '',
 		tooltipDescTextDecoration: '',
 		tooltipDescTextTransform: '',
-		tileProvider: 'osm-standard',
+		tileProvider: 'openstreetmap',
+		tileStyle: 'mapnik',
 		tileApiKeys: {},
 		tileOverlays: [],
 		...overrides,
@@ -307,23 +365,56 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 	};
 }
 
-describe( 'MapEdit Tiles panel — per-provider API keys (issue #102)', () => {
+describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () => {
+	it( 'renders both Provider and Style SelectControls for a free provider with multiple styles', () => {
+		const { selects } = mountAndCapture( buildAttributes() );
+
+		const providerSelect = selects.find( ( s ) => s.label === 'Provider' );
+		const styleSelect = selects.find( ( s ) => s.label === 'Style' );
+
+		expect( providerSelect ).toBeDefined();
+		expect( styleSelect ).toBeDefined();
+
+		// Style options reflect the selected provider's styles, in
+		// registry order.
+		expect( styleSelect?.options.map( ( o ) => o.value ) ).toEqual( [
+			'mapnik',
+			'cyclosm',
+		] );
+	} );
+
+	it( 'always renders the Style SelectControl even when the selected provider has only one style', () => {
+		const { selects } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'opentopomap',
+				tileStyle: 'standard',
+			} )
+		);
+
+		const styleSelect = selects.find( ( s ) => s.label === 'Style' );
+		expect( styleSelect ).toBeDefined();
+		expect( styleSelect?.options.map( ( o ) => o.value ) ).toEqual( [
+			'standard',
+		] );
+	} );
+
 	it( 'shows no API-key field for a free provider', () => {
-		// osm-standard has requiresKey: false. The Tiles panel renders only
-		// the SelectControl in that case.
+		// openstreetmap has requiresKey: false. The Tiles panel renders
+		// only the two SelectControls in that case.
 		const { texts } = mountAndCapture( buildAttributes() );
 
 		const apiKeyFields = texts.filter( ( t ) => t.label === 'API key' );
 		expect( apiKeyFields ).toHaveLength( 0 );
 	} );
 
-	it( 'reads the API-key value from tileApiKeys[ tileProvider ]', () => {
+	it( 'reads the API-key value from tileApiKeys[ tileProvider ] for a paid provider', () => {
 		const { texts } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'thunderforest-outdoors',
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
 				tileApiKeys: {
-					'thunderforest-outdoors': 'THUNDER_KEY',
-					'maptiler-outdoor': 'MAPTILER_KEY',
+					thunderforest: 'THUNDER_KEY',
+					mapbox: 'MAPBOX_KEY',
 				},
 			} )
 		);
@@ -333,12 +424,13 @@ describe( 'MapEdit Tiles panel — per-provider API keys (issue #102)', () => {
 		expect( apiKeyField?.value ).toBe( 'THUNDER_KEY' );
 	} );
 
-	it( 'falls back to the empty string when the selected provider has no entry', () => {
+	it( 'falls back to the empty string when the selected provider has no key entry', () => {
 		const { texts } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'maptiler-outdoor',
+				tileProvider: 'mapbox',
+				tileStyle: 'outdoors',
 				tileApiKeys: {
-					'thunderforest-outdoors': 'THUNDER_KEY',
+					thunderforest: 'THUNDER_KEY',
 				},
 			} )
 		);
@@ -351,10 +443,11 @@ describe( 'MapEdit Tiles panel — per-provider API keys (issue #102)', () => {
 	it( 'writes back via tileApiKeys merged with existing entries, preserving other providers keys', () => {
 		const { texts, writes } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'thunderforest-outdoors',
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
 				tileApiKeys: {
-					'thunderforest-outdoors': 'OLD_THUNDER',
-					'maptiler-outdoor': 'MAPTILER_KEY',
+					thunderforest: 'OLD_THUNDER',
+					mapbox: 'MAPBOX_KEY',
 				},
 			} )
 		);
@@ -366,41 +459,101 @@ describe( 'MapEdit Tiles panel — per-provider API keys (issue #102)', () => {
 		expect( writes ).toEqual( [
 			{
 				tileApiKeys: {
-					'thunderforest-outdoors': 'NEW_THUNDER',
-					'maptiler-outdoor': 'MAPTILER_KEY',
+					thunderforest: 'NEW_THUNDER',
+					mapbox: 'MAPBOX_KEY',
 				},
 			},
 		] );
 	} );
 
-	it( 'switching provider does not overwrite or drop the previous provider key (preserves all entries on switch)', () => {
-		// The Tiles panel's onChange writes only tileProvider when the
-		// SelectControl fires — tileApiKeys is untouched, so the existing
-		// map carries forward in the next render. This test mirrors the
-		// "switching providers preserves keys" acceptance criterion.
+	it( 'switching providers resets tileStyle to the new provider default and preserves every other provider key', () => {
+		// Per-provider style memory is NOT retained: switching to Mapbox
+		// always lands on Mapbox's `default` (`outdoors`), regardless of
+		// which Mapbox style the user might have picked previously.
+		// Per-provider key memory IS retained: every key in tileApiKeys
+		// carries forward untouched.
 		const { selects, writes } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'thunderforest-outdoors',
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
 				tileApiKeys: {
-					'thunderforest-outdoors': 'THUNDER_KEY',
-					'maptiler-outdoor': 'MAPTILER_KEY',
+					thunderforest: 'THUNDER_KEY',
+					mapbox: 'MAPBOX_KEY',
 				},
 			} )
 		);
 
 		const providerSelect = selects.find( ( s ) => s.label === 'Provider' );
 		expect( providerSelect ).toBeDefined();
-		providerSelect?.onChange( 'maptiler-outdoor' );
+		providerSelect?.onChange( 'mapbox' );
 
-		// Only tileProvider is written; tileApiKeys is left intact in the
-		// attribute store so both keys survive the provider switch.
-		expect( writes ).toEqual( [ { tileProvider: 'maptiler-outdoor' } ] );
+		// One write that carries both the new provider and the reset style.
+		// `tileApiKeys` is left intact in the attribute store so both
+		// keys survive the provider switch.
+		expect( writes ).toEqual( [
+			{ tileProvider: 'mapbox', tileStyle: 'outdoors' },
+		] );
+	} );
+
+	it( 'writes only tileStyle when the style dropdown fires', () => {
+		const { selects, writes } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'openstreetmap',
+				tileStyle: 'mapnik',
+			} )
+		);
+
+		const styleSelect = selects.find( ( s ) => s.label === 'Style' );
+		expect( styleSelect ).toBeDefined();
+		styleSelect?.onChange( 'cyclosm' );
+
+		expect( writes ).toEqual( [ { tileStyle: 'cyclosm' } ] );
+	} );
+
+	it( 'surfaces an orphan saved tileProvider as a placeholder option in the Provider dropdown', () => {
+		// The saved provider id is not in the registry. The dropdown
+		// prepends it as a placeholder labelled with the id itself so
+		// the editor reflects the persisted state without silently
+		// rewriting it.
+		const { selects } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'dropped-by-filter',
+				tileStyle: 'whatever',
+			} )
+		);
+
+		const providerSelect = selects.find( ( s ) => s.label === 'Provider' );
+		expect( providerSelect ).toBeDefined();
+		expect( providerSelect?.options[ 0 ] ).toEqual( {
+			value: 'dropped-by-filter',
+			label: 'dropped-by-filter',
+		} );
+	} );
+
+	it( 'surfaces an orphan saved tileStyle as a placeholder option in the Style dropdown', () => {
+		// The saved provider is valid but the saved style id is not in
+		// that provider's styles map. The Style dropdown prepends the
+		// orphan style id as a placeholder.
+		const { selects } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'openstreetmap',
+				tileStyle: 'dropped-style',
+			} )
+		);
+
+		const styleSelect = selects.find( ( s ) => s.label === 'Style' );
+		expect( styleSelect ).toBeDefined();
+		expect( styleSelect?.options[ 0 ] ).toEqual( {
+			value: 'dropped-style',
+			label: 'dropped-style',
+		} );
 	} );
 
 	it( 'sets the first per-provider entry when tileApiKeys starts empty', () => {
 		const { texts, writes } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'thunderforest-outdoors',
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
 				tileApiKeys: {},
 			} )
 		);
@@ -412,7 +565,7 @@ describe( 'MapEdit Tiles panel — per-provider API keys (issue #102)', () => {
 		expect( writes ).toEqual( [
 			{
 				tileApiKeys: {
-					'thunderforest-outdoors': 'FIRST_KEY',
+					thunderforest: 'FIRST_KEY',
 				},
 			},
 		] );

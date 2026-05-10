@@ -170,7 +170,11 @@
 		},
 		"tileProvider": {
 			"type": "string",
-			"default": "osm-standard"
+			"default": "openstreetmap"
+		},
+		"tileStyle": {
+			"type": "string",
+			"default": "mapnik"
 		},
 		"tileApiKeys": {
 			"type": "object",

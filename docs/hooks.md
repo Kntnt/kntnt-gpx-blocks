@@ -66,22 +66,28 @@ Read once at conversion time, not per render. Changing the value invalidates cac
 
 ## Tile providers
 
-The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileApiKeys` object (per-provider key map keyed by provider id), and a `tileOverlays` id list as attributes; the renderer looks up `tileApiKeys[ tileProvider ]` and forwards it to the registry, which validates the filtered set, substitutes `{KEY}` server-side, and writes the resolved record(s) into the per-block Interactivity state. Unknown provider ids fall back silently to `osm-standard` with a `Plugin::warning()` log; unknown overlay ids are dropped silently with the same log level.
+The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileStyle` id, a `tileApiKeys` object (per-provider key map keyed by provider id), and a `tileOverlays` id list as attributes; the renderer looks up `tileApiKeys[ tileProvider ]` and forwards it to the registry, which validates the filtered set, walks the (provider, style) pair down the nested map, substitutes `{KEY}` server-side, and writes the resolved record(s) into the per-block Interactivity state. Unknown provider ids fall back silently to `openstreetmap` (and to its default style) with a `Plugin::warning()` log; unknown style ids inside a known provider fall back to the provider's own `default` style; unknown overlay ids are dropped silently with the same log level.
 
 ### `kntnt_gpx_blocks_tile_providers`
 
-Map of base-tile providers keyed by provider id. The default ships 21 entries: `osm-standard`, `opentopomap`, `cyclosm`, `thunderforest-outdoors`, `thunderforest-landscape`, `thunderforest-atlas`, `thunderforest-opencyclemap`, `stadia-outdoors`, `maptiler-outdoor`, `maptiler-base`, `maptiler-landscape`, `maptiler-openstreetmap`, `maptiler-streets`, `maptiler-topo`, `maptiler-satellite`, `maptiler-hybrid`, `mapbox-outdoors`, `mapbox-streets`, `mapbox-satellite-streets`, `mapbox-light`, and `mapbox-dark`. The first three (`osm-standard`, `opentopomap`, `cyclosm`) are free and key-less; the remaining 18 require a per-block API key.
+Two-level map of base-tile providers keyed by provider id, each carrying a nested `styles` map keyed by style id. The default ships **9 providers** with the following style counts: Carto (3 styles, key-less), Esri (9 styles, key-less), Jawg Maps (5 styles, key-required), Mapbox (5 styles, key-required), MapTiler (9 styles, key-required), OpenStreetMap (2 styles, key-less; `mapnik` default), OpenTopoMap (1 style, key-less), Stadia Maps (6 styles, key-required), Thunderforest (4 styles, key-required). The block.json default seeds `tileProvider: "openstreetmap"`, `tileStyle: "mapnik"`, `tileApiKeys: {}` so a freshly inserted block always renders.
 
 ```php
 $providers = apply_filters( 'kntnt_gpx_blocks_tile_providers', $defaults );
 // array<string, array{
-//     label: string,        // Translatable display label.
-//     url: string,          // Tile URL with {z}/{x}/{y}; {KEY} iff requiresKey.
-//     attribution: string,  // HTML snippet — trusted to the filter callback.
-//     maxZoom: int,         // 0..22 inclusive.
-//     requiresKey: bool,    // Mirrors {KEY} placeholder in url.
-//     signupUrl?: string,   // Optional https:// URL where users obtain a key.
-//     subdomains?: string[], // Optional Leaflet {s} substitution list.
+//     label: string,         // Translatable provider display label.
+//     requiresKey: bool,     // One API key per provider, shared across all the provider's styles.
+//     default: string,       // Style id used when tileStyle is empty or unknown for this provider.
+//     styles: array<string, array{
+//         label: string,         // Translatable style display label.
+//         url: string,           // Tile URL with {z}/{x}/{y}; {KEY} iff provider.requiresKey.
+//         attribution: string,   // HTML snippet — trusted to the filter callback.
+//         maxZoom: int,          // 0..22 inclusive.
+//     }>,
+//     signupUrl?: string,    // Optional https:// URL where users obtain a key.
+//     subdomains?: string[], // Optional Leaflet {s} substitution list,
+//                            // inherited by every style of this provider
+//                            // whose URL contains {s}.
 // }>
 ```
 
@@ -103,20 +109,21 @@ $overlays = apply_filters( 'kntnt_gpx_blocks_tile_overlays', $defaults );
 
 ### Validation rules
 
-Every record is validated at filter-application time. Records that fail any rule are dropped with a `Plugin::warning()` log naming the offending id and the failing constraint:
+Every record is validated at filter-application time. The validator follows a **drop-the-narrowest-unit** rule: a bad single style drops just that style with one `Plugin::warning()` log; a provider-level failure (missing required field, `default` resolving to a dropped style, empty `styles` map, `{s}`-using style on a provider without `subdomains`) drops the whole provider. Each drop emits one log naming the failing id and the failing constraint:
 
-- The id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
+- Provider id and style id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
+- Provider-level: `label`, `requiresKey` (bool), `default` (non-empty string style id), and `styles` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present.
+- Per-style: `label`, `url`, `attribution`, `maxZoom` are required.
 - `url` must start with `https://` and contain the literals `{z}`, `{x}`, `{y}`.
-- For base providers: the URL contains `{KEY}` iff `requiresKey === true`.
+- For base providers: the per-style URL contains `{KEY}` iff `provider.requiresKey === true`.
 - For overlays: the URL must not contain `{KEY}` (overlays carry no key in v1).
+- **`subdomains` inheritance:** a style whose URL contains the `{s}` placeholder requires its containing provider to declare `subdomains` at the provider level — Leaflet substitutes `{s}` against the provider's list. A `{s}`-using style on a provider without `subdomains` is dropped.
 - `maxZoom` is an integer in `[0, 22]`. Floats and numeric strings are rejected.
-- `label` and `attribution` are non-empty strings.
-- `signupUrl`, when present, is an `https://` URL.
-- `subdomains`, when present, is a non-empty list of non-empty strings.
+- Provider survives only when at least one style survives validation **and** its declared `default` is among the survivors.
 
 The HTML in `attribution` is trusted to the filter callback — keep it tightly scoped (anchor tags and entities) and never include script content.
 
-The canonical `osm-standard` provider is always preserved: if a filter callback drops it, the registry re-injects it with a warning so the resolver always has a fallback target.
+The canonical `openstreetmap` provider is always preserved: if a filter callback drops it, the registry re-injects it with a warning so the resolver always has a fallback target. Resolution fall-backs are layered: unknown provider id → global fallback provider + its default style; known provider, unknown style id → provider's own `default` style; defensive fall-through (provider's `default` itself does not resolve) → global fallback provider's default style.
 
 ### Adding a custom provider
 
@@ -124,17 +131,29 @@ The canonical `osm-standard` provider is always preserved: if a filter callback 
 add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $providers ): array {
 	$providers['my-vector'] = [
 		'label'       => 'My Vector Tiles',
-		'url'         => 'https://tiles.example.com/v1/{z}/{x}/{y}.png?token={KEY}',
-		'attribution' => '&copy; <a href="https://example.com/">Example</a>',
-		'maxZoom'     => 20,
 		'requiresKey' => true,
+		'default'     => 'streets',
 		'signupUrl'   => 'https://example.com/signup',
+		'styles'      => [
+			'streets' => [
+				'label'       => 'Streets',
+				'url'         => 'https://tiles.example.com/v1/streets/{z}/{x}/{y}.png?token={KEY}',
+				'attribution' => '&copy; <a href="https://example.com/">Example</a>',
+				'maxZoom'     => 20,
+			],
+			'satellite' => [
+				'label'       => 'Satellite',
+				'url'         => 'https://tiles.example.com/v1/satellite/{z}/{x}/{y}.png?token={KEY}',
+				'attribution' => '&copy; <a href="https://example.com/">Example</a>',
+				'maxZoom'     => 20,
+			],
+		],
 	];
 	return $providers;
 } );
 ```
 
-The new provider becomes available to every editor on the site; the editor UI for picking a provider lists the validated set returned by this filter.
+The new provider becomes available to every editor on the site; the editor UI lists the validated set returned by this filter — first dropdown picks the provider, second dropdown lists that provider's styles, and a single API-key field captures the key shared across all the provider's styles.
 
 ## Formatting
 

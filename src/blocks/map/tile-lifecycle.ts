@@ -25,17 +25,24 @@ import L from 'leaflet';
 /**
  * Resolved tile-layer record carried in the per-map state.
  *
- * Mirrors the validated shape `Tile_Layer_Registry` writes server-side. The
- * `url` may be `null` when the resolved provider requires an API key
- * (`requiresKey === true`) and the per-provider entry in `tileApiKeys` is
- * empty — this is the documented "polyline-only" state for paid providers
- * without a key. The view module checks `url !== null` before calling
- * `addTiles`.
+ * Mirrors the validated shape `Tile_Layer_Registry` writes server-side.
+ * The `url` may be `null` when the resolved provider requires an API
+ * key (`requiresKey === true`) and the per-provider entry in
+ * `tileApiKeys` is empty — this is the documented "polyline-only"
+ * state for paid providers without a key. The view module checks
+ * `url !== null` before calling `addTiles`.
+ *
+ * The base-provider record drops `id` entirely (the runtime never
+ * needs it — the provider is identified by what the user picked in
+ * the editor, and the resolver simply substitutes `{KEY}` and writes
+ * the slim record). Overlay records do carry `id` so the JS view can
+ * tell two overlays apart for the unused-overlay diagnostics; the
+ * field is optional here so the same interface covers both shapes.
  *
  * @since 1.0.0
  */
 export interface TileLayerRecord {
-	readonly id: string;
+	readonly id?: string;
 	readonly url: string | null;
 	readonly attribution: string;
 	readonly maxZoom: number;

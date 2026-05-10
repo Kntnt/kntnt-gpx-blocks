@@ -203,13 +203,19 @@ jest.mock(
 	}
  ).kntntGpxBlocks = {
 	providers: {
-		'osm-standard': {
-			label: 'OpenStreetMap Standard',
+		openstreetmap: {
+			label: 'OpenStreetMap',
 			requiresKey: false,
-			url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-			attribution: 'OSM',
-			maxZoom: 19,
+			default: 'mapnik',
 			subdomains: [ 'a', 'b', 'c' ],
+			styles: {
+				mapnik: {
+					label: 'Mapnik',
+					url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+					attribution: 'OSM',
+					maxZoom: 19,
+				},
+			},
 		},
 	},
 	overlays: {},
@@ -266,7 +272,8 @@ function buildAttributes(
 		tooltipDescLetterSpacing: '',
 		tooltipDescTextDecoration: '',
 		tooltipDescTextTransform: '',
-		tileProvider: 'osm-standard',
+		tileProvider: 'openstreetmap',
+		tileStyle: 'mapnik',
 		tileApiKeys: {},
 		tileOverlays: [],
 		...overrides,

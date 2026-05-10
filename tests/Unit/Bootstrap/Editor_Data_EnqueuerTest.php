@@ -2,10 +2,10 @@
 /**
  * Tests for Bootstrap\Editor_Data_Enqueuer.
  *
- * Verifies that the enqueuer composes the editor data payload, encodes it
- * via wp_json_encode, and emits it as a `before` inline script on the GPX
- * Map block's editor handle. Also covers the warning path when JSON
- * encoding fails.
+ * Verifies that the enqueuer composes the editor data payload in the
+ * nested provider/style shape, encodes it via wp_json_encode, and emits
+ * it as a `before` inline script on the GPX Map block's editor handle.
+ * Also covers the warning path when JSON encoding fails.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -95,13 +95,14 @@ test( 'inline payload carries every default provider id and the wmt-hiking overl
 	expect( $decoded )->toHaveKey( 'providers' );
 	expect( $decoded )->toHaveKey( 'overlays' );
 
-	// Every default provider id appears, with the registry's `requiresKey`
-	// flag preserved so the dropdown can drive the API-key field's
-	// conditional rendering in #79.
-	expect( $decoded['providers'] )->toHaveKey( 'osm-standard' );
-	expect( $decoded['providers'] )->toHaveKey( 'thunderforest-outdoors' );
-	expect( $decoded['providers']['osm-standard']['requiresKey'] )->toBeFalse();
-	expect( $decoded['providers']['thunderforest-outdoors']['requiresKey'] )->toBeTrue();
+	// Every default provider id appears.
+	foreach ( [ 'carto', 'esri', 'jawg-maps', 'mapbox', 'maptiler', 'openstreetmap', 'opentopomap', 'stadia-maps', 'thunderforest' ] as $id ) {
+		expect( $decoded['providers'] )->toHaveKey( $id );
+	}
+
+	// requiresKey flag survives the JSON round trip.
+	expect( $decoded['providers']['openstreetmap']['requiresKey'] )->toBeFalse();
+	expect( $decoded['providers']['mapbox']['requiresKey'] )->toBeTrue();
 
 	// The single default overlay is present and carries enough data for the
 	// editor preview to mount it via L.tileLayer().
@@ -112,14 +113,7 @@ test( 'inline payload carries every default provider id and the wmt-hiking overl
 
 } );
 
-// ---------------------------------------------------------------------------
-// Provider records carry the fields MapEditorPreview needs to mount the
-// selected provider's tile layer (URL, attribution, maxZoom, optional
-// subdomains) and the optional signupUrl that drives the help-text link
-// in the conditional API-key field.
-// ---------------------------------------------------------------------------
-
-test( 'provider records expose url, attribution, maxZoom, and optional subdomains for the editor preview', function (): void {
+test( 'provider records carry the nested styles map with per-style url/attribution/maxZoom', function (): void {
 
 	$captured_inline = null;
 	Functions\when( 'wp_add_inline_script' )->alias(
@@ -135,22 +129,26 @@ test( 'provider records expose url, attribution, maxZoom, and optional subdomain
 	$json    = rtrim( $json, ';' );
 	$decoded = json_decode( $json, true );
 
-	// osm-standard has subdomains in its registry record; the payload must
-	// forward them so the editor preview can pass them to L.tileLayer().
-	$osm = $decoded['providers']['osm-standard'];
-	expect( $osm['url'] )->toContain( 'tile.openstreetmap.org' );
-	expect( $osm['attribution'] )->toContain( 'OpenStreetMap' );
-	expect( $osm['maxZoom'] )->toBe( 19 );
+	// openstreetmap has both `mapnik` (default) and `cyclosm` styles.
+	$osm = $decoded['providers']['openstreetmap'];
+	expect( $osm )->toHaveKey( 'styles' );
+	expect( $osm['styles'] )->toHaveKey( 'mapnik' );
+	expect( $osm['styles'] )->toHaveKey( 'cyclosm' );
+	expect( $osm['styles']['mapnik']['url'] )->toContain( 'tile.openstreetmap.org' );
+	expect( $osm['styles']['mapnik']['maxZoom'] )->toBe( 19 );
+	expect( $osm['default'] )->toBe( 'mapnik' );
+
+	// Provider-level subdomains are emitted at the provider level (inherited by all styles).
 	expect( $osm['subdomains'] )->toBe( [ 'a', 'b', 'c' ] );
 
-	// thunderforest-outdoors requires a key, so its URL must still contain
-	// the literal {KEY} placeholder when shipped to the editor — the editor
-	// substitutes the per-provider key from tileApiKeys[ tileProvider ]
-	// client-side before mounting.
-	$thunder = $decoded['providers']['thunderforest-outdoors'];
-	expect( $thunder['url'] )->toContain( '{KEY}' );
-	expect( $thunder['url'] )->toContain( 'thunderforest.com' );
-	expect( $thunder['maxZoom'] )->toBe( 22 );
+	// mapbox is key-required; every style URL retains {KEY} for client-side substitution.
+	$mapbox = $decoded['providers']['mapbox'];
+	expect( $mapbox['requiresKey'] )->toBeTrue();
+	expect( $mapbox['default'] )->toBe( 'outdoors' );
+	foreach ( [ 'outdoors', 'streets', 'satellite-streets', 'light', 'dark' ] as $style_id ) {
+		expect( $mapbox['styles'] )->toHaveKey( $style_id );
+		expect( $mapbox['styles'][ $style_id ]['url'] )->toContain( '{KEY}' );
+	}
 
 } );
 
@@ -170,17 +168,14 @@ test( 'provider records expose signupUrl for paid providers, omit it for free on
 	$json    = rtrim( $json, ';' );
 	$decoded = json_decode( $json, true );
 
-	// signupUrl is the contract that drives #79's "Get one" link in the
-	// help-text below the API-key field. Every paid default provider ships
-	// with one in the registry, and the editor payload preserves it.
-	expect( $decoded['providers']['thunderforest-outdoors'] )->toHaveKey( 'signupUrl' );
-	expect( $decoded['providers']['thunderforest-outdoors']['signupUrl'] )->toBe( 'https://www.thunderforest.com/' );
-	expect( $decoded['providers']['stadia-outdoors']['signupUrl'] )->toBe( 'https://stadiamaps.com/' );
+	expect( $decoded['providers']['mapbox'] )->toHaveKey( 'signupUrl' );
+	expect( $decoded['providers']['mapbox']['signupUrl'] )->toBe( 'https://www.mapbox.com/' );
+	expect( $decoded['providers']['stadia-maps']['signupUrl'] )->toBe( 'https://stadiamaps.com/' );
+	expect( $decoded['providers']['jawg-maps']['signupUrl'] )->toBe( 'https://www.jawg.io/' );
 
-	// Free providers have no signupUrl; the editor omits the link from the
-	// help-text but the field itself still won't render because requiresKey
-	// is false.
-	expect( array_key_exists( 'signupUrl', $decoded['providers']['osm-standard'] ) )->toBeFalse();
+	// Free providers have no signupUrl.
+	expect( array_key_exists( 'signupUrl', $decoded['providers']['openstreetmap'] ) )->toBeFalse();
+	expect( array_key_exists( 'signupUrl', $decoded['providers']['carto'] ) )->toBeFalse();
 
 } );
 
@@ -198,9 +193,9 @@ test( 'payload omits API keys (per-block tileApiKeys map is never inlined)', fun
 
 	$payload = (string) $captured_inline;
 
-	// The registry never carries a key in its provider records, but the
-	// assertion is structural: no field named `apiKey`, `tileApiKey`, or
-	// `tileApiKeys` may appear in the inlined string.
+	// The registry never carries a key in its records, but the assertion is
+	// structural: no field named `apiKey`, `tileApiKey`, or `tileApiKeys`
+	// may appear in the inlined string.
 	expect( $payload )->not->toContain( 'apiKey' );
 	expect( $payload )->not->toContain( 'tileApiKey' );
 	expect( $payload )->not->toContain( 'tileApiKeys' );

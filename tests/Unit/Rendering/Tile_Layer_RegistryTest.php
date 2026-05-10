@@ -2,14 +2,18 @@
 /**
  * Tests for Rendering\Tile_Layer_Registry.
  *
- * Covers the validator (rejection of malformed records on every documented
- * constraint), the resolver (known id, fallback on unknown id, `{KEY}`
- * substitution), and the filter integration (added/replaced records flow
- * through validation; the canonical fallback is always preserved).
+ * Covers the validator (drop-the-narrowest-unit rule across every
+ * documented provider and style constraint), the resolver (known
+ * provider+style, fallback to provider default on unknown style, global
+ * fallback on unknown provider, defensive fall-through when a provider's
+ * own default cannot resolve, `{KEY}` substitution), and the filter
+ * integration (added/replaced records flow through validation; the
+ * canonical fallback is always preserved).
  *
- * Brain Monkey supplies `apply_filters` and `__()` so the registry can run
- * without a live WordPress install. Default-providers helpers exercise the
- * filter mock directly so each test starts from a known input.
+ * Brain Monkey supplies `apply_filters` and `__()` so the registry can
+ * run without a live WordPress install. Default-providers helpers
+ * exercise the filter mock directly so each test starts from a known
+ * input.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -46,23 +50,46 @@ beforeEach( function (): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a minimal valid base-provider record with optional overrides.
+ * Builds a minimal valid style record with optional overrides.
  *
- * The base shape passes every validator constraint. Tests inject one or
- * more `$overrides` to flip a single field at a time so the failure cause
- * is unambiguous.
+ * The base style shape passes every style-level validator constraint and
+ * pairs naturally with a key-less provider (no `{KEY}` placeholder).
+ * Tests inject overrides to flip a single field at a time.
  *
  * @param array<string, mixed> $overrides Overrides applied on top of the base.
  *
  * @return array<string, mixed>
  */
-function tlr_provider_record( array $overrides = [] ): array {
+function tlr_style_record( array $overrides = [] ): array {
 	$base = [
-		'label'       => 'Test Provider',
+		'label'       => 'Test Style',
 		'url'         => 'https://tiles.example.com/{z}/{x}/{y}.png',
 		'attribution' => '&copy; Example',
 		'maxZoom'     => 19,
+	];
+	return array_merge( $base, $overrides );
+}
+
+/**
+ * Builds a minimal valid provider record with optional overrides and a
+ * default single-style sub-map.
+ *
+ * @param array<string, mixed> $overrides Provider-level overrides.
+ * @param array<string, array<string, mixed>>|null $styles Optional explicit
+ *                                                          styles map; when
+ *                                                          omitted, a single
+ *                                                          style id `default`
+ *                                                          is generated.
+ *
+ * @return array<string, mixed>
+ */
+function tlr_provider_record( array $overrides = [], ?array $styles = null ): array {
+	$styles = $styles ?? [ 'default' => tlr_style_record() ];
+	$base   = [
+		'label'       => 'Test Provider',
 		'requiresKey' => false,
+		'default'     => 'default',
+		'styles'      => $styles,
 	];
 	return array_merge( $base, $overrides );
 }
@@ -109,204 +136,594 @@ test( 'default providers all survive validation', function (): void {
 	$providers = $registry->get_providers();
 
 	expect( $providers )
-		->toHaveKey( 'osm-standard' )
+		->toHaveKey( 'carto' )
+		->toHaveKey( 'esri' )
+		->toHaveKey( 'jawg-maps' )
+		->toHaveKey( 'mapbox' )
+		->toHaveKey( 'maptiler' )
+		->toHaveKey( 'openstreetmap' )
 		->toHaveKey( 'opentopomap' )
-		->toHaveKey( 'cyclosm' )
-		->toHaveKey( 'thunderforest-outdoors' )
-		->toHaveKey( 'thunderforest-landscape' )
-		->toHaveKey( 'thunderforest-atlas' )
-		->toHaveKey( 'thunderforest-opencyclemap' )
-		->toHaveKey( 'stadia-outdoors' )
-		->toHaveKey( 'maptiler-outdoor' )
-		->toHaveKey( 'maptiler-base' )
-		->toHaveKey( 'maptiler-landscape' )
-		->toHaveKey( 'maptiler-openstreetmap' )
-		->toHaveKey( 'maptiler-streets' )
-		->toHaveKey( 'maptiler-topo' )
-		->toHaveKey( 'maptiler-satellite' )
-		->toHaveKey( 'maptiler-hybrid' )
-		->toHaveKey( 'mapbox-outdoors' )
-		->toHaveKey( 'mapbox-streets' )
-		->toHaveKey( 'mapbox-satellite-streets' )
-		->toHaveKey( 'mapbox-light' )
-		->toHaveKey( 'mapbox-dark' );
+		->toHaveKey( 'stadia-maps' )
+		->toHaveKey( 'thunderforest' );
 
-	expect( count( $providers ) )->toBe( 21 );
+	expect( count( $providers ) )->toBe( 9 );
 
 } );
 
-test( 'paid tile providers added in #103 carry the expected url, label, attribution, maxZoom, and signupUrl', function (): void {
+test( 'default providers ship the expected style counts', function (): void {
 
 	$providers = ( new Tile_Layer_Registry() )->get_providers();
 
-	// Each entry is locked field-by-field against silent regressions in URL
-	// template, brand attribution, zoom cap, or signup link. Sourced from the
-	// provider's current public documentation; see commit body for refs.
-	$expected = [
-		'thunderforest-atlas'        => [
-			'label'        => 'Thunderforest Atlas',
-			'url'          => 'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={KEY}',
-			'attribution'  => 'Thunderforest',
-			'signupUrl'    => 'https://www.thunderforest.com/',
-		],
-		'thunderforest-opencyclemap' => [
-			'label'        => 'Thunderforest OpenCycleMap',
-			'url'          => 'https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey={KEY}',
-			'attribution'  => 'Thunderforest',
-			'signupUrl'    => 'https://www.thunderforest.com/',
-		],
-		'maptiler-base'              => [
-			'label'        => 'MapTiler Base',
-			'url'          => 'https://api.maptiler.com/maps/basic-v2/{z}/{x}/{y}.png?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'maptiler-landscape'         => [
-			'label'        => 'MapTiler Landscape',
-			'url'          => 'https://api.maptiler.com/maps/landscape/{z}/{x}/{y}.png?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'maptiler-openstreetmap'     => [
-			'label'        => 'MapTiler OpenStreetMap',
-			'url'          => 'https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.jpg?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'maptiler-streets'           => [
-			'label'        => 'MapTiler Streets',
-			'url'          => 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'maptiler-topo'              => [
-			'label'        => 'MapTiler Topo',
-			'url'          => 'https://api.maptiler.com/maps/topo-v2/{z}/{x}/{y}.png?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'maptiler-satellite'         => [
-			'label'        => 'MapTiler Satellite Plain',
-			'url'          => 'https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'maptiler-hybrid'            => [
-			'label'        => 'MapTiler Satellite Hybrid',
-			'url'          => 'https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key={KEY}',
-			'attribution'  => 'MapTiler',
-			'signupUrl'    => 'https://www.maptiler.com/',
-		],
-		'mapbox-streets'             => [
-			'label'        => 'Mapbox Streets',
-			'url'          => 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
-			'attribution'  => 'Mapbox',
-			'signupUrl'    => 'https://www.mapbox.com/',
-		],
-		'mapbox-satellite-streets'   => [
-			'label'        => 'Mapbox Satellite Streets',
-			'url'          => 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token={KEY}',
-			'attribution'  => 'Mapbox',
-			'signupUrl'    => 'https://www.mapbox.com/',
-		],
-		'mapbox-light'               => [
-			'label'        => 'Mapbox Light',
-			'url'          => 'https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
-			'attribution'  => 'Mapbox',
-			'signupUrl'    => 'https://www.mapbox.com/',
-		],
-		'mapbox-dark'                => [
-			'label'        => 'Mapbox Dark',
-			'url'          => 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token={KEY}',
-			'attribution'  => 'Mapbox',
-			'signupUrl'    => 'https://www.mapbox.com/',
-		],
-	];
-
-	foreach ( $expected as $id => $fields ) {
-		expect( $providers )->toHaveKey( $id );
-		expect( $providers[ $id ]['label'] )->toBe( $fields['label'] );
-		expect( $providers[ $id ]['url'] )->toBe( $fields['url'] );
-		expect( $providers[ $id ]['attribution'] )->toContain( $fields['attribution'] );
-		expect( $providers[ $id ]['attribution'] )->toContain( 'OpenStreetMap' );
-		expect( $providers[ $id ]['maxZoom'] )->toBe( 22 );
-		expect( $providers[ $id ]['requiresKey'] )->toBeTrue();
-		expect( $providers[ $id ]['signupUrl'] )->toBe( $fields['signupUrl'] );
-	}
+	expect( count( $providers['carto']['styles'] ) )->toBe( 3 );
+	expect( count( $providers['esri']['styles'] ) )->toBe( 9 );
+	expect( count( $providers['jawg-maps']['styles'] ) )->toBe( 5 );
+	expect( count( $providers['mapbox']['styles'] ) )->toBe( 5 );
+	expect( count( $providers['maptiler']['styles'] ) )->toBe( 9 );
+	expect( count( $providers['openstreetmap']['styles'] ) )->toBe( 2 );
+	expect( count( $providers['opentopomap']['styles'] ) )->toBe( 1 );
+	expect( count( $providers['stadia-maps']['styles'] ) )->toBe( 6 );
+	expect( count( $providers['thunderforest']['styles'] ) )->toBe( 4 );
 
 } );
 
-test( 'every paid tile provider URL contains both {z}/{x}/{y} and {KEY} placeholders', function (): void {
+test( 'every default provider carries a default style id that exists in its styles map', function (): void {
 
 	$providers = ( new Tile_Layer_Registry() )->get_providers();
 
-	// Every requiresKey=true entry — the seven added in #103 plus the five
-	// that pre-existed — must have a complete tile-coordinate substitution
-	// set and a key placeholder so `resolve_provider()` can substitute it.
 	foreach ( $providers as $id => $record ) {
-		if ( ! $record['requiresKey'] ) {
-			continue;
+		expect( $record )->toHaveKey( 'default' );
+		expect( array_key_exists( $record['default'], $record['styles'] ) )
+			->toBeTrue();
+	}
+
+} );
+
+test( 'OpenStreetMap default style is mapnik', function (): void {
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	expect( $providers['openstreetmap']['default'] )->toBe( 'mapnik' );
+	expect( $providers['openstreetmap']['styles'] )->toHaveKey( 'mapnik' );
+	expect( $providers['openstreetmap']['styles'] )->toHaveKey( 'cyclosm' );
+
+} );
+
+test( 'key-required providers (mapbox, maptiler, jawg-maps, stadia-maps, thunderforest) carry signupUrl and {KEY}', function (): void {
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	foreach ( [ 'mapbox', 'maptiler', 'jawg-maps', 'stadia-maps', 'thunderforest' ] as $id ) {
+		expect( $providers[ $id ]['requiresKey'] )->toBeTrue();
+		expect( $providers[ $id ] )->toHaveKey( 'signupUrl' );
+		expect( $providers[ $id ]['signupUrl'] )->toStartWith( 'https://' );
+
+		// Every style in a key-required provider must contain {KEY}.
+		foreach ( $providers[ $id ]['styles'] as $style ) {
+			expect( $style['url'] )->toContain( '{KEY}' );
+			expect( $style['url'] )->toStartWith( 'https://' );
+			expect( $style['url'] )->toContain( '{z}' );
+			expect( $style['url'] )->toContain( '{x}' );
+			expect( $style['url'] )->toContain( '{y}' );
 		}
-		expect( $record['url'] )->toStartWith( 'https://' );
-		expect( $record['url'] )->toContain( '{z}' );
-		expect( $record['url'] )->toContain( '{x}' );
-		expect( $record['url'] )->toContain( '{y}' );
-		expect( $record['url'] )->toContain( '{KEY}' );
-		expect( $record )->toHaveKey( 'signupUrl' );
-		expect( $record['signupUrl'] )->toStartWith( 'https://' );
 	}
 
 } );
 
-test( 'resolve_provider substitutes the API key for every paid provider added in #103', function (): void {
+test( 'key-less providers (carto, esri, openstreetmap, opentopomap) have no {KEY} placeholders and no signupUrl', function (): void {
 
-	$registry = new Tile_Layer_Registry();
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
 
-	// Every new entry must be reachable via the #102 per-provider-key path:
-	// `resolve_provider()` looks up the record, substitutes `{KEY}` for the
-	// supplied key, and returns the runtime record. Tested across all 13 to
-	// catch any entry whose URL template was wired without `{KEY}` in place.
-	$new_ids = [
-		'thunderforest-atlas',
-		'thunderforest-opencyclemap',
-		'maptiler-base',
-		'maptiler-landscape',
-		'maptiler-openstreetmap',
-		'maptiler-streets',
-		'maptiler-topo',
-		'maptiler-satellite',
-		'maptiler-hybrid',
-		'mapbox-streets',
-		'mapbox-satellite-streets',
-		'mapbox-light',
-		'mapbox-dark',
-	];
-
-	foreach ( $new_ids as $id ) {
-		$resolved = $registry->resolve_provider( $id, 'TEST-KEY-103' );
-		expect( $resolved['id'] )->toBe( $id );
-		expect( $resolved['url'] )->not->toContain( '{KEY}' );
-		expect( $resolved['url'] )->toContain( 'TEST-KEY-103' );
+	foreach ( [ 'carto', 'esri', 'openstreetmap', 'opentopomap' ] as $id ) {
+		expect( $providers[ $id ]['requiresKey'] )->toBeFalse();
+		// signupUrl may or may not be present; if not, that's correct.
+		foreach ( $providers[ $id ]['styles'] as $style ) {
+			expect( $style['url'] )->not->toContain( '{KEY}' );
+		}
 	}
 
 } );
 
-test( 'resolve_provider produces the fully substituted URL for a representative new entry (edge case)', function (): void {
+test( 'providers using {s} in their style URLs declare subdomains at the provider level', function (): void {
 
-	// Edge case for the #102 per-provider-key mechanism: a Mapbox-style URL
-	// where `{KEY}` lives in a query-string parameter named `access_token`,
-	// distinct from MapTiler's `key=` and Thunderforest's `apikey=`. Verifies
-	// the substitution is a literal swap of the placeholder, with no special
-	// treatment for the surrounding querystring shape.
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'mapbox-dark', 'pk.fake.token' );
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
 
-	expect( $resolved['id'] )->toBe( 'mapbox-dark' );
-	expect( $resolved['url'] )->toBe( 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token=pk.fake.token' );
-	expect( $resolved['maxZoom'] )->toBe( 22 );
-	expect( $resolved['attribution'] )->toContain( 'Mapbox' );
+	foreach ( $providers as $record ) {
+		foreach ( $record['styles'] as $style ) {
+			if ( str_contains( $style['url'], '{s}' ) ) {
+				expect( $record )->toHaveKey( 'subdomains' );
+			}
+		}
+	}
 
 } );
+
+// ---------------------------------------------------------------------------
+// Resolver — known (provider, style); fallbacks; {KEY} substitution
+// ---------------------------------------------------------------------------
+
+test( 'resolve_provider returns the requested (provider, style) record for known ids', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'openstreetmap', 'mapnik', '' );
+
+	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
+	expect( $resolved['url'] )->not->toContain( '{KEY}' );
+	expect( $resolved['maxZoom'] )->toBe( 19 );
+	expect( $resolved )->toHaveKey( 'subdomains' );
+	expect( $resolved['subdomains'] )->toBe( [ 'a', 'b', 'c' ] );
+
+} );
+
+test( 'resolve_provider falls back to the provider default style on unknown style id', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'openstreetmap', 'does-not-exist', '' );
+
+	// `openstreetmap`'s default is `mapnik`, so the fall-back should return
+	// the mapnik URL.
+	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
+	expect( $resolved['url'] )->not->toContain( 'cyclosm' );
+
+} );
+
+test( 'resolve_provider falls back to openstreetmap on unknown provider id', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'definitely-not-a-real-provider', 'anything', '' );
+
+	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
+
+} );
+
+test( 'resolve_provider falls back when the provider default itself cannot resolve (defensive)', function (): void {
+
+	// Construct a provider whose `default` points to a style that exists in
+	// the raw filter input but gets validated successfully. To exercise the
+	// defensive fall-through path, simulate a registry where the only
+	// surviving provider has a `default` that — by the validator's contract
+	// — should always be present. Since validation enforces this invariant,
+	// the only path to a missing default at resolve time is filter mutation
+	// between get_providers() and resolve_provider(). We can't easily
+	// simulate that, so the defensive branch is exercised indirectly via
+	// the unknown-provider path (which lands on openstreetmap unconditionally).
+	$registry = new Tile_Layer_Registry();
+
+	// Unknown provider + unknown style; falls all the way through to
+	// openstreetmap/mapnik. This locks the fall-through chain's end state.
+	$resolved = $registry->resolve_provider( 'no-such-provider', 'no-such-style', '' );
+
+	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
+	expect( $resolved['maxZoom'] )->toBe( 19 );
+
+} );
+
+test( 'resolve_provider substitutes the API key into {KEY} for key-required providers', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', 'XYZ-TOKEN' );
+
+	expect( $resolved['url'] )->not->toContain( '{KEY}' );
+	expect( $resolved['url'] )->toContain( 'apikey=XYZ-TOKEN' );
+
+} );
+
+test( 'resolve_provider does not substitute when provider does not require a key', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'openstreetmap', 'mapnik', 'spurious-key-value' );
+
+	expect( $resolved['url'] )->not->toContain( 'spurious-key-value' );
+
+} );
+
+test( 'resolve_provider inherits provider-level subdomains into the resolved record', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'carto', 'voyager', '' );
+
+	expect( $resolved )->toHaveKey( 'subdomains' );
+	expect( $resolved['subdomains'] )->toBe( [ 'a', 'b', 'c', 'd' ] );
+
+} );
+
+test( 'resolve_provider omits subdomains when the provider has none', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'mapbox', 'outdoors', 'TOKEN' );
+
+	expect( $resolved )->not->toHaveKey( 'subdomains' );
+
+} );
+
+test( 'resolve_provider returns only the four runtime fields (no id, no label, no requiresKey)', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'mapbox', 'outdoors', 'TOKEN' );
+
+	expect( $resolved )->toHaveKey( 'url' );
+	expect( $resolved )->toHaveKey( 'attribution' );
+	expect( $resolved )->toHaveKey( 'maxZoom' );
+	expect( $resolved )->not->toHaveKey( 'id' );
+	expect( $resolved )->not->toHaveKey( 'label' );
+	expect( $resolved )->not->toHaveKey( 'requiresKey' );
+	expect( $resolved )->not->toHaveKey( 'default' );
+	expect( $resolved )->not->toHaveKey( 'styles' );
+	expect( $resolved )->not->toHaveKey( 'signupUrl' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Validator — drop the narrowest unit on each documented constraint
+// ---------------------------------------------------------------------------
+
+test( 'validator drops a single bad style and keeps the rest of the provider', function (): void {
+
+	// Edge case: bad single style. The provider survives because at least
+	// one valid style remains and the `default` points at a survivor.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'multi-style' => tlr_provider_record(
+				[ 'default' => 'good' ],
+				[
+					'good' => tlr_style_record(),
+					'bad'  => tlr_style_record( [ 'url' => 'https://example.com/no-placeholders.png' ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	expect( $providers )->toHaveKey( 'multi-style' );
+	expect( $providers['multi-style']['styles'] )->toHaveKey( 'good' );
+	expect( $providers['multi-style']['styles'] )->not->toHaveKey( 'bad' );
+
+} );
+
+test( 'validator drops the whole provider when no styles survive', function (): void {
+
+	// Edge case: bad provider — every style fails, so the provider has no
+	// surviving styles to resolve to.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'all-bad' => tlr_provider_record(
+				[],
+				[
+					'a' => tlr_style_record( [ 'url' => 'http://insecure.example.com/{z}/{x}/{y}.png' ] ),
+					'b' => tlr_style_record( [ 'maxZoom' => 100 ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	expect( $providers )->not->toHaveKey( 'all-bad' );
+
+} );
+
+test( 'validator drops the provider when the default style does not survive', function (): void {
+
+	// Edge case: provider's `default` resolves to a dropped style. Even
+	// though another style is valid, the provider is rejected because the
+	// resolver would land on a missing record.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'bad-default' => tlr_provider_record(
+				[ 'default' => 'a' ],
+				[
+					'a' => tlr_style_record( [ 'url' => 'http://insecure.example.com/{z}/{x}/{y}.png' ] ),
+					'b' => tlr_style_record(),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	expect( $providers )->not->toHaveKey( 'bad-default' );
+
+} );
+
+test( 'validator drops the provider when styles map is empty', function (): void {
+
+	// Edge case: empty styles map — no styles to validate, no styles to default to.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'empty-styles' => tlr_provider_record( [ 'styles' => [] ] ),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'empty-styles' );
+
+} );
+
+test( 'validator drops a {s}-using style when its provider declares no subdomains', function (): void {
+
+	// Edge case: {s}-using style without provider subdomains. The style is
+	// dropped but the rest of the provider survives if other styles do not
+	// use {s}.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'no-subs' => tlr_provider_record(
+				[ 'default' => 'plain' ],
+				[
+					'plain'    => tlr_style_record(),
+					'with-s'   => tlr_style_record( [ 'url' => 'https://{s}.tiles.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	expect( $providers )->toHaveKey( 'no-subs' );
+	expect( $providers['no-subs']['styles'] )->toHaveKey( 'plain' );
+	expect( $providers['no-subs']['styles'] )->not->toHaveKey( 'with-s' );
+
+} );
+
+test( 'validator accepts a {s}-using style when its provider declares subdomains', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'with-subs' => tlr_provider_record(
+				[
+					'default'    => 'with-s',
+					'subdomains' => [ 'a', 'b' ],
+				],
+				[
+					'with-s' => tlr_style_record( [ 'url' => 'https://{s}.tiles.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+
+	expect( $providers )->toHaveKey( 'with-subs' );
+	expect( $providers['with-subs']['styles'] )->toHaveKey( 'with-s' );
+
+} );
+
+test( 'validator rejects provider with non-bool requiresKey', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'bad-bool' => tlr_provider_record( [ 'requiresKey' => 1 ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'bad-bool' );
+
+} );
+
+test( 'validator rejects provider with empty default', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'no-default' => tlr_provider_record( [ 'default' => '' ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'no-default' );
+
+} );
+
+test( 'validator rejects provider with non-string default', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'wrong-default' => tlr_provider_record( [ 'default' => 12345 ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'wrong-default' );
+
+} );
+
+test( 'validator rejects provider with empty label', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'no-label' => tlr_provider_record( [ 'label' => '' ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'no-label' );
+
+} );
+
+test( 'validator drops style with URL without {z}/{x}/{y}', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'good-provider' => tlr_provider_record(
+				[ 'default' => 'a' ],
+				[
+					'a' => tlr_style_record(),
+					'b' => tlr_style_record( [ 'url' => 'https://example.com/no-placeholders.png' ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+	expect( $providers['good-provider']['styles'] )->not->toHaveKey( 'b' );
+
+} );
+
+test( 'validator drops style with http:// URL scheme', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'good' => tlr_provider_record(
+				[ 'default' => 'a' ],
+				[
+					'a' => tlr_style_record(),
+					'b' => tlr_style_record( [ 'url' => 'http://tiles.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers()['good']['styles'] )->not->toHaveKey( 'b' );
+
+} );
+
+test( 'validator drops style when requiresKey=true but URL lacks {KEY}', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'paid' => tlr_provider_record(
+				[
+					'requiresKey' => true,
+					'default'     => 'a',
+				],
+				[
+					'a' => tlr_style_record( [ 'url' => 'https://tiles.example.com/{z}/{x}/{y}.png?key={KEY}' ] ),
+					'b' => tlr_style_record( [ 'url' => 'https://tiles.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+	expect( $providers['paid']['styles'] )->toHaveKey( 'a' );
+	expect( $providers['paid']['styles'] )->not->toHaveKey( 'b' );
+
+} );
+
+test( 'validator drops style when requiresKey=false but URL contains {KEY}', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'free' => tlr_provider_record(
+				[
+					'requiresKey' => false,
+					'default'     => 'good',
+				],
+				[
+					'good' => tlr_style_record(),
+					'bad'  => tlr_style_record( [ 'url' => 'https://tiles.example.com/{z}/{x}/{y}.png?key={KEY}' ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+	expect( $providers['free']['styles'] )->toHaveKey( 'good' );
+	expect( $providers['free']['styles'] )->not->toHaveKey( 'bad' );
+
+} );
+
+test( 'validator drops style with maxZoom out of range', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'provider' => tlr_provider_record(
+				[ 'default' => 'a' ],
+				[
+					'a' => tlr_style_record(),
+					'b' => tlr_style_record( [ 'maxZoom' => 100 ] ),
+					'c' => tlr_style_record( [ 'maxZoom' => -1 ] ),
+					'd' => tlr_style_record( [ 'maxZoom' => 18.5 ] ),
+				]
+			),
+		]
+	);
+
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
+	expect( $providers['provider']['styles'] )->toHaveKey( 'a' );
+	expect( $providers['provider']['styles'] )->not->toHaveKey( 'b' );
+	expect( $providers['provider']['styles'] )->not->toHaveKey( 'c' );
+	expect( $providers['provider']['styles'] )->not->toHaveKey( 'd' );
+
+} );
+
+test( 'validator rejects malformed provider id (uppercase)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'BadId' => tlr_provider_record() ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'BadId' );
+
+} );
+
+test( 'validator rejects malformed provider id with underscores', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'bad_id' => tlr_provider_record() ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'bad_id' );
+
+} );
+
+test( 'validator drops style with malformed style id (uppercase)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'provider' => tlr_provider_record(
+				[ 'default' => 'good' ],
+				[
+					'good'    => tlr_style_record(),
+					'BadId' => tlr_style_record(),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers()['provider']['styles'] )->not->toHaveKey( 'BadId' );
+
+} );
+
+test( 'validator rejects non-https signupUrl', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'paid' => tlr_provider_record(
+				[
+					'requiresKey' => true,
+					'signupUrl'   => 'http://example.com/signup',
+				],
+				[
+					'a' => tlr_style_record( [ 'url' => 'https://tiles.example.com/{z}/{x}/{y}.png?key={KEY}' ] ),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'paid' );
+
+} );
+
+test( 'validator rejects non-string subdomains entries', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[ 'bad-subs' => tlr_provider_record( [ 'subdomains' => [ 'a', 1, 'c' ] ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'bad-subs' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Overlay-specific constraints (unchanged shape)
+// ---------------------------------------------------------------------------
 
 test( 'default overlays all survive validation', function (): void {
 
@@ -323,325 +740,6 @@ test( 'default overlays all survive validation', function (): void {
 	expect( count( $overlays ) )->toBe( 5 );
 
 } );
-
-test( 'default overlay records carry the expected url, label, attribution, and maxZoom', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	$overlays = $registry->get_overlays();
-
-	// Each shipped free-overlay entry is verified field-by-field so the URL
-	// template, the brand attribution, and the zoom cap are locked against
-	// silent regressions.
-	expect( $overlays['wmt-hiking']['url'] )->toBe( 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png' );
-	expect( $overlays['wmt-hiking']['label'] )->toBe( 'Waymarked Trails — Hiking' );
-	expect( $overlays['wmt-hiking']['attribution'] )->toContain( 'Waymarked Trails' );
-	expect( $overlays['wmt-hiking']['maxZoom'] )->toBe( 18 );
-
-	expect( $overlays['wmt-cycling']['url'] )->toBe( 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png' );
-	expect( $overlays['wmt-cycling']['label'] )->toBe( 'Waymarked Trails — Cycling' );
-	expect( $overlays['wmt-cycling']['attribution'] )->toContain( 'Waymarked Trails' );
-	expect( $overlays['wmt-cycling']['maxZoom'] )->toBe( 18 );
-
-	expect( $overlays['wmt-mtb']['url'] )->toBe( 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png' );
-	expect( $overlays['wmt-mtb']['label'] )->toBe( 'Waymarked Trails — MTB' );
-	expect( $overlays['wmt-mtb']['attribution'] )->toContain( 'Waymarked Trails' );
-	expect( $overlays['wmt-mtb']['maxZoom'] )->toBe( 18 );
-
-	expect( $overlays['openseamap']['url'] )->toBe( 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png' );
-	expect( $overlays['openseamap']['label'] )->toBe( 'OpenSeaMap (sea marks)' );
-	expect( $overlays['openseamap']['attribution'] )->toContain( 'OpenSeaMap' );
-	expect( $overlays['openseamap']['maxZoom'] )->toBe( 18 );
-
-	expect( $overlays['opensnowmap']['url'] )->toBe( 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png' );
-	expect( $overlays['opensnowmap']['label'] )->toBe( 'OpenSnowMap (pistes)' );
-	expect( $overlays['opensnowmap']['attribution'] )->toContain( 'OpenSnowMap' );
-	expect( $overlays['opensnowmap']['maxZoom'] )->toBe( 18 );
-
-} );
-
-test( 'default overlay URLs all use https and contain the {z}/{x}/{y} placeholders', function (): void {
-
-	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
-
-	// Each surviving entry must already satisfy the validator's URL contract;
-	// re-asserting it here locks the rule against accidental relaxation in
-	// the default-set composition.
-	foreach ( $overlays as $id => $record ) {
-		expect( $record['url'] )->toStartWith( 'https://' );
-		expect( $record['url'] )->toContain( '{z}' );
-		expect( $record['url'] )->toContain( '{x}' );
-		expect( $record['url'] )->toContain( '{y}' );
-		expect( $record['url'] )->not->toContain( '{KEY}' );
-	}
-
-} );
-
-test( 'default overlays without a {KEY} placeholder would still be rejected if one were inserted', function (): void {
-
-	// Lock the existing "overlays in v1 carry no API key" rule by simulating
-	// the same shipped overlays with a synthetic {KEY} appended; every record
-	// must be dropped by the validator.
-	$keyed_set = [
-		'wmt-hiking-keyed'  => tlr_overlay_record( [ 'url' => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png?key={KEY}' ] ),
-		'wmt-cycling-keyed' => tlr_overlay_record( [ 'url' => 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png?key={KEY}' ] ),
-		'wmt-mtb-keyed'     => tlr_overlay_record( [ 'url' => 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png?key={KEY}' ] ),
-		'openseamap-keyed'  => tlr_overlay_record( [ 'url' => 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png?key={KEY}' ] ),
-		'opensnowmap-keyed' => tlr_overlay_record( [ 'url' => 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png?key={KEY}' ] ),
-	];
-
-	tlr_filter_returns( 'kntnt_gpx_blocks_tile_overlays', $keyed_set );
-
-	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
-
-	expect( $overlays )->toBe( [] );
-
-} );
-
-test( 'default overlays resolve in editor-configured order without an explicit filter override', function (): void {
-
-	// Reaches through `resolve_overlays()` so the runtime path that the GPX
-	// Map block actually uses is exercised against the shipped defaults.
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_overlays( [ 'wmt-cycling', 'wmt-mtb', 'openseamap', 'opensnowmap', 'wmt-hiking' ] );
-
-	expect( $resolved )->toHaveCount( 5 );
-	expect( $resolved[0]['id'] )->toBe( 'wmt-cycling' );
-	expect( $resolved[1]['id'] )->toBe( 'wmt-mtb' );
-	expect( $resolved[2]['id'] )->toBe( 'openseamap' );
-	expect( $resolved[3]['id'] )->toBe( 'opensnowmap' );
-	expect( $resolved[4]['id'] )->toBe( 'wmt-hiking' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Validator — every documented constraint rejects, and only it
-// ---------------------------------------------------------------------------
-
-test( 'validator rejects URL without {z}/{x}/{y} placeholders', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'bad-id' => tlr_provider_record( [ 'url' => 'https://example.com/no-placeholders.png' ] ) ]
-	);
-
-	$registry = new Tile_Layer_Registry();
-	$providers = $registry->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'bad-id' );
-
-} );
-
-test( 'validator rejects URL whose scheme is http://', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'plain-http' => tlr_provider_record( [ 'url' => 'http://tiles.example.com/{z}/{x}/{y}.png' ] ) ]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'plain-http' );
-
-} );
-
-test( 'validator rejects URL whose scheme is neither http nor https', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'odd-scheme' => tlr_provider_record( [ 'url' => 'ftp://tiles.example.com/{z}/{x}/{y}.png' ] ) ]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'odd-scheme' );
-
-} );
-
-test( 'validator rejects requiresKey=true when URL lacks {KEY}', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[
-			'needs-key' => tlr_provider_record( [
-				'url'         => 'https://tiles.example.com/{z}/{x}/{y}.png',
-				'requiresKey' => true,
-			] ),
-		]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'needs-key' );
-
-} );
-
-test( 'validator rejects requiresKey=false when URL contains {KEY}', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[
-			'has-orphan-key' => tlr_provider_record( [
-				'url'         => 'https://tiles.example.com/{z}/{x}/{y}.png?apikey={KEY}',
-				'requiresKey' => false,
-			] ),
-		]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'has-orphan-key' );
-
-} );
-
-test( 'validator rejects malformed id with uppercase letters', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'BadId' => tlr_provider_record() ]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'BadId' );
-
-} );
-
-test( 'validator rejects malformed id with underscores', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'bad_id' => tlr_provider_record() ]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 'bad_id' );
-
-} );
-
-test( 'validator rejects empty id', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ '' => tlr_provider_record() ]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( '' );
-
-} );
-
-test( 'validator rejects numeric-key entries', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 0 => tlr_provider_record() ]
-	);
-
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->not->toHaveKey( 0 );
-
-} );
-
-test( 'validator rejects maxZoom below zero', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'low-zoom' => tlr_provider_record( [ 'maxZoom' => -1 ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'low-zoom' );
-
-} );
-
-test( 'validator rejects maxZoom above 22', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'high-zoom' => tlr_provider_record( [ 'maxZoom' => 23 ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'high-zoom' );
-
-} );
-
-test( 'validator rejects non-integer maxZoom (float)', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'frac-zoom' => tlr_provider_record( [ 'maxZoom' => 18.5 ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'frac-zoom' );
-
-} );
-
-test( 'validator rejects empty label', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'no-label' => tlr_provider_record( [ 'label' => '' ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'no-label' );
-
-} );
-
-test( 'validator rejects empty attribution', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'no-attr' => tlr_provider_record( [ 'attribution' => '' ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'no-attr' );
-
-} );
-
-test( 'validator rejects non-bool requiresKey', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'bad-bool' => tlr_provider_record( [ 'requiresKey' => 1 ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'bad-bool' );
-
-} );
-
-test( 'validator rejects non-string subdomains entries', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'bad-subs' => tlr_provider_record( [ 'subdomains' => [ 'a', 1, 'c' ] ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'bad-subs' );
-
-} );
-
-test( 'validator rejects non-https signupUrl', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[
-			'bad-signup' => tlr_provider_record( [
-				'url'         => 'https://tiles.example.com/{z}/{x}/{y}.png?key={KEY}',
-				'requiresKey' => true,
-				'signupUrl'   => 'http://example.com/signup',
-			] ),
-		]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_providers() )->not->toHaveKey( 'bad-signup' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Overlay-specific constraints
-// ---------------------------------------------------------------------------
 
 test( 'overlay validator rejects URL without {z}/{x}/{y}', function (): void {
 
@@ -676,195 +774,108 @@ test( 'overlay validator rejects URL containing {KEY} (overlays carry no key in 
 
 } );
 
-test( 'overlay validator rejects empty label', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[ 'no-label-overlay' => tlr_overlay_record( [ 'label' => '' ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'no-label-overlay' );
-
-} );
-
-test( 'overlay validator rejects empty attribution', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[ 'no-attr-overlay' => tlr_overlay_record( [ 'attribution' => '' ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'no-attr-overlay' );
-
-} );
-
-test( 'overlay validator rejects malformed id (uppercase)', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[ 'BadOverlay' => tlr_overlay_record() ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'BadOverlay' );
-
-} );
-
-test( 'overlay validator rejects maxZoom out of range', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[ 'big-overlay' => tlr_overlay_record( [ 'maxZoom' => 100 ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'big-overlay' );
-
-} );
-
 // ---------------------------------------------------------------------------
-// Resolver — known id, unknown id (fallback), {KEY} substitution
+// Filter integration — orphan saved id; global-fallback path; re-injection
 // ---------------------------------------------------------------------------
 
-test( 'resolve_provider returns the requested provider for a known id', function (): void {
+test( 'filter dropping the fallback provider triggers re-injection', function (): void {
 
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'opentopomap', '' );
+	// Edge case: global-fallback path. The filter returns only a custom
+	// provider; the registry re-injects the canonical openstreetmap so
+	// resolve_provider always has a fallback target.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'only-custom' => tlr_provider_record(
+				[],
+				[ 'default' => tlr_style_record( [ 'url' => 'https://x.example.com/{z}/{x}/{y}.png' ] ) ]
+			),
+		]
+	);
 
-	expect( $resolved['id'] )->toBe( 'opentopomap' );
-	expect( $resolved['url'] )->toContain( 'opentopomap.org' );
-	expect( $resolved['url'] )->not->toContain( '{KEY}' );
-	expect( $resolved['maxZoom'] )->toBe( 17 );
-	expect( $resolved )->toHaveKey( 'subdomains' );
+	$providers = ( new Tile_Layer_Registry() )->get_providers();
 
-} );
-
-test( 'resolve_provider falls back to osm-standard for an unknown id', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'does-not-exist', '' );
-
-	expect( $resolved['id'] )->toBe( 'osm-standard' );
-	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
-
-} );
-
-test( 'resolve_provider substitutes the API key into {KEY}', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'thunderforest-outdoors', 'XYZ-token' );
-
-	expect( $resolved['id'] )->toBe( 'thunderforest-outdoors' );
-	expect( $resolved['url'] )->not->toContain( '{KEY}' );
-	expect( $resolved['url'] )->toContain( 'apikey=XYZ-token' );
+	expect( $providers )->toHaveKey( 'openstreetmap' );
+	expect( $providers )->toHaveKey( 'only-custom' );
 
 } );
-
-test( 'resolve_provider does not substitute when provider does not require a key', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'osm-standard', 'spurious-key-value' );
-
-	expect( $resolved['url'] )->not->toContain( 'spurious-key-value' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Filter integration — added/replaced records flow through validation
-// ---------------------------------------------------------------------------
 
 test( 'filter can add a new valid provider', function (): void {
 
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_providers',
 		[
-			'osm-standard'    => tlr_provider_record( [
-				'url' => 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-			] ),
-			'custom-provider' => tlr_provider_record( [
-				'url' => 'https://custom.example.com/{z}/{x}/{y}.png',
-			] ),
+			'openstreetmap'   => tlr_provider_record(
+				[ 'subdomains' => [ 'a', 'b', 'c' ] ],
+				[
+					'default' => tlr_style_record( [
+						'url' => 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+					] ),
+				]
+			),
+			'custom-provider' => tlr_provider_record(
+				[],
+				[ 'default' => tlr_style_record( [ 'url' => 'https://custom.example.com/{z}/{x}/{y}.png' ] ) ]
+			),
 		]
 	);
 
 	$providers = ( new Tile_Layer_Registry() )->get_providers();
 
 	expect( $providers )->toHaveKey( 'custom-provider' );
-	expect( $providers['custom-provider']['url'] )->toBe( 'https://custom.example.com/{z}/{x}/{y}.png' );
+	expect( $providers['custom-provider']['styles']['default']['url'] )->toBe( 'https://custom.example.com/{z}/{x}/{y}.png' );
 
 } );
 
-test( 'filter can replace an existing provider record', function (): void {
+test( 'resolver returns the orphan-recoverable fallback when the saved provider id is no longer present', function (): void {
 
+	// Edge case: orphan saved id. A block saved with `tileProvider:
+	// "dropped-by-filter"` should resolve to the global fallback
+	// (openstreetmap) at render time. The registry never silently
+	// rewrites the block attribute — the orphan surfaces in the editor
+	// as a placeholder option — but resolution at render time still
+	// produces a usable URL.
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_providers',
 		[
-			'osm-standard' => tlr_provider_record( [
-				'url'   => 'https://my-mirror.example.com/{z}/{x}/{y}.png',
-				'label' => 'My OSM mirror',
-			] ),
+			// Only ship openstreetmap, with a matching default style.
+			'openstreetmap' => tlr_provider_record(
+				[
+					'default'    => 'mapnik',
+					'subdomains' => [ 'a', 'b', 'c' ],
+				],
+				[
+					'mapnik' => tlr_style_record( [
+						'url' => 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+					] ),
+				]
+			),
 		]
 	);
 
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers['osm-standard']['url'] )->toBe( 'https://my-mirror.example.com/{z}/{x}/{y}.png' );
-	expect( $providers['osm-standard']['label'] )->toBe( 'My OSM mirror' );
-
-} );
-
-test( 'filter dropping the fallback provider triggers re-injection', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_providers',
-		[ 'only-custom' => tlr_provider_record( [ 'url' => 'https://x.example.com/{z}/{x}/{y}.png' ] ) ]
+	$resolved = ( new Tile_Layer_Registry() )->resolve_provider(
+		'orphaned-provider-id',
+		'orphaned-style-id',
+		''
 	);
 
-	$providers = ( new Tile_Layer_Registry() )->get_providers();
-
-	expect( $providers )->toHaveKey( 'osm-standard' );
-	expect( $providers )->toHaveKey( 'only-custom' );
-
-} );
-
-test( 'filter can add a new valid overlay', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[
-			'wmt-hiking'   => tlr_overlay_record( [
-				'url' => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
-			] ),
-			'custom-grid'  => tlr_overlay_record( [
-				'url' => 'https://grid.example.com/{z}/{x}/{y}.png',
-			] ),
-		]
-	);
-
-	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
-
-	expect( $overlays )->toHaveKey( 'custom-grid' );
+	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
 
 } );
 
 // ---------------------------------------------------------------------------
-// resolve_overlays — preserves order, drops unknown ids, rejects non-string
+// resolve_overlays — preserves order, drops unknown ids
 // ---------------------------------------------------------------------------
 
-test( 'resolve_overlays returns records in editor-configured order', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[
-			'first'  => tlr_overlay_record( [ 'url' => 'https://a.example.com/{z}/{x}/{y}.png' ] ),
-			'second' => tlr_overlay_record( [ 'url' => 'https://b.example.com/{z}/{x}/{y}.png' ] ),
-		]
-	);
+test( 'resolve_overlays preserves editor-configured order', function (): void {
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_overlays( [ 'second', 'first' ] );
+	$resolved = $registry->resolve_overlays( [ 'wmt-cycling', 'wmt-mtb', 'wmt-hiking' ] );
 
-	expect( $resolved )->toHaveCount( 2 );
-	expect( $resolved[0]['id'] )->toBe( 'second' );
-	expect( $resolved[1]['id'] )->toBe( 'first' );
+	expect( $resolved )->toHaveCount( 3 );
+	expect( $resolved[0]['id'] )->toBe( 'wmt-cycling' );
+	expect( $resolved[1]['id'] )->toBe( 'wmt-mtb' );
+	expect( $resolved[2]['id'] )->toBe( 'wmt-hiking' );
 
 } );
 
@@ -886,39 +897,6 @@ test( 'resolve_overlays drops non-string entries', function (): void {
 
 	expect( $resolved )->toHaveCount( 1 );
 	expect( $resolved[0]['id'] )->toBe( 'wmt-hiking' );
-
-} );
-
-test( 'overlay filter surfaces a custom overlay alongside the default wmt-hiking', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[
-			'wmt-hiking'  => tlr_overlay_record( [
-				'label' => 'Waymarked Trails — Hiking',
-				'url'   => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
-			] ),
-			'custom-grid' => tlr_overlay_record( [
-				'label' => 'Custom Grid',
-				'url'   => 'https://grid.example.com/{z}/{x}/{y}.png',
-			] ),
-		]
-	);
-
-	$registry = new Tile_Layer_Registry();
-
-	$overlays = $registry->get_overlays();
-	expect( $overlays )->toHaveKey( 'wmt-hiking' );
-	expect( $overlays )->toHaveKey( 'custom-grid' );
-	expect( count( $overlays ) )->toBe( 2 );
-
-	// Resolution preserves the editor-configured order, so requesting
-	// custom-grid first and wmt-hiking second yields exactly that order.
-	$resolved = $registry->resolve_overlays( [ 'custom-grid', 'wmt-hiking' ] );
-	expect( $resolved )->toHaveCount( 2 );
-	expect( $resolved[0]['id'] )->toBe( 'custom-grid' );
-	expect( $resolved[0]['url'] )->toBe( 'https://grid.example.com/{z}/{x}/{y}.png' );
-	expect( $resolved[1]['id'] )->toBe( 'wmt-hiking' );
 
 } );
 

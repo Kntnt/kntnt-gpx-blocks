@@ -83,25 +83,43 @@ interface EditorRegistryOverlay {
 }
 
 /**
+ * Editor-only per-style record nested inside each provider's `styles` map.
+ *
+ * Carries the tile-layer fields the `MapEditorPreview` forwards to
+ * `L.tileLayer()` (URL with `{KEY}` left intact, attribution, maxZoom)
+ * plus the localised `label` the style dropdown surfaces.
+ * `subdomains` is *not* on the style record — it is a provider-level
+ * property inherited by every style of that provider whose URL contains
+ * `{s}`.
+ *
+ * @since 1.0.0
+ */
+interface EditorRegistryStyle {
+	readonly label: string;
+	readonly url: string;
+	readonly attribution: string;
+	readonly maxZoom: number;
+}
+
+/**
  * Editor-only provider record exposed via `window.kntntGpxBlocks.providers`.
  *
  * Carries the metadata the Inspector needs to drive its UI (`label`,
- * `requiresKey`, optional `signupUrl`) plus the tile-layer fields the
- * `MapEditorPreview` forwards to `L.tileLayer()` (URL, attribution,
- * maxZoom, optional subdomains). The URL still contains the literal
- * `{KEY}` placeholder for paid providers — substitution against
- * `attributes.tileApiKeys[ tileProvider ]` happens in `edit.tsx` immediately before the
- * resolved record is handed to the preview, mirroring how `Render_Map`
- * substitutes server-side for the frontend.
+ * `requiresKey`, `default` style id, optional `signupUrl`, optional
+ * `subdomains`) plus the nested `styles` map of per-style records.
+ * The per-style URL still contains the literal `{KEY}` placeholder for
+ * paid providers — substitution against
+ * `attributes.tileApiKeys[ tileProvider ]` happens in `edit.tsx`
+ * immediately before the resolved record is handed to the preview,
+ * mirroring how `Render_Map` substitutes server-side for the frontend.
  *
  * @since 1.0.0
  */
 interface EditorRegistryProvider {
 	readonly label: string;
-	readonly url: string;
-	readonly attribution: string;
-	readonly maxZoom: number;
 	readonly requiresKey: boolean;
+	readonly default: string;
+	readonly styles: Readonly< Record< string, EditorRegistryStyle > >;
 	readonly signupUrl?: string;
 	readonly subdomains?: readonly string[];
 }
@@ -171,6 +189,7 @@ interface MapAttributes {
 	tooltipDescTextDecoration: string;
 	tooltipDescTextTransform: string;
 	tileProvider: string;
+	tileStyle: string;
 	tileApiKeys: Record< string, string >;
 	tileOverlays: string[];
 	[ key: string ]: unknown;
@@ -535,39 +554,43 @@ function resolveOverlaysForPreview(
 }
 
 /**
- * Resolves the saved provider id and per-block API key to the runtime record
- * the editor preview mounts.
+ * Resolves the saved (provider id, style id) pair and per-block API key to
+ * the runtime record the editor preview mounts.
  *
  * Mirrors `Tile_Layer_Registry::resolve_provider()` on the JS side: the
- * lookup falls back to the canonical OSM provider when the saved id is not
- * in the editor-data global (filter dropped it, or a stale attribute
- * survived a registry change), and `{KEY}` is substituted with the
- * per-block key just like the server does for the frontend. When the
- * registry is missing entirely (the inline script was stripped), the
- * helper returns `null` and the caller renders without a tile layer —
- * the editor preview's single useEffect handles the null-provider case
- * defensively rather than crashing.
+ * lookup falls back to the canonical OpenStreetMap provider when the
+ * saved provider id is not in the editor-data global, and to the
+ * provider's own `default` style when the saved style id is unknown
+ * within a known provider. `{KEY}` is substituted with the per-block key
+ * just like the server does for the frontend. When the registry is
+ * missing entirely (the inline script was stripped), the helper returns
+ * `null` and the caller renders without a tile layer — the editor
+ * preview's single useEffect handles the null-provider case defensively
+ * rather than crashing.
  *
  * @since 1.0.0
  *
  * @param providerId - Saved `tileProvider` attribute.
+ * @param styleId    - Saved `tileStyle` attribute.
  * @param apiKey     - Per-provider API key looked up from
  *                   `attributes.tileApiKeys[providerId]` (may be empty for
- *                   paid providers; the resulting URL will fail to load
- *                   tiles visually, which is the documented behaviour for
- *                   this slice — see issue #79).
+ *                   paid providers; the resulting URL will produce
+ *                   `null` and the preview ships polyline-only).
  * @return Resolved record with `{KEY}` substituted, or `null` when the
- *         registry global is absent and no fallback is possible.
+ *         registry global is absent or the resolved provider requires a
+ *         key the editor has not supplied.
  */
 function resolveProviderForPreview(
 	providerId: string,
+	styleId: string,
 	apiKey: string
 ): EditorProviderRecord | null {
 	const providers = window.kntntGpxBlocks?.providers ?? {};
 
-	const record =
+	// Resolve the provider record with fall-back to the global fallback.
+	const provider =
 		providers[ providerId ] ?? providers[ FALLBACK_PROVIDER_ID ] ?? null;
-	if ( ! record ) {
+	if ( ! provider ) {
 		return null;
 	}
 
@@ -575,25 +598,32 @@ function resolveProviderForPreview(
 	// per-provider key is empty (or whitespace-only), do not return a
 	// preview record at all. Returning `null` makes the preview's base-tile
 	// useEffect skip the tile layer entirely, mirroring the frontend
-	// `Render_Map` PHP gate where the URL is nulled in state. Issue #82's
-	// Notice surfaces the missing-key diagnostic above the canvas; this
-	// branch makes the canvas itself show polyline-only instead of issuing
-	// failing tile requests with a useless `?apikey=` query parameter.
-	if ( record.requiresKey && apiKey.trim() === '' ) {
+	// `Render_Map` PHP gate where the URL is nulled in state.
+	if ( provider.requiresKey && apiKey.trim() === '' ) {
 		return null;
 	}
 
-	const url = record.requiresKey
-		? substituteTileApiKey( record.url, apiKey )
-		: record.url;
+	// Resolve the style record within the provider with fall-back to the
+	// provider's own default. A `default` that itself does not resolve
+	// (defensive — should not happen post-validation) falls through to
+	// `null`, treating the preview as if the provider were missing.
+	const style =
+		provider.styles[ styleId ] ?? provider.styles[ provider.default ];
+	if ( ! style ) {
+		return null;
+	}
+
+	const url = provider.requiresKey
+		? substituteTileApiKey( style.url, apiKey )
+		: style.url;
 
 	const out: EditorProviderRecord = {
 		url,
-		attribution: record.attribution,
-		maxZoom: record.maxZoom,
+		attribution: style.attribution,
+		maxZoom: style.maxZoom,
 	};
-	if ( record.subdomains && record.subdomains.length > 0 ) {
-		out.subdomains = [ ...record.subdomains ];
+	if ( provider.subdomains && provider.subdomains.length > 0 ) {
+		out.subdomains = [ ...provider.subdomains ];
 	}
 	return out;
 }
@@ -609,53 +639,86 @@ function resolveProviderForPreview(
  *
  * @since 1.0.0
  */
-const FALLBACK_PROVIDER_ID = 'osm-standard';
+const FALLBACK_PROVIDER_ID = 'openstreetmap';
 
 /**
  * Renders the "Tiles" inspector panel.
  *
- * Surfaces the base-tile provider dropdown and a conditional API-key field
- * driven by the registry's `requiresKey` flag. The dropdown's options are
+ * Surfaces a two-step base-tile choice — provider first, then style
+ * within that provider — plus a conditional API-key field driven by the
+ * resolved provider's `requiresKey` flag. The dropdown options are
  * populated from `window.kntntGpxBlocks.providers` (see
  * `Bootstrap\Editor_Data_Enqueuer`); when the global is missing or empty
- * the panel still renders so the editor surfaces a clear "nothing here"
- * state rather than vanishing silently. The text field appears only for
- * providers with `requiresKey === true`; its help text shows the
- * provider's `signupUrl` as an `<ExternalLink>` when present and a
- * generic instruction otherwise.
+ * the panel still renders both `SelectControl`s so the editor surfaces a
+ * clear "nothing here" state rather than vanishing silently. The style
+ * dropdown is always rendered, even when the selected provider declares
+ * a single style — the affordance is consistent across providers, and
+ * the user sees what the canonical style for the provider is named.
+ *
+ * Stale-state surfacing — when the saved `tileProvider` or `tileStyle`
+ * is no longer in the validated registry (filter dropped it, or a stale
+ * post-content survived a registry change), the affected dropdown
+ * prepends a placeholder option labelled with the orphan id itself so
+ * the editor reflects the current persisted state without silently
+ * rewriting it. The user picks a real option to clear the placeholder.
  *
  * @since 1.0.0
  *
  * @param props          Component props.
  * @param props.provider Current `tileProvider` attribute.
+ * @param props.style    Current `tileStyle` attribute.
  * @param props.apiKey   Per-provider API key for the currently-selected
- *                       provider, looked up from `tileApiKeys[ tileProvider ]`.
- * @param props.onChange Setter — receives the new provider id and key.
+ *                       provider, looked up from
+ *                       `tileApiKeys[ tileProvider ]`.
+ * @param props.onChange Setter — receives the new provider id, style id,
+ *                       and/or key.
  */
 function TilesPanel( {
 	provider,
+	style,
 	apiKey,
 	onChange,
 }: {
 	provider: string;
+	style: string;
 	apiKey: string;
-	onChange: ( next: { provider?: string; apiKey?: string } ) => void;
+	onChange: ( next: {
+		provider?: string;
+		style?: string;
+		apiKey?: string;
+	} ) => void;
 } ): JSX.Element {
 	const providers = window.kntntGpxBlocks?.providers ?? {};
-	const ids = Object.keys( providers );
-	const selected = providers[ provider ] ?? null;
+	const providerIds = Object.keys( providers );
+	const selectedProvider = providers[ provider ] ?? null;
 
-	// Build the SelectControl options from the registry. When the saved
-	// provider id is no longer in the registry (filter dropped it, or a
-	// stale post-content survived a registry change), surface it as a
-	// placeholder option labelled with the id itself — the editor reflects
-	// the current persisted state without silently rewriting it.
-	const options = ids.map( ( id ) => ( {
+	// Build the provider-dropdown options. When the saved provider id is
+	// an orphan (no longer in the registry), prepend it as a placeholder
+	// option labelled with the id itself.
+	const providerOptions = providerIds.map( ( id ) => ( {
 		value: id,
 		label: providers[ id ]?.label ?? id,
 	} ) );
 	if ( provider !== '' && ! providers[ provider ] ) {
-		options.unshift( { value: provider, label: provider } );
+		providerOptions.unshift( { value: provider, label: provider } );
+	}
+
+	// Build the style-dropdown options against the selected provider's
+	// `styles` map. When the selected provider is itself an orphan, the
+	// style dropdown collapses to just the orphan-id placeholder (or
+	// nothing when the saved style is empty too).
+	const styleEntries = selectedProvider
+		? Object.entries( selectedProvider.styles )
+		: [];
+	const styleOptions = styleEntries.map( ( [ id, record ] ) => ( {
+		value: id,
+		label: record.label,
+	} ) );
+	if (
+		style !== '' &&
+		( ! selectedProvider || ! selectedProvider.styles[ style ] )
+	) {
+		styleOptions.unshift( { value: style, label: style } );
 	}
 
 	return (
@@ -665,10 +728,31 @@ function TilesPanel( {
 				__nextHasNoMarginBottom
 				label={ __( 'Provider', 'kntnt-gpx-blocks' ) }
 				value={ provider }
-				options={ options }
-				onChange={ ( next: string ) => onChange( { provider: next } ) }
+				options={ providerOptions }
+				onChange={ ( next: string ) => {
+					// Switching providers resets the style to the new
+					// provider's `default` unconditionally — there is no
+					// per-provider style memory. Switching back to a
+					// previously-used provider does *not* restore a
+					// previously-chosen style on that provider; it always
+					// lands on the provider's default. The API key, by
+					// contrast, *is* per-provider in attribute storage
+					// (`tileApiKeys[ providerId ]`), so the inspector
+					// surfaces whichever key the new provider has stored.
+					const nextProvider = providers[ next ];
+					const nextStyle = nextProvider?.default ?? '';
+					onChange( { provider: next, style: nextStyle } );
+				} }
 			/>
-			{ selected?.requiresKey && (
+			<SelectControl
+				__next40pxDefaultSize
+				__nextHasNoMarginBottom
+				label={ __( 'Style', 'kntnt-gpx-blocks' ) }
+				value={ style }
+				options={ styleOptions }
+				onChange={ ( next: string ) => onChange( { style: next } ) }
+			/>
+			{ selectedProvider?.requiresKey && (
 				<TextControl
 					__next40pxDefaultSize
 					__nextHasNoMarginBottom
@@ -678,13 +762,15 @@ function TilesPanel( {
 						onChange( { apiKey: next } )
 					}
 					help={
-						selected.signupUrl ? (
+						selectedProvider.signupUrl ? (
 							<>
 								{ __(
 									'This provider requires an API key.',
 									'kntnt-gpx-blocks'
 								) }{ ' ' }
-								<ExternalLink href={ selected.signupUrl }>
+								<ExternalLink
+									href={ selectedProvider.signupUrl }
+								>
 									{ __( 'Get one', 'kntnt-gpx-blocks' ) }
 								</ExternalLink>
 							</>
@@ -762,6 +848,7 @@ export const MapEdit = ( {
 		tooltipDescTextDecoration,
 		tooltipDescTextTransform,
 		tileProvider,
+		tileStyle,
 		tileApiKeys,
 		tileOverlays,
 	} = attributes;
@@ -1055,11 +1142,15 @@ export const MapEdit = ( {
 				</PanelBody>
 				<TilesPanel
 					provider={ tileProvider }
+					style={ tileStyle }
 					apiKey={ tileApiKeys?.[ tileProvider ] ?? '' }
 					onChange={ ( next ) => {
 						const update: Partial< MapAttributes > = {};
 						if ( next.provider !== undefined ) {
 							update.tileProvider = next.provider;
+						}
+						if ( next.style !== undefined ) {
+							update.tileStyle = next.style;
 						}
 						if ( next.apiKey !== undefined ) {
 							update.tileApiKeys = {
@@ -1244,6 +1335,7 @@ export const MapEdit = ( {
 						tooltipShowDesc,
 						provider: resolveProviderForPreview(
 							tileProvider,
+							tileStyle,
 							tileApiKeys?.[ tileProvider ] ?? ''
 						),
 						overlays: resolveOverlaysForPreview( tileOverlays ),

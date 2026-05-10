@@ -119,36 +119,49 @@ final class Editor_Data_Enqueuer {
 	/**
 	 * Shapes the provider registry for the editor payload.
 	 *
-	 * Carries everything `MapEditorPreview` needs to mount the selected
-	 * provider's tile layer (URL with `{KEY}` left intact, attribution,
-	 * maxZoom, optional subdomains) plus the metadata the Inspector needs
-	 * to drive its UI (`label`, `requiresKey`, optional `signupUrl`). The
-	 * shape is deliberately explicit so a future change to the registry's
-	 * internal record type does not silently leak through the editor data;
-	 * only the fields listed below ever reach the browser. The per-block
-	 * API keys are *never* part of this payload — they live in
-	 * `attributes.tileApiKeys` (a provider-keyed object) and the entry
-	 * for the currently-selected provider is substituted into `{KEY}`
-	 * client-side by `edit.tsx` before forwarding the URL to the preview.
+	 * Forwards the nested provider/style hierarchy verbatim into the
+	 * inline payload so the editor's `TilesPanel` can drive its two
+	 * `SelectControl`s plus the conditional API-key field, and so
+	 * `MapEditorPreview` can mount the resolved style's tile layer via
+	 * `L.tileLayer()`. Provider-level fields surfaced: `label`,
+	 * `requiresKey`, `default`, optional `signupUrl`, optional
+	 * `subdomains`. Per-style fields surfaced under `styles[ id ]`:
+	 * `label`, `url` (with `{KEY}` left intact for paid providers),
+	 * `attribution`, `maxZoom`. The shape is deliberately explicit so a
+	 * future change to the registry's internal record type does not
+	 * silently leak through the editor data; only the fields listed below
+	 * ever reach the browser. The per-block API keys are *never* part of
+	 * this payload — they live in `attributes.tileApiKeys` (a
+	 * provider-keyed object) and the entry for the currently-selected
+	 * provider is substituted into `{KEY}` client-side by `edit.tsx`
+	 * before forwarding the URL to the preview.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<string, array{
 	 *     label: string,
-	 *     url: string,
-	 *     attribution: string,
-	 *     maxZoom: int,
 	 *     requiresKey: bool,
+	 *     default: string,
+	 *     styles: array<string, array{
+	 *         label: string,
+	 *         url: string,
+	 *         attribution: string,
+	 *         maxZoom: int,
+	 *     }>,
 	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
 	 * }> $providers Validated provider records keyed by id.
 	 *
 	 * @return array<string, array{
 	 *     label: string,
-	 *     url: string,
-	 *     attribution: string,
-	 *     maxZoom: int,
 	 *     requiresKey: bool,
+	 *     default: string,
+	 *     styles: array<string, array{
+	 *         label: string,
+	 *         url: string,
+	 *         attribution: string,
+	 *         maxZoom: int,
+	 *     }>,
 	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
 	 * }>
@@ -158,12 +171,25 @@ final class Editor_Data_Enqueuer {
 		$out = [];
 
 		foreach ( $providers as $id => $record ) {
+
+			// Compose the per-style sub-map. The shape mirrors the
+			// validator's typed style record verbatim; the validator has
+			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
+			$styles = [];
+			foreach ( $record['styles'] as $style_id => $style ) {
+				$styles[ $style_id ] = [
+					'label'       => $style['label'],
+					'url'         => $style['url'],
+					'attribution' => $style['attribution'],
+					'maxZoom'     => $style['maxZoom'],
+				];
+			}
+
 			$entry = [
 				'label'       => $record['label'],
-				'url'         => $record['url'],
-				'attribution' => $record['attribution'],
-				'maxZoom'     => $record['maxZoom'],
 				'requiresKey' => $record['requiresKey'],
+				'default'     => $record['default'],
+				'styles'      => $styles,
 			];
 			if ( isset( $record['signupUrl'] ) ) {
 				$entry['signupUrl'] = $record['signupUrl'];
@@ -172,6 +198,7 @@ final class Editor_Data_Enqueuer {
 				$entry['subdomains'] = $record['subdomains'];
 			}
 			$out[ $id ] = $entry;
+
 		}
 
 		return $out;
