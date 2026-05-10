@@ -607,12 +607,15 @@ export const ElevationEdit = ( {
 					<ServerSideRender
 						block="kntnt-gpx-blocks/elevation"
 						attributes={ {
-							// Forward the block-supports-managed `style`
-							// attribute verbatim so server-side
-							// `get_block_wrapper_attributes()` re-emits the
-							// editor's chosen dimensions / border / shadow /
-							// spacing on the SSR-rendered wrapper.
-							style: attributes.style,
+							// Do not forward the block-supports-managed
+							// `style` attribute. The outer `useBlockProps()`
+							// wrapper above already carries the editor's
+							// chosen dimensions / border / shadow / spacing;
+							// forwarding `style` would make
+							// `get_block_wrapper_attributes()` re-emit the
+							// same inline style on the SSR-rendered inner
+							// wrapper and the editor would render every
+							// dimension at twice the chosen value.
 							mapId,
 							backgroundColor,
 							axisColor,
