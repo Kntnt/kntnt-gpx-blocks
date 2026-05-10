@@ -94,7 +94,7 @@ The full `border` (color, radius, style, width) and `shadow` block supports are 
 
 `supports.dimensions` enables `aspectRatio` and `minHeight`, which surface the standard core Dimensions panel for sizing. The chosen values land under `attributes.style.dimensions.*` like every other dimensions-aware core block and reach the wrapper as plain inline `aspect-ratio` / `min-height` styles via `get_block_wrapper_attributes()`. Empty fields fall back to the SCSS baseline (`aspect-ratio: 3 / 1; min-height: 240px;`).
 
-`supports.spacing` enables only `margin`, deliberately omitting `padding` and `blockGap`. Leaflet absolutely-positions its `.leaflet-pane` elements against the wrapper's padding box, so a padding control would emit inline `padding` that has zero visible effect — the same anti-pattern as `blockGap` (the block has no inner blocks). Site builders who want a padded frame around the map compose it with `core/group`. GPX Elevation, by contrast, exposes both margin *and* padding because its inline SVG paints into the content box and respects padding the way ordinary block content does.
+`supports.spacing` enables only `margin`, deliberately omitting `padding` and `blockGap`. Leaflet absolutely-positions its `.leaflet-pane` elements against the wrapper's padding box, so a padding control would emit inline `padding` that has zero visible effect — the same anti-pattern as `blockGap` (the block has no inner blocks). Site builders who want a padded frame around the map compose it with `core/group`. GPX Elevation likewise exposes only `margin`: with the dedicated background-colour control removed, padding has no surface to inset the SVG against, so the padding control would change layout without producing a visible inset. Margin still applies because it positions the block within its surrounding flow.
 
 ### Render output
 
@@ -210,7 +210,7 @@ The full `border` (color, radius, style, width) and `shadow` block supports are 
 
 `supports.dimensions` enables `aspectRatio` and `minHeight`, with the same plumbing as GPX Map (see the Map's *Block supports* section above). Empty fields fall back to the SCSS baseline (`aspect-ratio: 4 / 1; min-height: 120px;`).
 
-`supports.spacing` enables both `margin` and `padding` (but not `blockGap`, which is meaningless without inner blocks). Padding works as expected because the inline SVG paints into the wrapper's content box like ordinary block content — the asymmetry with GPX Map (margin only) is intentional and is explained in the Map's *Block supports* section above.
+`supports.spacing` enables only `margin` (not `padding`, and not `blockGap` — the latter being meaningless without inner blocks). Padding was previously offered because the inline SVG paints into the wrapper's content box and would respect padding like ordinary block content; with the dedicated background-colour control removed, however, there is no surface to inset the SVG against, so the padding control changed layout without producing a visible inset and was dropped. Site builders who want a padded frame around the chart compose it with `core/group`, exactly as for GPX Map.
 
 ### Render output
 

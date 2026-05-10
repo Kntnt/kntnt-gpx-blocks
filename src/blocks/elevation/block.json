@@ -28,7 +28,6 @@
 		},
 		"shadow": true,
 		"spacing": {
-			"padding": true,
 			"margin": true
 		}
 	},
