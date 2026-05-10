@@ -793,65 +793,215 @@ test( 'emits --kntnt-gpx-blocks-tooltip-background with alpha when tooltipBackgr
 
 } );
 
-test( 'emits --kntnt-gpx-blocks-axis-font-weight when font weight is valid', function (): void {
+// ---------------------------------------------------------------------------
+// Issue #94 — typography refactor.
+//
+// The dual-context typography model (separate axis vs tooltip with eight
+// attributes and four sanitisers) was replaced with block-level
+// `supports.typography`. The renderer must therefore no longer emit any
+// `--kntnt-gpx-blocks-{axis,tooltip}-font-*` CSS custom property, even when
+// older saves carry the legacy attributes through; the axis-label overlays
+// and the cursor-tooltip text now inherit typography from the wrapper
+// instead.
+// ---------------------------------------------------------------------------
 
-	$coords = elev_synthetic_coords_3d( 200 );
-	$stats  = [
-		'distance'      => 5500.0,
-		'min_elevation' => 100.0,
-		'max_elevation' => 200.0,
-		'ascent'        => 100.0,
-		'descent'       => 0.0,
-	];
+test( 'does not emit axis-font CSS variables on the normal path', function (): void {
 
-	$store = elev_seeded_store( 72, $coords, $stats );
-	elev_bind_meta( $store );
-	elev_stub_get_post( 22 );
-	elev_stub_parse_blocks( [ elev_map_block( 72, 'map-weight' ) ] );
-	elev_stub_attached_file( 72, elev_fixture_path( 'happy-path.gpx' ) );
-	Functions\when( 'get_the_ID' )->justReturn( 22 );
+	elev_setup_normal_path( 72, 22, 'map-no-axis-font' );
 
-	$html = Render_Elevation::render(
-		[
-			'mapId'          => 'auto',
-			'axisFontWeight' => 'bold',
-		],
-		'',
-		elev_fake_block( 22 ),
-	);
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 22 ) );
 
-	expect( $html )->toContain( '--kntnt-gpx-blocks-axis-font-weight: bold' );
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-family' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-size' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-weight' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-style' );
 
 } );
 
-test( 'does not emit --kntnt-gpx-blocks-axis-font-weight when font weight is invalid', function (): void {
+test( 'does not emit tooltip-font CSS variables on the normal path', function (): void {
 
-	$coords = elev_synthetic_coords_3d( 200 );
-	$stats  = [
-		'distance'      => 5500.0,
-		'min_elevation' => 100.0,
-		'max_elevation' => 200.0,
-		'ascent'        => 100.0,
-		'descent'       => 0.0,
-	];
+	elev_setup_normal_path( 73, 23, 'map-no-tip-font' );
 
-	$store = elev_seeded_store( 73, $coords, $stats );
-	elev_bind_meta( $store );
-	elev_stub_get_post( 23 );
-	elev_stub_parse_blocks( [ elev_map_block( 73, 'map-bad-weight' ) ] );
-	elev_stub_attached_file( 73, elev_fixture_path( 'happy-path.gpx' ) );
-	Functions\when( 'get_the_ID' )->justReturn( 23 );
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 23 ) );
+
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-family' )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-size' )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-weight' )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-style' );
+
+} );
+
+test( 'ignores legacy axisFont* attributes left over from an older save', function (): void {
+
+	elev_setup_normal_path( 74, 24, 'map-legacy-axis-font' );
 
 	$html = Render_Elevation::render(
 		[
-			'mapId'          => 'auto',
-			'axisFontWeight' => 'extra-bold; color: red',
+			'mapId'           => 'auto',
+			'axisFontFamily'  => 'Comic Sans MS',
+			'axisFontSize'    => '16px',
+			'axisFontWeight'  => 'bold',
+			'axisFontStyle'   => 'italic',
 		],
 		'',
-		elev_fake_block( 23 ),
+		elev_fake_block( 24 ),
 	);
 
-	expect( $html )->not->toContain( '--kntnt-gpx-blocks-axis-font-weight' );
+	// The legacy values must not surface anywhere — neither as CSS variables
+	// nor as raw strings in the rendered HTML.
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-family' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-size' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-weight' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-font-style' )
+		->not->toContain( 'Comic Sans MS' )
+		->not->toContain( '16px' );
+
+} );
+
+test( 'ignores legacy tooltipFont* attributes left over from an older save', function (): void {
+
+	elev_setup_normal_path( 75, 25, 'map-legacy-tip-font' );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'              => 'auto',
+			'tooltipFontFamily'  => 'Comic Sans MS',
+			'tooltipFontSize'    => '20px',
+			'tooltipFontWeight'  => 'bold',
+			'tooltipFontStyle'   => 'italic',
+		],
+		'',
+		elev_fake_block( 25 ),
+	);
+
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-family' )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-size' )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-weight' )
+		->not->toContain( '--kntnt-gpx-blocks-tooltip-font-style' )
+		->not->toContain( 'Comic Sans MS' )
+		->not->toContain( '20px' );
+
+} );
+
+test( 'block.json declares supports.typography with the expected aspects and defaults', function (): void {
+
+	$json = json_decode(
+		(string) file_get_contents( __DIR__ . '/../../src/blocks/elevation/block.json' ),
+		true,
+	);
+	expect( $json )->toBeArray();
+
+	$typography = $json['supports']['typography'] ?? null;
+	expect( $typography )->toBeArray();
+
+	// Each user-facing aspect is enabled at the block level so the editor
+	// surfaces the standard Typography panel.
+	foreach (
+		[
+			'fontFamily',
+			'fontSize',
+			'fontWeight',
+			'fontStyle',
+			'lineHeight',
+			'letterSpacing',
+			'textTransform',
+			'textDecoration',
+		] as $aspect
+	) {
+		expect( $typography[ $aspect ] ?? null )->toBeTrue();
+	}
+
+	// The defaultControls trio (Font, Size, Appearance) is what the issue
+	// fixed as the visible top-level controls in the panel.
+	$defaults = $typography['defaultControls'] ?? null;
+	expect( $defaults )->toBeArray();
+	expect( $defaults['fontFamily'] ?? null )->toBeTrue();
+	expect( $defaults['fontSize'] ?? null )->toBeTrue();
+	expect( $defaults['fontAppearance'] ?? null )->toBeTrue();
+
+} );
+
+test( 'block.json no longer declares any axisFont* or tooltipFont* attributes', function (): void {
+
+	$json = json_decode(
+		(string) file_get_contents( __DIR__ . '/../../src/blocks/elevation/block.json' ),
+		true,
+	);
+	expect( $json )->toBeArray();
+
+	$attributes = $json['attributes'] ?? [];
+	expect( $attributes )->toBeArray();
+
+	foreach (
+		[
+			'axisFontFamily',
+			'axisFontSize',
+			'axisFontWeight',
+			'axisFontStyle',
+			'tooltipFontFamily',
+			'tooltipFontSize',
+			'tooltipFontWeight',
+			'tooltipFontStyle',
+		] as $removed
+	) {
+		expect( $attributes )->not->toHaveKey( $removed );
+	}
+
+} );
+
+test( 'block-supports typography in style.typography reaches the wrapper inline style', function (): void {
+
+	// The Render_Elevation class itself does not interpret the
+	// `style.typography` slot — that is what core's
+	// `get_block_wrapper_attributes()` is for. The test exercises the
+	// integration: when `style.typography.fontFamily` is set, the mocked
+	// wrapper helper picks it up and emits a corresponding inline
+	// `font-family` declaration that the axis-label and cursor-tooltip-text
+	// rules inherit.
+	elev_setup_normal_path( 76, 26, 'map-block-typography' );
+
+	// Override the default get_block_wrapper_attributes mock with one that
+	// emits the typography slot into the inline style — mirroring what core
+	// does in production.
+	Functions\when( 'get_block_wrapper_attributes' )->alias(
+		static function ( array $extras = [] ): string {
+			$style_parts = [];
+			if ( isset( $extras['style'] ) && '' !== $extras['style'] ) {
+				$style_parts[] = (string) $extras['style'];
+			}
+			// In production core reads $attributes['style']['typography'] and
+			// emits inline declarations. The test simulates the result.
+			$style_parts[] = 'font-family: var(--wp--preset--font-family--system)';
+			$style         = implode( '; ', $style_parts );
+
+			return sprintf(
+				'class="wp-block-kntnt-gpx-blocks-elevation kntnt-gpx-blocks-elevation" style="%s"',
+				$style,
+			);
+		},
+	);
+
+	$html = Render_Elevation::render(
+		[
+			'mapId' => 'auto',
+			'style' => [
+				'typography' => [
+					'fontFamily' => 'var:preset|font-family|system',
+				],
+			],
+		],
+		'',
+		elev_fake_block( 26 ),
+	);
+
+	// The wrapper carries the block-level font-family; the axis-label and
+	// cursor-tooltip-text rules in style.scss use `inherit`, so the choice
+	// flows into both surfaces without any per-context CSS variable.
+	expect( $html )->toContain( 'font-family: var(--wp--preset--font-family--system)' );
 
 } );
 

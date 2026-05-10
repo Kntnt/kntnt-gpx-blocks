@@ -132,16 +132,6 @@ final class Render_Elevation {
 		$tooltip_bg        = Color_Sanitizer::sanitize( $attributes['tooltipBackground'] ?? '' );
 		$tooltip_color     = Color_Sanitizer::sanitize( $attributes['tooltipColor'] ?? '' );
 
-		// Read and sanitize the eight typography attributes (axis and tooltip).
-		$axis_font_family   = self::sanitize_font_family( $attributes['axisFontFamily'] ?? '' );
-		$axis_font_size     = self::sanitize_font_size( $attributes['axisFontSize'] ?? '' );
-		$axis_font_weight   = self::sanitize_font_weight( $attributes['axisFontWeight'] ?? '' );
-		$axis_font_style    = self::sanitize_font_style( $attributes['axisFontStyle'] ?? '' );
-		$tooltip_font_family = self::sanitize_font_family( $attributes['tooltipFontFamily'] ?? '' );
-		$tooltip_font_size   = self::sanitize_font_size( $attributes['tooltipFontSize'] ?? '' );
-		$tooltip_font_weight = self::sanitize_font_weight( $attributes['tooltipFontWeight'] ?? '' );
-		$tooltip_font_style  = self::sanitize_font_style( $attributes['tooltipFontStyle'] ?? '' );
-
 		// Determine the host post ID for block-tree discovery.
 		$context     = property_exists( $block, 'context' ) && is_array( $block->context ) ? $block->context : [];
 		$raw_post_id = $context['postId'] ?? null;
@@ -254,10 +244,12 @@ final class Render_Elevation {
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
 
 		// Assemble the inline style with non-empty theming custom properties.
-		// Dimensions (`aspect-ratio`, `min-height`) are emitted by core's
-		// `dimensions` block supports — the wrapper attributes returned by
-		// `get_block_wrapper_attributes()` already carry them. Empty colour /
-		// typography values fall back to the SCSS defaults.
+		// Dimensions (`aspect-ratio`, `min-height`) and typography (`font-family`,
+		// `font-size`, etc.) are emitted by core's `dimensions` and `typography`
+		// block supports — the wrapper attributes returned by
+		// `get_block_wrapper_attributes()` already carry them. Empty colour
+		// values fall back to the SCSS defaults; the SVG axis labels and
+		// cursor-tooltip text inherit typography from the block wrapper.
 		$style_parts = [];
 
 		if ( '' !== $axis_color ) {
@@ -277,30 +269,6 @@ final class Render_Elevation {
 		}
 		if ( '' !== $tooltip_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-tooltip-color: ' . $tooltip_color;
-		}
-		if ( '' !== $axis_font_family ) {
-			$style_parts[] = '--kntnt-gpx-blocks-axis-font-family: ' . $axis_font_family;
-		}
-		if ( '' !== $axis_font_size ) {
-			$style_parts[] = '--kntnt-gpx-blocks-axis-font-size: ' . $axis_font_size;
-		}
-		if ( '' !== $axis_font_weight ) {
-			$style_parts[] = '--kntnt-gpx-blocks-axis-font-weight: ' . $axis_font_weight;
-		}
-		if ( '' !== $axis_font_style ) {
-			$style_parts[] = '--kntnt-gpx-blocks-axis-font-style: ' . $axis_font_style;
-		}
-		if ( '' !== $tooltip_font_family ) {
-			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-family: ' . $tooltip_font_family;
-		}
-		if ( '' !== $tooltip_font_size ) {
-			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-size: ' . $tooltip_font_size;
-		}
-		if ( '' !== $tooltip_font_weight ) {
-			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-weight: ' . $tooltip_font_weight;
-		}
-		if ( '' !== $tooltip_font_style ) {
-			$style_parts[] = '--kntnt-gpx-blocks-tooltip-font-style: ' . $tooltip_font_style;
 		}
 
 		$style = implode( '; ', $style_parts );
@@ -695,9 +663,10 @@ final class Render_Elevation {
 		);
 
 		// Tooltip rect — the tooltip lives inside the SVG and scales
-		// uniformly with the polyline. Tooltip typography controls are
-		// covered by issue #94 (separate dual-context typography refactor);
-		// for now the tooltip continues to use SVG <text>.
+		// uniformly with the polyline. The tooltip <text> inherits typography
+		// from the block wrapper via block-level supports.typography (issue
+		// #94); editors who want differentiated styling wrap the block in a
+		// Group with overridden controls.
 		$rect_x              = $is_editor_preview ? sprintf( '%.2f', $preview_rect_x ) : '0';
 		$cursor_tooltip_rect = sprintf(
 			'<rect class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"'
@@ -1191,120 +1160,6 @@ final class Render_Elevation {
 			+ cos( $phi1 ) * cos( $phi2 ) * sin( $d_lambda / 2 ) ** 2;
 
 		return self::EARTH_RADIUS_METERS * 2 * atan2( sqrt( $a ), sqrt( 1 - $a ) );
-
-	}
-
-	// ─── Attribute sanitizers ────────────────────────────────────────────────
-
-	/**
-	 * Validates a CSS font-family value against a strict whitelist.
-	 *
-	 * Accepts common font name strings and theme-preset CSS variable references.
-	 * Returns empty string on anything that could inject CSS or HTML.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-family string or empty string.
-	 */
-	private static function sanitize_font_family( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// Accept a CSS theme-preset font-family reference.
-		if ( preg_match( '/^var\(--wp--preset--font-family--[a-z0-9-]+\)$/', $raw ) ) {
-			return $raw;
-		}
-
-		// Accept font family names composed of letters, digits, spaces, commas,
-		// hyphens, quotes, and parentheses — the characters that appear in valid
-		// CSS font-family stacks.
-		if ( preg_match( "/^[A-Za-z0-9\\s,\\-'\"()]+$/", $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS font-size value against a strict whitelist.
-	 *
-	 * Accepts numeric CSS length values (px, em, rem, %) and theme-preset
-	 * font-size references. Returns empty string on anything unsafe.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-size string or empty string.
-	 */
-	private static function sanitize_font_size( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// Accept a CSS theme-preset font-size reference.
-		if ( preg_match( '/^var\(--wp--preset--font-size--[a-z0-9-]+\)$/', $raw ) ) {
-			return $raw;
-		}
-
-		// Accept numeric lengths: optional decimal followed by a CSS length unit.
-		if ( preg_match( '/^(\d+(\.\d+)?)(px|em|rem|%)?$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS font-weight value against the accepted keyword/numeric whitelist.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-weight string or empty string.
-	 */
-	private static function sanitize_font_weight( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( preg_match( '/^(normal|bold|lighter|bolder|[1-9]00)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS font-style value against the accepted keyword whitelist.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-style string or empty string.
-	 */
-	private static function sanitize_font_style( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( preg_match( '/^(normal|italic|oblique)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
 
 	}
 

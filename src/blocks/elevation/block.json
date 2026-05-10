@@ -29,6 +29,21 @@
 		"shadow": true,
 		"spacing": {
 			"margin": true
+		},
+		"typography": {
+			"fontFamily": true,
+			"fontSize": true,
+			"fontWeight": true,
+			"fontStyle": true,
+			"lineHeight": true,
+			"letterSpacing": true,
+			"textTransform": true,
+			"textDecoration": true,
+			"defaultControls": {
+				"fontFamily": true,
+				"fontSize": true,
+				"fontAppearance": true
+			}
 		}
 	},
 	"attributes": {
@@ -57,38 +72,6 @@
 			"default": ""
 		},
 		"tooltipColor": {
-			"type": "string",
-			"default": ""
-		},
-		"axisFontFamily": {
-			"type": "string",
-			"default": ""
-		},
-		"axisFontSize": {
-			"type": "string",
-			"default": ""
-		},
-		"axisFontWeight": {
-			"type": "string",
-			"default": ""
-		},
-		"axisFontStyle": {
-			"type": "string",
-			"default": ""
-		},
-		"tooltipFontFamily": {
-			"type": "string",
-			"default": ""
-		},
-		"tooltipFontSize": {
-			"type": "string",
-			"default": ""
-		},
-		"tooltipFontWeight": {
-			"type": "string",
-			"default": ""
-		},
-		"tooltipFontStyle": {
 			"type": "string",
 			"default": ""
 		},

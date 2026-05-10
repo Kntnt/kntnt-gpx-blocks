@@ -54,15 +54,12 @@
 	--kntnt-gpx-blocks-tooltip-background: #000000cc;
 	--kntnt-gpx-blocks-tooltip-color: #fff;
 
-	// ─── Typography defaults ──────────────────────────────────────────────
-	--kntnt-gpx-blocks-axis-font-family: inherit;
-	--kntnt-gpx-blocks-axis-font-size: 11px;
-	--kntnt-gpx-blocks-axis-font-weight: 400;
-	--kntnt-gpx-blocks-axis-font-style: normal;
-	--kntnt-gpx-blocks-tooltip-font-family: inherit;
-	--kntnt-gpx-blocks-tooltip-font-size: 16px;
-	--kntnt-gpx-blocks-tooltip-font-weight: 400;
-	--kntnt-gpx-blocks-tooltip-font-style: normal;
+	// ─── Typography ───────────────────────────────────────────────────────
+	// Typography is delegated to core's `supports.typography` block supports.
+	// The block wrapper carries font-family / font-size / font-weight /
+	// font-style / line-height / letter-spacing / text-transform /
+	// text-decoration when the editor sets them; the axis-label overlays and
+	// the cursor-tooltip text inherit those values from the wrapper.
 
 	// ─── SVG container ────────────────────────────────────────────────────
 	// The SVG fills the wrapper's content box (everything inside padding).
@@ -124,11 +121,14 @@
 		position: absolute;
 		display: block;
 		color: var(--kntnt-gpx-blocks-axis-label-color);
-		font-family: var(--kntnt-gpx-blocks-axis-font-family);
-		font-size: var(--kntnt-gpx-blocks-axis-font-size);
-		font-weight: var(--kntnt-gpx-blocks-axis-font-weight);
-		font-style: var(--kntnt-gpx-blocks-axis-font-style);
-		line-height: 1;
+		font-family: inherit;
+		font-size: inherit;
+		font-weight: inherit;
+		font-style: inherit;
+		line-height: inherit;
+		letter-spacing: inherit;
+		text-transform: inherit;
+		text-decoration: inherit;
 		white-space: nowrap;
 	}
 
@@ -174,10 +174,14 @@
 
 	.kntnt-gpx-blocks-elevation-cursor-tooltip-text {
 		fill: var(--kntnt-gpx-blocks-tooltip-color);
-		font-family: var(--kntnt-gpx-blocks-tooltip-font-family);
-		font-size: var(--kntnt-gpx-blocks-tooltip-font-size);
-		font-weight: var(--kntnt-gpx-blocks-tooltip-font-weight);
-		font-style: var(--kntnt-gpx-blocks-tooltip-font-style);
+		font-family: inherit;
+		font-size: inherit;
+		font-weight: inherit;
+		font-style: inherit;
+		line-height: inherit;
+		letter-spacing: inherit;
+		text-transform: inherit;
+		text-decoration: inherit;
 	}
 
 	// ─── Empty state ──────────────────────────────────────────────────────

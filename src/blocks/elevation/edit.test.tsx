@@ -41,9 +41,8 @@ jest.mock(
 );
 
 // Mock @wordpress/block-editor — the Edit component uses InspectorControls,
-// PanelColorSettings, useBlockProps, useSettings, and two unstable
-// typography controls. The mocks reproduce just enough surface for the
-// component to render without errors.
+// PanelColorSettings, and useBlockProps. The mocks reproduce just enough
+// surface for the component to render without errors.
 jest.mock(
 	'@wordpress/block-editor',
 	() => ( {
@@ -54,25 +53,21 @@ jest.mock(
 			...props,
 			className: ( props.className as string ) ?? '',
 		} ),
-		useSettings: () => [ undefined, undefined ],
-		__experimentalFontFamilyControl: () => null,
-		__experimentalFontAppearanceControl: () => null,
 	} ),
 	{ virtual: true }
 );
 
-// Mock @wordpress/components — the component pulls Notice, PanelBody,
-// SelectControl, FontSizePicker, and two unstable ToolsPanel members.
+// Mock @wordpress/components — the component pulls Notice, PanelBody, and
+// SelectControl. Typography is delegated to core's block-level
+// `supports.typography` (issue #94), so no FontSizePicker / ToolsPanel
+// mocks are needed.
 jest.mock(
 	'@wordpress/components',
 	() => ( {
 		__esModule: true,
-		FontSizePicker: () => null,
 		Notice: () => null,
 		PanelBody: () => null,
 		SelectControl: () => null,
-		__experimentalToolsPanel: () => null,
-		__experimentalToolsPanelItem: () => null,
 	} ),
 	{ virtual: true }
 );
@@ -137,14 +132,6 @@ function buildAttributes(
 		cursorColor: '',
 		tooltipBackground: '',
 		tooltipColor: '',
-		axisFontFamily: '',
-		axisFontSize: '',
-		axisFontWeight: '',
-		axisFontStyle: '',
-		tooltipFontFamily: '',
-		tooltipFontSize: '',
-		tooltipFontWeight: '',
-		tooltipFontStyle: '',
 		...overrides,
 	};
 }

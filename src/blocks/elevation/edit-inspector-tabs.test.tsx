@@ -1,19 +1,21 @@
 /**
  * Inspector-tab placement tests for the GPX Elevation Edit component
- * (issue #89).
+ * (issue #89, updated for #94).
  *
  * Pins WordPress's standard Settings/Styles split for the inspector
  * sidebar: behaviour-shaping controls (data source) live in the default
- * `<InspectorControls>` slot (Settings tab); appearance controls (Color
- * panel and the two Typography panels) live in `<InspectorControls
- * group="styles">` (Design tab). The Map block already follows this
- * convention; this test pins the same shape for Elevation.
+ * `<InspectorControls>` slot (Settings tab); appearance controls (the
+ * Color panel) live in `<InspectorControls group="styles">` (Design
+ * tab). Typography is delegated to core's block-level
+ * `supports.typography` — the standard Typography panel is contributed
+ * automatically by core into the styles group and the plugin's
+ * `edit.tsx` renders no `TypographyToolsPanel` of its own (issue #94).
  *
  * The test mocks `@wordpress/block-editor`'s `InspectorControls` so the
  * `group` prop and the children rendered into each slot can be inspected
- * directly. PanelColorSettings, PanelBody, and the inner Typography
- * helper are mocked as named capture stubs so we can detect them by
- * their displayName when walking the slot's children.
+ * directly. PanelColorSettings and PanelBody are mocked as named capture
+ * stubs so we can detect them by their displayName when walking the
+ * slot's children.
  *
  * @since 1.0.0
  */
@@ -59,28 +61,21 @@ jest.mock(
 			...props,
 			className: ( props.className as string ) ?? '',
 		} ),
-		useSettings: () => [ undefined, undefined ],
-		__experimentalFontFamilyControl: () => null,
-		__experimentalFontAppearanceControl: () => null,
 	} ),
 	{ virtual: true }
 );
 
-// Mock @wordpress/components — PanelBody and the unstable ToolsPanel
-// members are surfaced as named component stubs so we can detect them
-// when walking InspectorControls children.
+// Mock @wordpress/components — PanelBody is surfaced as a named component
+// stub so we can detect it when walking InspectorControls children. The
+// custom TypographyToolsPanel helper has been removed (issue #94), so the
+// unstable ToolsPanel members are no longer mocked.
 jest.mock(
 	'@wordpress/components',
 	() => ( {
 		__esModule: true,
-		FontSizePicker: () => null,
 		Notice: () => null,
 		PanelBody: Object.assign( () => null, { displayName: 'PanelBody' } ),
 		SelectControl: () => null,
-		__experimentalToolsPanel: Object.assign( () => null, {
-			displayName: 'ToolsPanel',
-		} ),
-		__experimentalToolsPanelItem: () => null,
 	} ),
 	{ virtual: true }
 );
@@ -135,9 +130,8 @@ import { ElevationEdit } from './edit';
 /**
  * Recognised component-stub identifiers used by the children walker.
  * `displayName` is set on every mocked component that the inspector-tab
- * tests need to identify; the walker falls back to `name` for the inner
- * `TypographyToolsPanel` helper which is defined in `edit.tsx` itself
- * rather than mocked here.
+ * tests need to identify; the walker falls back to `name` for any helper
+ * component defined inline inside `edit.tsx`.
  *
  * @since 1.0.0
  *
@@ -210,14 +204,6 @@ function buildAttributes(
 		cursorColor: '',
 		tooltipBackground: '',
 		tooltipColor: '',
-		axisFontFamily: '',
-		axisFontSize: '',
-		axisFontWeight: '',
-		axisFontStyle: '',
-		tooltipFontFamily: '',
-		tooltipFontSize: '',
-		tooltipFontWeight: '',
-		tooltipFontStyle: '',
 		...overrides,
 	};
 }
@@ -273,15 +259,17 @@ describe( 'ElevationEdit InspectorControls tab placement (issue #89)', () => {
 		expect( children ).toContain( 'PanelColorSettings' );
 	} );
 
-	it( 'places both TypographyToolsPanel instances inside the styles slot', () => {
+	it( 'renders no TypographyToolsPanel instance in any inspector slot (issue #94)', () => {
+		// Typography is delegated to core's block-level `supports.typography`
+		// (issue #94). The plugin's own edit.tsx therefore must not render
+		// any custom TypographyToolsPanel — neither in the Settings slot nor
+		// in the Styles slot.
 		const inspectors = renderAndCapture( buildAttributes() );
 
-		const stylesSlot = inspectors.find( ( i ) => i.group === 'styles' );
-		expect( stylesSlot ).toBeDefined();
-		const typographyPanels = collectChildren( stylesSlot!.children ).filter(
-			( id ) => id === 'TypographyToolsPanel'
-		);
-		expect( typographyPanels ).toHaveLength( 2 );
+		for ( const inspector of inspectors ) {
+			const children = collectChildren( inspector.children );
+			expect( children ).not.toContain( 'TypographyToolsPanel' );
+		}
 	} );
 
 	it( 'keeps the Datakälla PanelBody inside the default (Settings) slot', () => {

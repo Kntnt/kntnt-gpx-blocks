@@ -99,9 +99,6 @@ jest.mock(
 			...props,
 			className: ( props.className as string ) ?? '',
 		} ),
-		useSettings: () => [ undefined, undefined ],
-		__experimentalFontFamilyControl: () => null,
-		__experimentalFontAppearanceControl: () => null,
 		store: 'core/block-editor',
 	} ),
 	{ virtual: true }
@@ -110,6 +107,8 @@ jest.mock(
 // Mock @wordpress/components — PanelBody captures its title plus children
 // so tests can assert which panels render. SelectControl captures its
 // option list so tests can verify the "Auto" entry's presence / absence.
+// Typography is delegated to core's block-level `supports.typography`
+// (issue #94), so no FontSizePicker / ToolsPanel mocks are needed.
 jest.mock(
 	'@wordpress/components',
 	() => ( {
@@ -125,10 +124,7 @@ jest.mock(
 			mockCapturedSelectControls.push( props );
 			return null;
 		},
-		FontSizePicker: () => null,
 		Notice: () => null,
-		__experimentalToolsPanel: () => null,
-		__experimentalToolsPanelItem: () => null,
 	} ),
 	{ virtual: true }
 );
@@ -209,14 +205,6 @@ function buildAttributes(
 		cursorColor: '',
 		tooltipBackground: '',
 		tooltipColor: '',
-		axisFontFamily: '',
-		axisFontSize: '',
-		axisFontWeight: '',
-		axisFontStyle: '',
-		tooltipFontFamily: '',
-		tooltipFontSize: '',
-		tooltipFontWeight: '',
-		tooltipFontStyle: '',
 		...overrides,
 	};
 }

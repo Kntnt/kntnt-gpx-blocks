@@ -1,13 +1,14 @@
 /**
  * GPX Elevation edit component.
  *
- * Renders a data-source picker in the Settings tab and colour + typography
- * panels in the Design tab (`<InspectorControls group="styles">`), plus a
- * live ServerSideRender preview in the block canvas. Sizing is delegated
- * to core's `dimensions` block supports — the standard Dimensions panel
- * surfaces aspect-ratio and min-height controls. Colour and typography
- * changes are injected as inline CSS variables on the wrapper div so the
- * editor preview updates instantly without a round-trip to ServerSideRender.
+ * Renders a data-source picker in the Settings tab and the Color panel in
+ * the Design tab (`<InspectorControls group="styles">`), plus a live
+ * ServerSideRender preview in the block canvas. Sizing is delegated to
+ * core's `dimensions` block supports; typography is delegated to core's
+ * `typography` block supports — the standard Typography panel surfaces
+ * Font, Size, Appearance, and the rest at the block level. Colour changes
+ * are injected as inline CSS variables on the wrapper div so the editor
+ * preview updates instantly without a round-trip to ServerSideRender.
  *
  * @since 1.0.0
  */
@@ -17,29 +18,14 @@ import {
 	InspectorControls,
 	PanelColorSettings,
 	useBlockProps,
-	useSettings,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalFontFamilyControl as FontFamilyControl,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalFontAppearanceControl as FontAppearanceControl,
 } from '@wordpress/block-editor';
 import type { BlockEditProps } from '@wordpress/blocks';
-import {
-	FontSizePicker,
-	Notice,
-	PanelBody,
-	SelectControl,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalToolsPanel as ToolsPanel,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalToolsPanelItem as ToolsPanelItem,
-} from '@wordpress/components';
+import { Notice, PanelBody, SelectControl } from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
 import { useSelect } from '@wordpress/data';
 import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
 
-import { flattenPresets } from '../shared/flatten-presets';
 import { useAutoPickMapId } from './use-auto-pick-map-id';
 
 /**
@@ -55,14 +41,6 @@ interface ElevationAttributes {
 	cursorColor: string;
 	tooltipBackground: string;
 	tooltipColor: string;
-	axisFontFamily: string;
-	axisFontSize: string;
-	axisFontWeight: string;
-	axisFontStyle: string;
-	tooltipFontFamily: string;
-	tooltipFontSize: string;
-	tooltipFontWeight: string;
-	tooltipFontStyle: string;
 	[ key: string ]: unknown;
 }
 
@@ -81,24 +59,6 @@ interface EditorBlock {
 		[ key: string ]: unknown;
 	};
 	innerBlocks: EditorBlock[];
-}
-
-/**
- * Theme typography preset entry shape, as returned by the unified theme
- * settings (`useSettings('typography.fontFamilies')` /
- * `useSettings('typography.fontSizes')`).
- *
- * @since 1.0.0
- */
-interface FontFamilyPreset {
-	name: string;
-	slug: string;
-	fontFamily: string;
-}
-interface FontSizePreset {
-	name: string;
-	slug: string;
-	size: string;
 }
 
 /**
@@ -130,154 +90,15 @@ function collectMapBlocks( blocks: EditorBlock[] ): EditorBlock[] {
 }
 
 /**
- * Per-aspect setter signature passed into the typography panel renderer.
- *
- * @since 1.0.0
- */
-type SetTypography = ( values: {
-	fontFamily?: string;
-	fontSize?: string;
-	fontWeight?: string;
-	fontStyle?: string;
-} ) => void;
-
-/**
- * Renders a unified Typography ToolsPanel matching the surface used by core
- * Paragraph/Group blocks: a per-aspect dropdown menu lets the editor enable or
- * disable each aspect individually, and "Reset all" returns every aspect to
- * the inherited theme default.
- *
- * The panel exposes three aspects — Font (family), Size, and Appearance
- * (weight + style combined) — because that is the surface persisted in the
- * block's attribute schema. Adding more aspects (line height, letter spacing,
- * etc.) would require new attributes and is out of scope here.
- *
- * @since 1.0.0
- *
- * @param {Object}             props               Component props.
- * @param {string}             props.label         Localised panel title.
- * @param {string}             props.fontFamily    Current font-family value.
- * @param {string}             props.fontSize      Current font-size value.
- * @param {string}             props.fontWeight    Current font-weight value.
- * @param {string}             props.fontStyle     Current font-style value.
- * @param {FontFamilyPreset[]} props.fontFamilies  Theme font-family presets.
- * @param {FontSizePreset[]}   props.fontSizes     Theme font-size presets.
- * @param {SetTypography}      props.setTypography Setter callback.
- */
-function TypographyToolsPanel( {
-	label,
-	fontFamily,
-	fontSize,
-	fontWeight,
-	fontStyle,
-	fontFamilies,
-	fontSizes,
-	setTypography,
-}: {
-	label: string;
-	fontFamily: string;
-	fontSize: string;
-	fontWeight: string;
-	fontStyle: string;
-	fontFamilies: FontFamilyPreset[];
-	fontSizes: FontSizePreset[];
-	setTypography: SetTypography;
-} ): JSX.Element {
-	const hasAppearance = fontWeight !== '' || fontStyle !== '';
-
-	return (
-		// @ts-ignore — ToolsPanel's typings lag the runtime API.
-		<ToolsPanel
-			label={ label }
-			resetAll={ () =>
-				setTypography( {
-					fontFamily: '',
-					fontSize: '',
-					fontWeight: '',
-					fontStyle: '',
-				} )
-			}
-		>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => fontFamily !== '' }
-				label={ __( 'Font', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { fontFamily: '' } ) }
-				isShownByDefault
-			>
-				<FontFamilyControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					value={ fontFamily }
-					fontFamilies={ fontFamilies }
-					onChange={ ( value: string | undefined ) =>
-						setTypography( { fontFamily: value ?? '' } )
-					}
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => fontSize !== '' }
-				label={ __( 'Size', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { fontSize: '' } ) }
-				isShownByDefault
-			>
-				<FontSizePicker
-					__next40pxDefaultSize
-					value={ fontSize || undefined }
-					fontSizes={ fontSizes }
-					onChange={ ( value: number | string | undefined ) =>
-						setTypography( {
-							fontSize:
-								value !== undefined && value !== ''
-									? String( value )
-									: '',
-						} )
-					}
-					withReset={ false }
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => hasAppearance }
-				label={ __( 'Appearance', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () =>
-					setTypography( { fontWeight: '', fontStyle: '' } )
-				}
-				isShownByDefault
-			>
-				<FontAppearanceControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					hasFontWeights
-					hasFontStyles
-					value={ {
-						fontWeight: fontWeight || undefined,
-						fontStyle: fontStyle || undefined,
-					} }
-					onChange={ ( value: {
-						fontWeight?: string;
-						fontStyle?: string;
-					} ) =>
-						setTypography( {
-							fontWeight: value?.fontWeight ?? '',
-							fontStyle: value?.fontStyle ?? '',
-						} )
-					}
-				/>
-			</ToolsPanelItem>
-		</ToolsPanel>
-	);
-}
-
-/**
  * Editor preview for the GPX Elevation block.
  *
  * Shows two InspectorControls panels: the Settings tab carries the data
- * source picker; the Design tab (`group="styles"`) carries the Color panel
- * plus the axis and tooltip typography panels. Colour and typography
- * changes are applied immediately via inline CSS variables on the wrapper
- * div — no ServerSideRender round-trip for cosmetic edits.
+ * source picker; the Design tab (`group="styles"`) carries the Color
+ * panel. Typography is delegated to core's `supports.typography` block
+ * supports, which contributes its own standard Typography panel into the
+ * styles group. Colour changes are applied immediately via inline CSS
+ * variables on the wrapper div — no ServerSideRender round-trip for
+ * cosmetic edits.
  *
  * @since 1.0.0
  *
@@ -299,14 +120,6 @@ export const ElevationEdit = ( {
 		cursorColor,
 		tooltipBackground,
 		tooltipColor,
-		axisFontFamily,
-		axisFontSize,
-		axisFontWeight,
-		axisFontStyle,
-		tooltipFontFamily,
-		tooltipFontSize,
-		tooltipFontWeight,
-		tooltipFontStyle,
 	} = attributes;
 
 	// Pre-bind a freshly inserted block to the closest preceding GPX Map in
@@ -316,20 +129,7 @@ export const ElevationEdit = ( {
 	// over downstream.
 	useAutoPickMapId( clientId, mapId, ( next ) => setAttributes( next ) );
 
-	// Pull the merged theme typography presets so the unified Typography
-	// panels expose the same Standard/preset choices as core Paragraph/Group.
-	// useSettings returns the origin-keyed `{ default, theme, custom }` shape
-	// for multi-origin settings, which the underlying controls iterate with
-	// `.map()` — flatten to a plain array before forwarding.
-	const [ themeFontFamilies, themeFontSizes ] = useSettings(
-		'typography.fontFamilies',
-		'typography.fontSizes'
-	);
-	const fontFamilies =
-		flattenPresets< FontFamilyPreset >( themeFontFamilies );
-	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
-
-	// Build a style object carrying every non-empty theming attribute as a CSS
+	// Build a style object carrying every non-empty colour attribute as a CSS
 	// custom property so the editor preview updates instantly.
 	const inlineStyle: Record< string, string > = {};
 	if ( axisColor ) {
@@ -350,33 +150,6 @@ export const ElevationEdit = ( {
 	}
 	if ( tooltipColor ) {
 		inlineStyle[ '--kntnt-gpx-blocks-tooltip-color' ] = tooltipColor;
-	}
-	if ( axisFontFamily ) {
-		inlineStyle[ '--kntnt-gpx-blocks-axis-font-family' ] = axisFontFamily;
-	}
-	if ( axisFontSize ) {
-		inlineStyle[ '--kntnt-gpx-blocks-axis-font-size' ] = axisFontSize;
-	}
-	if ( axisFontWeight ) {
-		inlineStyle[ '--kntnt-gpx-blocks-axis-font-weight' ] = axisFontWeight;
-	}
-	if ( axisFontStyle ) {
-		inlineStyle[ '--kntnt-gpx-blocks-axis-font-style' ] = axisFontStyle;
-	}
-	if ( tooltipFontFamily ) {
-		inlineStyle[ '--kntnt-gpx-blocks-tooltip-font-family' ] =
-			tooltipFontFamily;
-	}
-	if ( tooltipFontSize ) {
-		inlineStyle[ '--kntnt-gpx-blocks-tooltip-font-size' ] = tooltipFontSize;
-	}
-	if ( tooltipFontWeight ) {
-		inlineStyle[ '--kntnt-gpx-blocks-tooltip-font-weight' ] =
-			tooltipFontWeight;
-	}
-	if ( tooltipFontStyle ) {
-		inlineStyle[ '--kntnt-gpx-blocks-tooltip-font-style' ] =
-			tooltipFontStyle;
 	}
 
 	const blockProps = useBlockProps( {
@@ -583,58 +356,6 @@ export const ElevationEdit = ( {
 						},
 					] }
 				/>
-
-				<TypographyToolsPanel
-					label={ __( 'Axis typography', 'kntnt-gpx-blocks' ) }
-					fontFamily={ axisFontFamily }
-					fontSize={ axisFontSize }
-					fontWeight={ axisFontWeight }
-					fontStyle={ axisFontStyle }
-					fontFamilies={ fontFamilies }
-					fontSizes={ fontSizes }
-					setTypography={ ( values ) => {
-						const next: Partial< ElevationAttributes > = {};
-						if ( values.fontFamily !== undefined ) {
-							next.axisFontFamily = values.fontFamily;
-						}
-						if ( values.fontSize !== undefined ) {
-							next.axisFontSize = values.fontSize;
-						}
-						if ( values.fontWeight !== undefined ) {
-							next.axisFontWeight = values.fontWeight;
-						}
-						if ( values.fontStyle !== undefined ) {
-							next.axisFontStyle = values.fontStyle;
-						}
-						setAttributes( next );
-					} }
-				/>
-
-				<TypographyToolsPanel
-					label={ __( 'Tooltip typography', 'kntnt-gpx-blocks' ) }
-					fontFamily={ tooltipFontFamily }
-					fontSize={ tooltipFontSize }
-					fontWeight={ tooltipFontWeight }
-					fontStyle={ tooltipFontStyle }
-					fontFamilies={ fontFamilies }
-					fontSizes={ fontSizes }
-					setTypography={ ( values ) => {
-						const next: Partial< ElevationAttributes > = {};
-						if ( values.fontFamily !== undefined ) {
-							next.tooltipFontFamily = values.fontFamily;
-						}
-						if ( values.fontSize !== undefined ) {
-							next.tooltipFontSize = values.fontSize;
-						}
-						if ( values.fontWeight !== undefined ) {
-							next.tooltipFontWeight = values.fontWeight;
-						}
-						if ( values.fontStyle !== undefined ) {
-							next.tooltipFontStyle = values.fontStyle;
-						}
-						setAttributes( next );
-					} }
-				/>
 			</InspectorControls>
 
 			<div { ...blockProps }>
@@ -646,8 +367,8 @@ export const ElevationEdit = ( {
 							// Do not forward the block-supports-managed
 							// `style` attribute. The outer `useBlockProps()`
 							// wrapper above already carries the editor's
-							// chosen dimensions / border / shadow / spacing;
-							// forwarding `style` would make
+							// chosen dimensions / border / shadow / spacing /
+							// typography; forwarding `style` would make
 							// `get_block_wrapper_attributes()` re-emit the
 							// same inline style on the SSR-rendered inner
 							// wrapper and the editor would render every
@@ -659,14 +380,6 @@ export const ElevationEdit = ( {
 							cursorColor,
 							tooltipBackground,
 							tooltipColor,
-							axisFontFamily,
-							axisFontSize,
-							axisFontWeight,
-							axisFontStyle,
-							tooltipFontFamily,
-							tooltipFontSize,
-							tooltipFontWeight,
-							tooltipFontStyle,
 							__editorBlockSnapshot: editorBlockSnapshot,
 						} }
 					/>
