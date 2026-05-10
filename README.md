@@ -4,7 +4,7 @@
 [![Requires PHP: 8.4+](https://img.shields.io/badge/PHP-8.4+-blue.svg)](https://php.net)
 [![License: GPL v2+](https://img.shields.io/badge/License-GPLv2+-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
 
-WordPress plugin that adds two Gutenberg blocks for visualising GPX tracks — **GPX Map** (an interactive map of the recorded route) and **GPX Elevation** (an elevation profile chart) — plus a **GPX Statistics** block-variation that uses a Block Bindings source to pull total distance, min/max elevation, and total ascent and descent into ordinary paragraphs. The two blocks work together — moving the cursor over the elevation profile highlights the matching point on the map, and vice versa — and either can also be used on its own. The Statistics variation is data-only: layout and theming use core paragraphs and the standard typography and colour controls.
+WordPress plugin that adds two Gutenberg blocks for visualizing GPX tracks — **GPX Map** (an interactive map of the recorded route) and **GPX Elevation** (an elevation profile chart) — plus a **GPX Statistics** block-variation that uses a Block Bindings source to pull total distance, min/max elevation, and total ascent and descent into ordinary paragraphs. The two blocks work together — moving the cursor over the elevation profile highlights the matching point on the map, and vice versa — and either can also be used on its own. The Statistics variation is data-only: layout and theming use core paragraphs and the standard typography and color controls.
 
 ## Description
 
@@ -54,7 +54,7 @@ Insert the **GPX Map** block and, in the **Source** panel on the right, upload o
 
 Use the standard **Dimensions** panel to control the block's aspect ratio and minimum height — the same controls every dimensions-aware core block exposes. Empty fields fall back to a 3:1 baseline shape with a 240 px minimum height. The **Controls** panel toggles the four map overlays individually: zoom buttons (on by default), a metric scale bar (on by default), a fullscreen button (off by default), and a GPX download button (off by default — see the "Don'ts" section below). The **Interactions** panel controls the six interaction modes: drag-to-pan (on), scroll-wheel zoom (off by default to avoid scroll hijacking), pinch zoom (on), double-click zoom (on), box zoom via Shift+drag (off), and keyboard navigation (on).
 
-The **Track** panel provides colour pickers for the track polyline and for the cursor marker that appears when hovering either the map or the elevation chart. The **Waypoints** panel configures the marker fill colour, the hover label's background and text colour, and the label's font family, size, weight, and style. All colour inputs accept hex values; all typography inputs accept CSS lengths or theme font-size preset tokens. Leaving any input blank lets the CSS fall back to the hardcoded default in the plugin's stylesheet, so the block integrates cleanly with your theme without requiring any configuration.
+The **Track** panel provides color pickers for the track polyline and for the cursor marker that appears when hovering either the map or the elevation chart. The **Waypoints** panel configures the marker fill color, the hover label's background and text color, and the label's font family, size, weight, and style. All color inputs accept hex values; all typography inputs accept CSS lengths or theme font-size preset tokens. Leaving any input blank lets the CSS fall back to the hardcoded default in the plugin's stylesheet, so the block integrates cleanly with your theme without requiring any configuration.
 
 When a cookie-consent plugin is wired up to the plugin's consent contract (see **For Builders**) and the visitor has not yet granted consent, the block shows the track polyline, cursor, controls, and waypoint markers over a plain background — no tiles. The polyline is local SVG drawn from cached GeoJSON, so it reaches no third party and is not subject to the consent contract. Only the tile-layer requests are gated; as soon as consent is granted, tiles fade in over the polyline, and if consent is later withdrawn, the tiles are removed but the polyline stays. The plugin renders no consent UI of its own — your cookie-consent plugin handles the visitor-facing flow exactly the way it does for every other third-party service. In the WordPress block editor, the map always shows regardless of consent state — editors need to see the actual map to set up the block. Out of the box, with no cookie-consent plugin installed and no glue written, tiles mount immediately on every page load.
 
@@ -62,21 +62,21 @@ When a cookie-consent plugin is wired up to the plugin's consent contract (see *
 
 Insert the **GPX Elevation** block on a page that already contains a GPX Map. The **Datakälla** panel in the block sidebar lets you choose the data source: "Auto" (the default) resolves automatically to the single GPX Map on the page, and is the right choice whenever there is exactly one map. If the page has more than one GPX Map block you must pick the specific map explicitly from the dropdown, which lists each map by its GPX filename. The standard **Dimensions** panel controls the block's aspect ratio and minimum height; empty fields fall back to a 4:1 baseline shape with a 120 px minimum height.
 
-The elevation profile is rendered server-side as an inline SVG chart with distance on the x-axis and elevation (always in metres) on the y-axis. Five evenly spaced tick labels appear on each axis. The x-axis label switches between metres and kilometres automatically at 2000 m. The SVG carries a screen-reader `<desc>` element summarising the profile in text ("Elevation profile from … at the start to … after …, with total ascent … and descent …"), and a `<noscript>` fallback paragraph repeats the same summary for visitors with JavaScript disabled. Because the chart is server-rendered, it is visible even before any JavaScript initialises.
+The elevation profile is rendered server-side as an inline SVG chart with distance on the x-axis and elevation (always in meters) on the y-axis. Five evenly spaced tick labels appear on each axis. The x-axis label switches between meters and kilometers automatically at 2000 m. The SVG carries a screen-reader `<desc>` element summarizing the profile in text ("Elevation profile from … at the start to … after …, with total ascent … and descent …"), and a `<noscript>` fallback paragraph repeats the same summary for visitors with JavaScript disabled. Because the chart is server-rendered, it is visible even before any JavaScript initializes.
 
 When JavaScript is active, moving the pointer over the SVG highlights a vertical cursor line, a dot on the elevation polyline, and a tooltip showing the current distance and elevation ("3.2 km | 245 m"). Moving the pointer over the GPX Map block's polyline simultaneously moves the cursor on the elevation chart, and vice versa, via a shared Interactivity API state keyed by the map's identifier. The cursor hides when the pointer leaves either block. The downsampling algorithm (LTTB) keeps up to 300 points by default — configurable via the `kntnt_gpx_blocks_elevation_target_points` filter — preserving visually significant peaks and valleys while keeping the SVG compact.
 
-The **Colours** panel provides seven colour pickers: background, axis lines, axis tick labels, the elevation line, the cursor, and the cursor tooltip's background and text colour. Two typography groups — **Axis typography** and **Tooltip typography** — let you set font family, size, weight, and style independently for the axis labels and the tooltip text. Leaving any colour or typography input blank falls back to the plugin's CSS defaults, which inherit from your theme.
+The **Color** panel provides seven color pickers: background, axis lines, axis tick labels, the elevation line, the cursor, and the cursor tooltip's background and text color. Two typography groups — **Axis typography** and **Tooltip typography** — let you set font family, size, weight, and style independently for the axis labels and the tooltip text. Leaving any color or typography input blank falls back to the plugin's CSS defaults, which inherit from your theme.
 
 ### GPX Statistics
 
 Insert the **GPX Statistics** block from the inserter (under the **Kntnt** category) on a page that already contains a GPX Map. It appears alongside the GPX Map and GPX Elevation blocks in the main block list. What you actually insert is a `core/group` block-variation: a 2×3 grid of label/value paragraph pairs where the first row spans both columns for the total length and the four remaining rows show lowest and highest elevation, total ascent, and total descent. Each value paragraph uses Block Bindings to pull its number from the page's GPX Map automatically; you do not need to configure anything. When the page has more than one Map block you can edit a value paragraph's binding (in the block-editor source view) to add `"mapId":"<id>"`; otherwise the values auto-resolve to the single Map on the page.
 
-Once inserted, the layout is built from ordinary `core/paragraph` blocks inside `core/group` containers, so every label, every value, every column, and every spacing rule is editable through the standard block-editor controls — typography panel, colour panel, layout controls, alignment, and so on. There is no separate "Statistics block" type with its own custom theming attributes; theming is whatever your theme and the core controls give you.
+Once inserted, the layout is built from ordinary `core/paragraph` blocks inside `core/group` containers, so every label, every value, every column, and every spacing rule is editable through the standard block-editor controls — typography panel, color panel, layout controls, alignment, and so on. There is no separate "Statistics block" type with its own custom theming attributes; theming is whatever your theme and the core controls give you.
 
-Distance is formatted auto-metric: whole metres below 1000 m, one-decimal kilometres above. Elevation is always formatted in whole metres. Both use WordPress's `number_format_i18n()` so the decimal separator and thousands separator respect your site's locale — a Swedish site shows "12,3 km" and "1 234 m" while an English site shows "12.3 km" and "1,234 m". The formatting can be overridden entirely for imperial units via the `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
+Distance is formatted auto-metric: whole meters below 1000 m, one-decimal kilometers above. Elevation is always formatted in whole meters. Both use WordPress's `number_format_i18n()` so the decimal separator and thousands separator respect your site's locale — a Swedish site shows "12,3 km" and "1 234 m" while an English site shows "12.3 km" and "1,234 m". The formatting can be overridden entirely for imperial units via the `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
 
-The bound values render server-side. The statistics work in any browser with or without JavaScript enabled. There is no cursor synchronisation with the map or elevation chart — they are a static summary, not an interactive visualisation. When the GPX track contains no elevation data, the four elevation rows render with empty values; if you want them hidden in that case, delete the rows from the inserted block (the variation is editable like any other content).
+The bound values render server-side. The statistics work in any browser with or without JavaScript enabled. There is no cursor synchronization with the map or elevation chart — they are a static summary, not an interactive visualization. When the GPX track contains no elevation data, the four elevation rows render with empty values; if you want them hidden in that case, delete the rows from the inserted block (the variation is editable like any other content).
 
 ### Dos and don'ts
 
@@ -124,7 +124,7 @@ The contract is **JavaScript-only.** There is no PHP filter to hook — the only
 
 #### The JavaScript glue (CMP plugin's "code on opt-in" / "code on opt-out" fields)
 
-Place the following snippets in your CMP's per-service or per-category opt-in/opt-out hook fields. Most CMPs replay these snippets on every page load when the consent is still in force, which is the behaviour the plugin's stub depends on.
+Place the following snippets in your CMP's per-service or per-category opt-in/opt-out hook fields. Most CMPs replay these snippets on every page load when the consent is still in force, which is the behavior the plugin's stub depends on.
 
 On opt-in:
 
@@ -154,18 +154,18 @@ The plugin's stub exposes three functions on `window.kntnt_gpx_blocks`. Only `ma
 | `mayProceed( 'external_media' )` | Returns `true` when the signal is granting *or* absent; `false` only when denying. |
 | `onConsentChanged( handler )` | Subscribes to consent transitions. Returns an unsubscribe function. The handler signature is `( category, granted ) => void`. |
 
-#### Optimisation plugin warning — IMPORTANT
+#### Optimization plugin warning — IMPORTANT
 
-The plugin's consent stub is enqueued as an inline script in `<head>` under the script handle **`kntnt-gpx-blocks-consent-stub`**. The stub *MUST* run before any `kntnt_gpx_blocks:consent` event is dispatched and before the Map block's view module reads the consent state. Optimisation plugins (WP Rocket, Autoptimize, Perfmatters, NitroPack, FlyingPress, SG Optimizer, Hummingbird, etc.) typically defer, delay, combine, or move scripts in ways that break this ordering.
+The plugin's consent stub is enqueued as an inline script in `<head>` under the script handle **`kntnt-gpx-blocks-consent-stub`**. The stub *MUST* run before any `kntnt_gpx_blocks:consent` event is dispatched and before the Map block's view module reads the consent state. Optimization plugins (WP Rocket, Autoptimize, Perfmatters, NitroPack, FlyingPress, SG Optimizer, Hummingbird, etc.) typically defer, delay, combine, or move scripts in ways that break this ordering.
 
-Whenever you use any optimisation plugin, exclude `kntnt-gpx-blocks-consent-stub` from:
+Whenever you use any optimization plugin, exclude `kntnt-gpx-blocks-consent-stub` from:
 
 - Defer or delay of JavaScript.
 - Combination or minification of inline scripts.
 - Lazy loading.
 - Movement from `<head>` to the footer.
 
-If your optimisation plugin identifies inline scripts by content rather than by handle, the unique fragment to match is `'kntnt_gpx_blocks'` together with `_setConsent`. Both strings appear in the stub source.
+If your optimization plugin identifies inline scripts by content rather than by handle, the unique fragment to match is `'kntnt_gpx_blocks'` together with `_setConsent`. Both strings appear in the stub source.
 
 #### Bypassing the gate entirely
 
@@ -232,14 +232,14 @@ The script runs a fresh `composer install --no-dev --optimize-autoloader`, runs 
 
 ### Architecture Overview
 
-The plugin parses the uploaded GPX file once on the server, converts it to GeoJSON plus a small bundle of pre-computed statistics, and caches both on the attachment as post-meta. The two blocks render dynamically (server-side, via the `render` field in `block.json`) and pass their data to the client through the WordPress Interactivity API. The map and the elevation chart synchronise their cursor through a shared interactivity state keyed by a per-map identifier. The GPX Statistics layout is a `core/group` block-variation whose inner `core/paragraph` blocks have a `content` attribute bound to the `kntnt-gpx-blocks/statistics` Block Bindings source; the source resolves the page's GPX Map, reads the cached statistics, and returns the locale-formatted value. OpenStreetMap tile loading is gated by a CMP-neutral, JavaScript-only consent contract that the plugin defines (JS global, JS event); the plugin's own code references no specific cookie-consent plugin. The plugin checks for new versions on GitHub via a built-in `Updater` class that hooks into the WordPress plugin update system.
+The plugin parses the uploaded GPX file once on the server, converts it to GeoJSON plus a small bundle of pre-computed statistics, and caches both on the attachment as post-meta. The two blocks render dynamically (server-side, via the `render` field in `block.json`) and pass their data to the client through the WordPress Interactivity API. The map and the elevation chart synchronize their cursor through a shared interactivity state keyed by a per-map identifier. The GPX Statistics layout is a `core/group` block-variation whose inner `core/paragraph` blocks have a `content` attribute bound to the `kntnt-gpx-blocks/statistics` Block Bindings source; the source resolves the page's GPX Map, reads the cached statistics, and returns the locale-formatted value. OpenStreetMap tile loading is gated by a CMP-neutral, JavaScript-only consent contract that the plugin defines (JS global, JS event); the plugin's own code references no specific cookie-consent plugin. The plugin checks for new versions on GitHub via a built-in `Updater` class that hooks into the WordPress plugin update system.
 
 The detailed specs live in `docs/`:
 
 | Document | Contents |
 |---|---|
-| [`docs/design.md`](docs/design.md) | Original design brief — the user-visible behaviour each block should have, written before architecture decisions. |
-| [`docs/architecture.md`](docs/architecture.md) | Resolved architecture: data flow, block coupling model, render strategy, cross-block synchronisation. |
+| [`docs/design.md`](docs/design.md) | Original design brief — the user-visible behavior each block should have, written before architecture decisions. |
+| [`docs/architecture.md`](docs/architecture.md) | Resolved architecture: data flow, block coupling model, render strategy, cross-block synchronization. |
 | [`docs/coding-standards.md`](docs/coding-standards.md) | Project coding standard — language, style, naming, tooling, PHP/WordPress/TypeScript/block-specific rules. |
 | [`docs/blocks.md`](docs/blocks.md) | Per-block specification: attributes, editor controls, render output, accessibility. |
 | [`docs/caching.md`](docs/caching.md) | Cache lifecycle: meta keys, versioning, hash check, lazy fallback, WP-CLI command. |

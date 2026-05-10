@@ -4,7 +4,7 @@
   "name": "kntnt-gpx-blocks/elevation",
   "title": "GPX Elevation",
   "category": "kntnt",
-  "description": "Renders a custom-SVG elevation profile for a GPX track with cursor synchronisation to GPX Map.",
+  "description": "Renders a custom-SVG elevation profile for a GPX track with cursor synchronization to GPX Map.",
   "keywords": [
     "gpx",
     "elevation",

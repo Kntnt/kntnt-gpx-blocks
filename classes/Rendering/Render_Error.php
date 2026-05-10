@@ -70,7 +70,7 @@ final readonly class Render_Error {
 			'multiple-maps'  => __( 'Multiple GPX Map blocks exist. Choose which one to use in the block sidebar.', 'kntnt-gpx-blocks' ), // phpcs:ignore Generic.Files.LineLength.TooLong -- translator string must be a single literal.
 			'map-not-found'  => __( 'The selected GPX Map is no longer on this page.', 'kntnt-gpx-blocks' ),
 			'no-elevation'   => __( 'No elevation data in this GPX file.', 'kntnt-gpx-blocks' ),
-			// translators: %s is the unrecognised error code.
+			// translators: %s is the unrecognized error code.
 			default => sprintf( __( 'An unknown error occurred. (code: %s)', 'kntnt-gpx-blocks' ), $code ),
 		};
 

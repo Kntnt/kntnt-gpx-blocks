@@ -486,7 +486,7 @@ export const ElevationEdit = ( {
 
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
-					title={ __( 'Colours', 'kntnt-gpx-blocks' ) }
+					title={ __( 'Color', 'kntnt-gpx-blocks' ) }
 					enableAlpha
 					colorSettings={ [
 						{
