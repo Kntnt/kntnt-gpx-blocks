@@ -1241,7 +1241,7 @@ test( 'wp_interactivity_state carries osm-standard tile provider when no attribu
 // Tile-layer registry — explicit provider plus API key substitutes {KEY}
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state substitutes the per-block tileApiKey into {KEY}', function (): void {
+test( 'wp_interactivity_state substitutes the per-provider tileApiKeys entry into {KEY}', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 201, $coords );
@@ -1262,7 +1262,10 @@ test( 'wp_interactivity_state substitutes the per-block tileApiKey into {KEY}', 
 			'attachmentId' => 201,
 			'mapId'        => 'map-thunderforest',
 			'tileProvider' => 'thunderforest-outdoors',
-			'tileApiKey'   => 'ABC123',
+			'tileApiKeys'  => [
+				'thunderforest-outdoors' => 'ABC123',
+				'maptiler-outdoor'       => 'OTHER_PROVIDER_KEY',
+			],
 		],
 		'',
 		map_fake_block(),
@@ -1274,6 +1277,8 @@ test( 'wp_interactivity_state substitutes the per-block tileApiKey into {KEY}', 
 	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
 	expect( $slice['tileProvider']['url'] )->not->toContain( '{KEY}' );
 	expect( $slice['tileProvider']['url'] )->toContain( 'apikey=ABC123' );
+	// Keys for other providers must not leak into the rendered URL.
+	expect( $slice['tileProvider']['url'] )->not->toContain( 'OTHER_PROVIDER_KEY' );
 
 } );
 
@@ -1281,7 +1286,7 @@ test( 'wp_interactivity_state substitutes the per-block tileApiKey into {KEY}', 
 // Polyline-only state — paid provider with empty key emits null URL
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey provider has empty tileApiKey', function (): void {
+test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey provider has no tileApiKeys entry', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 210, $coords );
@@ -1302,7 +1307,7 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 			'attachmentId' => 210,
 			'mapId'        => 'map-paid-no-key',
 			'tileProvider' => 'thunderforest-outdoors',
-			'tileApiKey'   => '',
+			'tileApiKeys'  => [],
 		],
 		'',
 		map_fake_block(),
@@ -1324,7 +1329,7 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 
 } );
 
-test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey provider has whitespace-only tileApiKey', function (): void {
+test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey provider has whitespace-only tileApiKeys entry', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 211, $coords );
@@ -1345,7 +1350,7 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 			'attachmentId' => 211,
 			'mapId'        => 'map-paid-whitespace-key',
 			'tileProvider' => 'mapbox-outdoors',
-			'tileApiKey'   => "  \t\n  ",
+			'tileApiKeys'  => [ 'mapbox-outdoors' => "  \t\n  " ],
 		],
 		'',
 		map_fake_block(),
@@ -1353,7 +1358,7 @@ test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey pro
 
 	$slice = $captured_state['map-paid-whitespace-key'] ?? null;
 
-	// `trim($tileApiKey) === ''` covers whitespace-only keys, which would
+	// `trim($tile_api_key) === ''` covers whitespace-only keys, which would
 	// otherwise produce a URL with a useless query parameter.
 	expect( $slice )->not->toBeNull();
 	expect( $slice['tileProvider']['url'] )->toBeNull();
@@ -1392,7 +1397,7 @@ test( 'wp_interactivity_state still carries a usable URL when requiresKey provid
 			'attachmentId' => 212,
 			'mapId'        => 'map-editor-paid-no-key',
 			'tileProvider' => 'stadia-outdoors',
-			'tileApiKey'   => '',
+			'tileApiKeys'  => [],
 		],
 		'',
 		map_fake_block(),
@@ -1408,10 +1413,10 @@ test( 'wp_interactivity_state still carries a usable URL when requiresKey provid
 
 } );
 
-test( 'wp_interactivity_state still substitutes the URL for free providers regardless of empty tileApiKey', function (): void {
+test( 'wp_interactivity_state still substitutes the URL for free providers regardless of tileApiKeys', function (): void {
 
-	// `requiresKey === false` means the free path: an empty tileApiKey is
-	// the normal case and must not null the URL out.
+	// `requiresKey === false` means the free path: a missing entry in
+	// tileApiKeys is the normal case and must not null the URL out.
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 213, $coords );
 	map_bind_meta( $store );
@@ -1431,7 +1436,7 @@ test( 'wp_interactivity_state still substitutes the URL for free providers regar
 			'attachmentId' => 213,
 			'mapId'        => 'map-free-no-key',
 			'tileProvider' => 'osm-standard',
-			'tileApiKey'   => '',
+			'tileApiKeys'  => [],
 		],
 		'',
 		map_fake_block(),
@@ -1480,6 +1485,168 @@ test( 'wp_interactivity_state falls back to osm-standard for an unknown tileProv
 	expect( $slice )->not->toBeNull();
 	expect( $slice['tileProvider']['id'] )->toBe( 'osm-standard' );
 	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Per-provider API keys (issue #102): tileApiKeys is provider-keyed; the
+// lookup pulls the entry for the currently-selected provider only, never
+// leaks another provider's key, and degrades cleanly when the attribute is
+// missing, malformed, or holds a non-string value.
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state picks the per-provider key from tileApiKeys for the selected provider', function (): void {
+
+	// Two paid providers configured at once; only the selected provider's key
+	// should reach the rendered URL. Switching tileProvider to the other id
+	// is the editor's job — the render path simply reads attributes — but
+	// this test verifies the lookup picks the right entry.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 220, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 220, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 220,
+			'mapId'        => 'map-multi-provider-keys',
+			'tileProvider' => 'maptiler-outdoor',
+			'tileApiKeys'  => [
+				'thunderforest-outdoors' => 'THUNDER_KEY',
+				'maptiler-outdoor'       => 'MAPTILER_KEY',
+				'mapbox-outdoors'        => 'MAPBOX_KEY',
+			],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-multi-provider-keys'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['id'] )->toBe( 'maptiler-outdoor' );
+	expect( $slice['tileProvider']['url'] )->toContain( 'key=MAPTILER_KEY' );
+	expect( $slice['tileProvider']['url'] )->not->toContain( 'THUNDER_KEY' );
+	expect( $slice['tileProvider']['url'] )->not->toContain( 'MAPBOX_KEY' );
+
+} );
+
+test( 'wp_interactivity_state treats a null tileApiKeys attribute as empty without crashing', function (): void {
+
+	// Block attributes are JSON-decoded; a corrupted/missing object should
+	// degrade silently to "no keys" rather than throw.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 221, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 221, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 221,
+			'mapId'        => 'map-null-keys',
+			'tileProvider' => 'thunderforest-outdoors',
+			'tileApiKeys'  => null,
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-null-keys'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
+	// Missing key → polyline-only fall-back (null URL).
+	expect( $slice['tileProvider']['url'] )->toBeNull();
+
+} );
+
+test( 'wp_interactivity_state treats a non-object tileApiKeys attribute as empty', function (): void {
+
+	// A string value where an object is expected — still must not crash.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 222, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 222, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 222,
+			'mapId'        => 'map-string-keys',
+			'tileProvider' => 'mapbox-outdoors',
+			'tileApiKeys'  => 'not-an-object',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-string-keys'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['url'] )->toBeNull();
+
+} );
+
+test( 'wp_interactivity_state coerces a non-string tileApiKeys entry to empty', function (): void {
+
+	// A numeric or boolean entry under the provider key is bogus — coerce to
+	// the empty string so the polyline-only path engages instead of
+	// concatenating something nonsensical into the URL.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 223, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 223, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 223,
+			'mapId'        => 'map-non-string-key',
+			'tileProvider' => 'thunderforest-outdoors',
+			'tileApiKeys'  => [ 'thunderforest-outdoors' => 12345 ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-non-string-key'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['url'] )->toBeNull();
 
 } );
 

@@ -66,7 +66,7 @@ Read once at conversion time, not per render. Changing the value invalidates cac
 
 ## Tile providers
 
-The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileApiKey` string, and a `tileOverlays` id list as attributes; the registry validates the filtered set, substitutes `{KEY}` server-side, and writes the resolved record(s) into the per-block Interactivity state. Unknown provider ids fall back silently to `osm-standard` with a `Plugin::warning()` log; unknown overlay ids are dropped silently with the same log level.
+The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileApiKeys` object (per-provider key map keyed by provider id), and a `tileOverlays` id list as attributes; the renderer looks up `tileApiKeys[ tileProvider ]` and forwards it to the registry, which validates the filtered set, substitutes `{KEY}` server-side, and writes the resolved record(s) into the per-block Interactivity state. Unknown provider ids fall back silently to `osm-standard` with a `Plugin::warning()` log; unknown overlay ids are dropped silently with the same log level.
 
 ### `kntnt_gpx_blocks_tile_providers`
 

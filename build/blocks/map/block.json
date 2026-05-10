@@ -180,9 +180,9 @@
       "type": "string",
       "default": "osm-standard"
     },
-    "tileApiKey": {
-      "type": "string",
-      "default": ""
+    "tileApiKeys": {
+      "type": "object",
+      "default": {}
     },
     "tileOverlays": {
       "type": "array",

@@ -15,7 +15,8 @@
  *   the OSM entry sees the renamed label.
  *
  * - **Missing API key** — the resolved provider requires a key
- *   (`requiresKey === true`) but the per-block `tileApiKey` is empty.
+ *   (`requiresKey === true`) but the per-provider entry in `tileApiKeys`
+ *   is empty.
  *   Without a key the tile URL produces a request that fails to load
  *   tiles; this notice complements the Inspector help text by surfacing
  *   the issue louder, in the preview region itself.
@@ -92,7 +93,8 @@ const DEFAULT_FALLBACK_LABEL = 'OpenStreetMap';
  *                           never treated as unknown — block.json's default
  *                           is `osm-standard`, so an empty value here means
  *                           pre-default state, not a stale id.
- * @param apiKey             - Saved `tileApiKey` attribute.
+ * @param apiKey             - Per-provider API key looked up from
+ *                           `tileApiKeys[ providerId ]`.
  * @param providers          - Editor-data registry's `providers` object.
  * @param fallbackProviderId - Canonical fallback provider id (mirrors
  *                           `Tile_Layer_Registry::FALLBACK_PROVIDER_ID`).

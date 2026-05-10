@@ -130,7 +130,7 @@ interface MapState {
 	 * Resolved base-tile provider record. The record itself is always present
 	 * on the frontend, but its `url` is `null` exactly when the resolved
 	 * provider requires an API key (`requiresKey === true` server-side) and
-	 * the per-block `tileApiKey` is empty — the documented polyline-only
+	 * the per-provider entry in `tileApiKeys` is empty — the documented polyline-only
 	 * state. The view module checks `hasUsableUrl(tileProvider)` before
 	 * calling `addTiles` and skips the base layer otherwise.
 	 */
@@ -1073,7 +1073,7 @@ function consentPermitsTiles(): boolean {
  * granting branch of the consent observer. The function inspects the
  * resolved provider record on `mapState.tileProvider` and only calls
  * `addTiles` when the URL is usable — a `null` URL signals the documented
- * polyline-only state (paid provider with empty `tileApiKey`) and ships
+ * polyline-only state (paid provider with empty `tileApiKeys` entry) and ships
  * forever without tiles. Idempotent via `addTiles`'s own guard.
  *
  * @since 1.0.0

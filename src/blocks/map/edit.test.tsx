@@ -239,7 +239,7 @@ function buildAttributes(
 		tooltipDescTextDecoration: '',
 		tooltipDescTextTransform: '',
 		tileProvider: 'osm-standard',
-		tileApiKey: '',
+		tileApiKeys: {},
 		tileOverlays: [],
 		...overrides,
 	};

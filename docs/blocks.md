@@ -58,6 +58,9 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 | `tooltipDescLetterSpacing` | string | `""` | Description-line letter-spacing. |
 | `tooltipDescTextDecoration` | string | `""` | Description-line text-decoration. |
 | `tooltipDescTextTransform` | string | `""` | Description-line letter case. |
+| `tileProvider` | string | `"osm-standard"` | Base-tile provider id from the validated registry. Unknown ids fall back silently to `osm-standard`. |
+| `tileApiKeys` | object | `{}` | Per-provider API-key map keyed by provider id (e.g. `{ "thunderforest-outdoors": "ABC", "maptiler-outdoor": "XYZ" }`). The renderer looks up `tileApiKeys[ tileProvider ]` and substitutes it into `{KEY}` in the resolved tile URL. Switching providers preserves the other entries, so the editor keeps every previously-entered key. Missing entries (and a malformed/null attribute) coerce to the empty string and engage the polyline-only fall-back when the provider requires a key. |
+| `tileOverlays` | string[] | `[]` | Ordered list of overlay-layer ids stacked on top of the base provider. Unknown ids are dropped at render time. |
 
 ### Editor UI
 

@@ -11,9 +11,9 @@
  * The payload is JSON-encoded and attached as a `'before'` inline script on
  * the GPX Map block's editor handle, so it lands in the editor document
  * before the block's React entry runs and reads the global. API keys are
- * deliberately excluded — those are per-block (`attributes.tileApiKey`) and
- * never leave PHP except as the substituted `{KEY}` value in the rendered
- * tile URL.
+ * deliberately excluded — those are per-block (`attributes.tileApiKeys`,
+ * a provider-keyed object) and never leave PHP except as the substituted
+ * `{KEY}` value in the rendered tile URL.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -78,8 +78,9 @@ final class Editor_Data_Enqueuer {
 	 * attribution / maxZoom / optional subdomains let the preview mount the
 	 * selected provider's tile layer directly via `L.tileLayer()`. API keys
 	 * are deliberately *not* in the payload — they remain a per-block
-	 * attribute (`tileApiKey`) and reach the browser only as the substituted
-	 * `{KEY}` value at render time. When JSON encoding fails or the
+	 * attribute (`tileApiKeys[ tileProvider ]`) and reach the browser only
+	 * as the substituted `{KEY}` value at render time. When JSON encoding
+	 * fails or the
 	 * inline-script call is unavailable, a warning is logged and the method
 	 * returns silently — the editor reads `window.kntntGpxBlocks` defensively
 	 * and degrades to an empty Tiles dropdown rather than throwing.
@@ -125,9 +126,10 @@ final class Editor_Data_Enqueuer {
 	 * shape is deliberately explicit so a future change to the registry's
 	 * internal record type does not silently leak through the editor data;
 	 * only the fields listed below ever reach the browser. The per-block
-	 * API key is *never* part of this payload — it lives in
-	 * `attributes.tileApiKey` and is substituted into `{KEY}` client-side
-	 * by `edit.tsx` before forwarding the URL to the preview.
+	 * API keys are *never* part of this payload — they live in
+	 * `attributes.tileApiKeys` (a provider-keyed object) and the entry
+	 * for the currently-selected provider is substituted into `{KEY}`
+	 * client-side by `edit.tsx` before forwarding the URL to the preview.
 	 *
 	 * @since 1.0.0
 	 *

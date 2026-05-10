@@ -90,7 +90,7 @@ interface EditorRegistryOverlay {
  * `MapEditorPreview` forwards to `L.tileLayer()` (URL, attribution,
  * maxZoom, optional subdomains). The URL still contains the literal
  * `{KEY}` placeholder for paid providers — substitution against
- * `attributes.tileApiKey` happens in `edit.tsx` immediately before the
+ * `attributes.tileApiKeys[ tileProvider ]` happens in `edit.tsx` immediately before the
  * resolved record is handed to the preview, mirroring how `Render_Map`
  * substitutes server-side for the frontend.
  *
@@ -171,7 +171,7 @@ interface MapAttributes {
 	tooltipDescTextDecoration: string;
 	tooltipDescTextTransform: string;
 	tileProvider: string;
-	tileApiKey: string;
+	tileApiKeys: Record< string, string >;
 	tileOverlays: string[];
 	[ key: string ]: unknown;
 }
@@ -551,10 +551,11 @@ function resolveOverlaysForPreview(
  * @since 1.0.0
  *
  * @param providerId - Saved `tileProvider` attribute.
- * @param apiKey     - Saved `tileApiKey` attribute (may be empty for paid
- *                   providers; the resulting URL will fail to load tiles
- *                   visually, which is the documented behaviour for this
- *                   slice — see issue #79).
+ * @param apiKey     - Per-provider API key looked up from
+ *                   `attributes.tileApiKeys[providerId]` (may be empty for
+ *                   paid providers; the resulting URL will fail to load
+ *                   tiles visually, which is the documented behaviour for
+ *                   this slice — see issue #79).
  * @return Resolved record with `{KEY}` substituted, or `null` when the
  *         registry global is absent and no fallback is possible.
  */
@@ -571,7 +572,7 @@ function resolveProviderForPreview(
 	}
 
 	// Polyline-only gate: when the resolved provider requires a key and the
-	// per-block `tileApiKey` is empty (or whitespace-only), do not return a
+	// per-provider key is empty (or whitespace-only), do not return a
 	// preview record at all. Returning `null` makes the preview's base-tile
 	// useEffect skip the tile layer entirely, mirroring the frontend
 	// `Render_Map` PHP gate where the URL is nulled in state. Issue #82's
@@ -627,7 +628,8 @@ const FALLBACK_PROVIDER_ID = 'osm-standard';
  *
  * @param props          Component props.
  * @param props.provider Current `tileProvider` attribute.
- * @param props.apiKey   Current `tileApiKey` attribute.
+ * @param props.apiKey   Per-provider API key for the currently-selected
+ *                       provider, looked up from `tileApiKeys[ tileProvider ]`.
  * @param props.onChange Setter — receives the new provider id and key.
  */
 function TilesPanel( {
@@ -760,7 +762,7 @@ export const MapEdit = ( {
 		tooltipDescTextDecoration,
 		tooltipDescTextTransform,
 		tileProvider,
-		tileApiKey,
+		tileApiKeys,
 		tileOverlays,
 	} = attributes;
 
@@ -1053,14 +1055,17 @@ export const MapEdit = ( {
 				</PanelBody>
 				<TilesPanel
 					provider={ tileProvider }
-					apiKey={ tileApiKey }
+					apiKey={ tileApiKeys?.[ tileProvider ] ?? '' }
 					onChange={ ( next ) => {
 						const update: Partial< MapAttributes > = {};
 						if ( next.provider !== undefined ) {
 							update.tileProvider = next.provider;
 						}
 						if ( next.apiKey !== undefined ) {
-							update.tileApiKey = next.apiKey;
+							update.tileApiKeys = {
+								...( tileApiKeys ?? {} ),
+								[ tileProvider ]: next.apiKey,
+							};
 						}
 						setAttributes( update );
 					} }
@@ -1249,13 +1254,13 @@ export const MapEdit = ( {
 						tooltipShowDesc,
 						provider: resolveProviderForPreview(
 							tileProvider,
-							tileApiKey
+							tileApiKeys?.[ tileProvider ] ?? ''
 						),
 						overlays: resolveOverlaysForPreview( tileOverlays ),
 					} }
 					{ ...detectPreviewNotices(
 						tileProvider,
-						tileApiKey,
+						tileApiKeys?.[ tileProvider ] ?? '',
 						window.kntntGpxBlocks?.providers ?? {},
 						FALLBACK_PROVIDER_ID
 					) }

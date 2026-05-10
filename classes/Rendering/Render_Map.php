@@ -139,15 +139,21 @@ final class Render_Map {
 		$tooltip_desc_text_decoration = self::sanitize_text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
 		$tooltip_desc_text_transform  = self::sanitize_text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
 
-		// Read the saved tile-provider id and per-block API key. The id is
-		// resolved against the validated registry below; an unknown id falls
-		// back silently to OpenStreetMap with a warning. The key is forwarded
-		// verbatim — it is substituted into the URL by the registry, never
-		// emitted in the rendered HTML.
+		// Read the saved tile-provider id and the per-provider API-key map.
+		// The id is resolved against the validated registry below; an unknown
+		// id falls back silently to OpenStreetMap with a warning. The key map
+		// stores one entry per provider so switching between paid providers
+		// preserves each provider's key; the lookup pulls the current
+		// provider's key (or empty string when the entry is missing or the
+		// map is malformed) and forwards it verbatim to the registry, which
+		// substitutes it into the URL.
 		$tile_provider_id = isset( $attributes['tileProvider'] ) && is_string( $attributes['tileProvider'] ) && '' !== $attributes['tileProvider']
 			? $attributes['tileProvider']
 			: Tile_Layer_Registry::FALLBACK_PROVIDER_ID;
-		$tile_api_key     = isset( $attributes['tileApiKey'] ) && is_string( $attributes['tileApiKey'] ) ? $attributes['tileApiKey'] : '';
+		$raw_tile_api_keys = $attributes['tileApiKeys'] ?? [];
+		$tile_api_keys     = is_array( $raw_tile_api_keys ) ? $raw_tile_api_keys : [];
+		$raw_tile_api_key  = $tile_api_keys[ $tile_provider_id ] ?? '';
+		$tile_api_key      = is_string( $raw_tile_api_key ) ? $raw_tile_api_key : '';
 
 		// Read the saved overlay-id list. Each entry is validated and resolved
 		// against the overlay registry; unknown ids are dropped with a warning.
@@ -233,7 +239,7 @@ final class Render_Map {
 		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_ids );
 
 		// Polyline-only gate: when the resolved provider requires an API key
-		// and the per-block `tileApiKey` is empty, null out the URL so the
+		// and the per-provider entry in `tileApiKeys` is empty, null out the URL so the
 		// frontend view module ships polyline-only instead of issuing failing
 		// tile requests with a bare `apikey=` query parameter. The rest of
 		// the record (id, attribution, maxZoom, subdomains) survives so JS

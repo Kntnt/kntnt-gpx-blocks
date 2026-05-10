@@ -145,7 +145,8 @@ test( 'provider records expose url, attribution, maxZoom, and optional subdomain
 
 	// thunderforest-outdoors requires a key, so its URL must still contain
 	// the literal {KEY} placeholder when shipped to the editor — the editor
-	// substitutes the per-block tileApiKey client-side before mounting.
+	// substitutes the per-provider key from tileApiKeys[ tileProvider ]
+	// client-side before mounting.
 	$thunder = $decoded['providers']['thunderforest-outdoors'];
 	expect( $thunder['url'] )->toContain( '{KEY}' );
 	expect( $thunder['url'] )->toContain( 'thunderforest.com' );
@@ -183,7 +184,7 @@ test( 'provider records expose signupUrl for paid providers, omit it for free on
 
 } );
 
-test( 'payload omits API keys (per-block tileApiKey is never inlined)', function (): void {
+test( 'payload omits API keys (per-block tileApiKeys map is never inlined)', function (): void {
 
 	$captured_inline = null;
 	Functions\when( 'wp_add_inline_script' )->alias(
@@ -198,10 +199,11 @@ test( 'payload omits API keys (per-block tileApiKey is never inlined)', function
 	$payload = (string) $captured_inline;
 
 	// The registry never carries a key in its provider records, but the
-	// assertion is structural: no field named `apiKey` or `tileApiKey` may
-	// appear in the inlined string.
+	// assertion is structural: no field named `apiKey`, `tileApiKey`, or
+	// `tileApiKeys` may appear in the inlined string.
 	expect( $payload )->not->toContain( 'apiKey' );
 	expect( $payload )->not->toContain( 'tileApiKey' );
+	expect( $payload )->not->toContain( 'tileApiKeys' );
 
 } );
 

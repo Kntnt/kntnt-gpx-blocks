@@ -120,10 +120,10 @@ interface PreviewAttributes {
 	tooltipShowDesc: boolean;
 	/**
 	 * Resolved base-tile provider with `{KEY}` already substituted client-side
-	 * from `attributes.tileApiKey`. `null` in two cases: the editor-data
-	 * global is unavailable, or the resolved provider requires a key and the
-	 * per-block `tileApiKey` is empty (the documented polyline-only state —
-	 * issue #81). Either way the preview renders polyline + waypoints over
+	 * from `attributes.tileApiKeys[ tileProvider ]`. `null` in two cases: the
+	 * editor-data global is unavailable, or the resolved provider requires a
+	 * key and the per-provider entry in `tileApiKeys` is empty (the documented
+	 * polyline-only state — issue #81). Either way the preview renders polyline + waypoints over
 	 * an empty tile background; the editor surface ships polyline-only
 	 * rather than issuing failing tile requests.
 	 */
@@ -160,7 +160,8 @@ interface MapEditorPreviewProps {
 	unknownProviderFallbackLabel?: string | null;
 	/**
 	 * `true` when the resolved provider requires an API key
-	 * (`requiresKey === true`) and the per-block `tileApiKey` is empty.
+	 * (`requiresKey === true`) and the per-provider entry in `tileApiKeys`
+	 * is empty.
 	 */
 	missingKey?: boolean;
 }
