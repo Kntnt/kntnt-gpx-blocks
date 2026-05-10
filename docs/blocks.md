@@ -39,8 +39,8 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 | `waypointColor` | string | `""` | Marker dot colour for waypoints. |
 | `tooltipShowName` | boolean | `true` | Show the GPX `name` as the first line of the waypoint tooltip when present. |
 | `tooltipShowDesc` | boolean | `true` | Show the GPX `desc` as the second line of the waypoint tooltip when present. |
-| `tooltipBackground` | string | `"#000000cc"` | Tooltip background colour. Hex 3/4/6/8 — alpha supported via `#RRGGBBAA`. Also used to colour the arrow tip so a semi-transparent background renders consistently. |
-| `tooltipNameColor` | string | `"#ffffff"` | Name-line text colour. Hex 3/4/6/8. |
+| `tooltipBackground` | string | `""` | Tooltip background colour. Hex 3/4/6/8 — alpha supported via `#RRGGBBAA`. Also used to colour the arrow tip so a semi-transparent background renders consistently. Empty falls back to the hardcoded CSS default. |
+| `tooltipNameColor` | string | `""` | Name-line text colour. Hex 3/4/6/8. Empty falls back to the hardcoded CSS default. |
 | `tooltipNameFontFamily` | string | `""` | Name-line font family. |
 | `tooltipNameFontSize` | string | `""` | Name-line font size. |
 | `tooltipNameFontWeight` | string | `"700"` | Name-line font weight. |
@@ -49,7 +49,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 | `tooltipNameLetterSpacing` | string | `""` | Name-line letter-spacing. |
 | `tooltipNameTextDecoration` | string | `""` | Name-line text-decoration. |
 | `tooltipNameTextTransform` | string | `""` | Name-line letter case. |
-| `tooltipDescColor` | string | `"#dddddd"` | Description-line text colour. Hex 3/4/6/8. |
+| `tooltipDescColor` | string | `""` | Description-line text colour. Hex 3/4/6/8. Empty falls back to the hardcoded CSS default. |
 | `tooltipDescFontFamily` | string | `""` | Description-line font family. |
 | `tooltipDescFontSize` | string | `""` | Description-line font size. |
 | `tooltipDescFontWeight` | string | `""` | Description-line font weight. |
@@ -72,13 +72,11 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 
 **Styles tab**, in order:
 
-1. **Track** — `PanelColorSettings` for `trackColor` and `trackCursorColor`.
-2. **Waypoints** — `PanelColorSettings` exposing only the `waypointColor` marker-dot fill. Tooltip styling lives in the three panels below.
-3. **Waypoint info — Background** — a WordPress `ColorPicker` with `enableAlpha: true` writing into `tooltipBackground` as 8-digit hex. The same value also drives the arrow-tip colour so a semi-transparent background produces a semi-transparent arrow.
-4. **Waypoint info — Name** — a `ColorPicker` with `enableAlpha: true` writing `tooltipNameColor`, plus a unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern core Paragraph and Group use) covering all seven aspects WordPress's standard typography surface offers: **Font** (`FontFamilyControl`), **Size** (`FontSizePicker`), **Appearance** (`FontAppearanceControl` — combined weight + style), **Line height** (`LineHeightControl`), **Letter spacing** (`LetterSpacingControl`), **Decoration** (`TextDecorationControl`), and **Letter case** (`TextTransformControl`). Each aspect can be enabled or disabled individually; an unset aspect inherits from the theme. "Reset all" clears every aspect.
-5. **Waypoint info — Description** — same surface as *Name*, mapped to the `tooltipDesc*` attribute family.
+1. **Color** — a single `PanelColorSettings` with `enableAlpha: true` exposing six entries in this order: **Track** (`trackColor`), **Cursor** (`trackCursorColor`), **Marker** (`waypointColor`), **Waypoint background** (`tooltipBackground`, alpha-bearing 8-digit hex; also drives the tooltip arrow tip so a semi-transparent background produces a semi-transparent arrow), **Waypoint name** (`tooltipNameColor`), **Waypoint description** (`tooltipDescColor`). Every colour defaults to empty; an unset value falls back to the hardcoded SCSS default.
+2. **Waypoint info — Name** — a unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern core Paragraph and Group use) covering all seven aspects WordPress's standard typography surface offers: **Font** (`FontFamilyControl`), **Size** (`FontSizePicker`), **Appearance** (`FontAppearanceControl` — combined weight + style), **Line height** (`LineHeightControl`), **Letter spacing** (`LetterSpacingControl`), **Decoration** (`TextDecorationControl`), and **Letter case** (`TextTransformControl`). Each aspect can be enabled or disabled individually; an unset aspect inherits from the theme. "Reset all" clears every aspect.
+3. **Waypoint info — Description** — same surface as *Name*, mapped to the `tooltipDesc*` attribute family.
 
-The default styling renders the tooltip as a roughly 80% opaque black rectangle with a white bold name and a light grey italic description.
+The default styling renders the tooltip as a roughly 80% opaque black rectangle with a white bold name and a light grey italic description; the values live in `src/blocks/map/style.scss` as `--kntnt-gpx-blocks-tooltip-*` custom-property defaults and apply whenever the corresponding attribute is empty.
 
 **Floating waypoint-info preview in the editor canvas.** The Map block's editor preview renders a non-interactive floating tooltip in the lower-right corner of the map host so editors see live WYSIWYG feedback while they adjust the *Waypoint info* controls. The preview is an absolutely-positioned `<div class="kntnt-gpx-blocks-tooltip-preview">` whose children mirror the runtime tooltip's per-line DOM (`<div class="kntnt-gpx-blocks-tooltip-name">…</div>`, `<div class="kntnt-gpx-blocks-tooltip-desc">…</div>`), so the same `--kntnt-gpx-blocks-tooltip-*` custom properties drive both surfaces — `MapEdit`'s `useBlockProps()` injects every tooltip variable inline on the wrapper so live edits in the inspector repaint the preview in lock-step. Sample text comes from the first waypoint's `name` / `desc` in the hydrated GeoJSON when present, otherwise from the translatable placeholders `__('Sample name')` / `__('Sample description')`. The preview hides when both *Show name* and *Show description* are off (an `&:empty { display: none; }` rule in `editor.scss` collapses the empty container) and is `pointer-events: none` so it never blocks Gutenberg's clicks underneath. The styles live in `src/blocks/map/editor.scss` so the floating preview never appears on the frontend.
 

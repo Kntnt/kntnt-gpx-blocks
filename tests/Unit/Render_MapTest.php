@@ -1743,3 +1743,83 @@ test( 'unknown overlay ids in attributes are silently dropped from state', funct
 	expect( $slice['tileOverlays'] )->toBe( [] );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Empty colour defaults — every colour-attribute is skipped in the rendered
+// inline `style` when no value is supplied. After issue #84 every colour
+// attribute defaults to the empty string; the SCSS fallbacks in style.scss
+// own the visual baseline. This test guards that contract for all six
+// colours consolidated into the single "Color" PanelColorSettings panel.
+// ---------------------------------------------------------------------------
+
+test( 'render output emits no colour CSS variables when every colour attribute is empty (issue #84)', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 300, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 300, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'      => 300,
+			'mapId'             => 'map-no-colours',
+			'trackColor'        => '',
+			'trackCursorColor'  => '',
+			'waypointColor'     => '',
+			'tooltipBackground' => '',
+			'tooltipNameColor'  => '',
+			'tooltipDescColor'  => '',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$colour_vars = [
+		'--kntnt-gpx-blocks-track-color',
+		'--kntnt-gpx-blocks-track-cursor-color',
+		'--kntnt-gpx-blocks-waypoint-color',
+		'--kntnt-gpx-blocks-tooltip-bg',
+		'--kntnt-gpx-blocks-tooltip-name-color',
+		'--kntnt-gpx-blocks-tooltip-desc-color',
+	];
+
+	foreach ( $colour_vars as $var ) {
+		expect( $html )->not->toContain( $var, sprintf( 'Expected %s to be omitted for empty value', $var ) );
+	}
+
+} );
+
+// ---------------------------------------------------------------------------
+// Edge case — an explicit alpha-bearing hex8 colour (#000000cc) round-trips
+// through the inspector → attribute store → render path into the emitted
+// CSS variable verbatim. This protects the "Waypoint background" entry in
+// the consolidated PanelColorSettings panel, which is alpha-aware via the
+// panel-level `enableAlpha` flag.
+// ---------------------------------------------------------------------------
+
+test( 'render output preserves a hex8 tooltipBackground end-to-end (issue #84 alpha edge case)', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 301, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 301, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'      => 301,
+			'mapId'             => 'map-alpha-bg',
+			'tooltipBackground' => '#000000cc',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-tooltip-bg: #000000cc' );
+
+} );

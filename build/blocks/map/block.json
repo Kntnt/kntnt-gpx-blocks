@@ -102,11 +102,11 @@
     },
     "tooltipBackground": {
       "type": "string",
-      "default": "#000000cc"
+      "default": ""
     },
     "tooltipNameColor": {
       "type": "string",
-      "default": "#ffffff"
+      "default": ""
     },
     "tooltipNameFontFamily": {
       "type": "string",
@@ -142,7 +142,7 @@
     },
     "tooltipDescColor": {
       "type": "string",
-      "default": "#dddddd"
+      "default": ""
     },
     "tooltipDescFontFamily": {
       "type": "string",

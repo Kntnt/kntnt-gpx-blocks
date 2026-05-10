@@ -38,7 +38,6 @@ import {
 import {
 	PanelBody,
 	ToggleControl,
-	ColorPicker,
 	FontSizePicker,
 	SelectControl,
 	TextControl,
@@ -1076,14 +1075,14 @@ export const MapEdit = ( {
 			<InspectorControls group="styles">
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
-					title={ __( 'Track', 'kntnt-gpx-blocks' ) }
+					title={ __( 'Color', 'kntnt-gpx-blocks' ) }
 					enableAlpha
 					colorSettings={ [
 						{
 							value: trackColor,
 							onChange: ( value: string | undefined ) =>
 								setAttributes( { trackColor: value ?? '' } ),
-							label: __( 'Track colour', 'kntnt-gpx-blocks' ),
+							label: __( 'Track', 'kntnt-gpx-blocks' ),
 						},
 						{
 							value: trackCursorColor,
@@ -1091,20 +1090,43 @@ export const MapEdit = ( {
 								setAttributes( {
 									trackCursorColor: value ?? '',
 								} ),
-							label: __( 'Cursor colour', 'kntnt-gpx-blocks' ),
+							label: __( 'Cursor', 'kntnt-gpx-blocks' ),
 						},
-					] }
-				/>
-				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
-				<PanelColorSettings
-					title={ __( 'Waypoints', 'kntnt-gpx-blocks' ) }
-					enableAlpha
-					colorSettings={ [
 						{
 							value: waypointColor,
 							onChange: ( value: string | undefined ) =>
 								setAttributes( { waypointColor: value ?? '' } ),
-							label: __( 'Marker colour', 'kntnt-gpx-blocks' ),
+							label: __( 'Marker', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: tooltipBackground,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									tooltipBackground: value ?? '',
+								} ),
+							label: __(
+								'Waypoint background',
+								'kntnt-gpx-blocks'
+							),
+						},
+						{
+							value: tooltipNameColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									tooltipNameColor: value ?? '',
+								} ),
+							label: __( 'Waypoint name', 'kntnt-gpx-blocks' ),
+						},
+						{
+							value: tooltipDescColor,
+							onChange: ( value: string | undefined ) =>
+								setAttributes( {
+									tooltipDescColor: value ?? '',
+								} ),
+							label: __(
+								'Waypoint description',
+								'kntnt-gpx-blocks'
+							),
 						},
 					] }
 				/>
@@ -1114,34 +1136,11 @@ export const MapEdit = ( {
 						'kntnt-gpx-blocks'
 					) }
 					initialOpen={ false }
-				>
-					{ /* @ts-ignore — ColorPicker's runtime accepts these props but its typings lag. */ }
-					<ColorPicker
-						color={ tooltipBackground }
-						enableAlpha
-						copyFormat="hex"
-						onChange={ ( value: string ) =>
-							setAttributes( {
-								tooltipBackground: value ?? '',
-							} )
-						}
-					/>
-				</PanelBody>
+				></PanelBody>
 				<PanelBody
 					title={ __( 'Waypoint info — Name', 'kntnt-gpx-blocks' ) }
 					initialOpen={ false }
 				>
-					{ /* @ts-ignore — ColorPicker's runtime accepts these props but its typings lag. */ }
-					<ColorPicker
-						color={ tooltipNameColor }
-						enableAlpha
-						copyFormat="hex"
-						onChange={ ( value: string ) =>
-							setAttributes( {
-								tooltipNameColor: value ?? '',
-							} )
-						}
-					/>
 					<TypographyToolsPanel
 						label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
 						fontFamily={ tooltipNameFontFamily }
@@ -1194,17 +1193,6 @@ export const MapEdit = ( {
 					) }
 					initialOpen={ false }
 				>
-					{ /* @ts-ignore — ColorPicker's runtime accepts these props but its typings lag. */ }
-					<ColorPicker
-						color={ tooltipDescColor }
-						enableAlpha
-						copyFormat="hex"
-						onChange={ ( value: string ) =>
-							setAttributes( {
-								tooltipDescColor: value ?? '',
-							} )
-						}
-					/>
 					<TypographyToolsPanel
 						label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
 						fontFamily={ tooltipDescFontFamily }
