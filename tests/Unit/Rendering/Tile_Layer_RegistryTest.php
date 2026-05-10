@@ -127,8 +127,103 @@ test( 'default overlays all survive validation', function (): void {
 	$registry = new Tile_Layer_Registry();
 	$overlays = $registry->get_overlays();
 
-	expect( $overlays )->toHaveKey( 'wmt-hiking' );
-	expect( count( $overlays ) )->toBe( 1 );
+	expect( $overlays )
+		->toHaveKey( 'wmt-hiking' )
+		->toHaveKey( 'wmt-cycling' )
+		->toHaveKey( 'wmt-mtb' )
+		->toHaveKey( 'openseamap' )
+		->toHaveKey( 'opensnowmap' );
+
+	expect( count( $overlays ) )->toBe( 5 );
+
+} );
+
+test( 'default overlay records carry the expected url, label, attribution, and maxZoom', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$overlays = $registry->get_overlays();
+
+	// Each shipped free-overlay entry is verified field-by-field so the URL
+	// template, the brand attribution, and the zoom cap are locked against
+	// silent regressions.
+	expect( $overlays['wmt-hiking']['url'] )->toBe( 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png' );
+	expect( $overlays['wmt-hiking']['label'] )->toBe( 'Waymarked Trails — Hiking' );
+	expect( $overlays['wmt-hiking']['attribution'] )->toContain( 'Waymarked Trails' );
+	expect( $overlays['wmt-hiking']['maxZoom'] )->toBe( 18 );
+
+	expect( $overlays['wmt-cycling']['url'] )->toBe( 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png' );
+	expect( $overlays['wmt-cycling']['label'] )->toBe( 'Waymarked Trails — Cycling' );
+	expect( $overlays['wmt-cycling']['attribution'] )->toContain( 'Waymarked Trails' );
+	expect( $overlays['wmt-cycling']['maxZoom'] )->toBe( 18 );
+
+	expect( $overlays['wmt-mtb']['url'] )->toBe( 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png' );
+	expect( $overlays['wmt-mtb']['label'] )->toBe( 'Waymarked Trails — MTB' );
+	expect( $overlays['wmt-mtb']['attribution'] )->toContain( 'Waymarked Trails' );
+	expect( $overlays['wmt-mtb']['maxZoom'] )->toBe( 18 );
+
+	expect( $overlays['openseamap']['url'] )->toBe( 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png' );
+	expect( $overlays['openseamap']['label'] )->toBe( 'OpenSeaMap (sea marks)' );
+	expect( $overlays['openseamap']['attribution'] )->toContain( 'OpenSeaMap' );
+	expect( $overlays['openseamap']['maxZoom'] )->toBe( 18 );
+
+	expect( $overlays['opensnowmap']['url'] )->toBe( 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png' );
+	expect( $overlays['opensnowmap']['label'] )->toBe( 'OpenSnowMap (pistes)' );
+	expect( $overlays['opensnowmap']['attribution'] )->toContain( 'OpenSnowMap' );
+	expect( $overlays['opensnowmap']['maxZoom'] )->toBe( 18 );
+
+} );
+
+test( 'default overlay URLs all use https and contain the {z}/{x}/{y} placeholders', function (): void {
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	// Each surviving entry must already satisfy the validator's URL contract;
+	// re-asserting it here locks the rule against accidental relaxation in
+	// the default-set composition.
+	foreach ( $overlays as $id => $record ) {
+		expect( $record['url'] )->toStartWith( 'https://' );
+		expect( $record['url'] )->toContain( '{z}' );
+		expect( $record['url'] )->toContain( '{x}' );
+		expect( $record['url'] )->toContain( '{y}' );
+		expect( $record['url'] )->not->toContain( '{KEY}' );
+	}
+
+} );
+
+test( 'default overlays without a {KEY} placeholder would still be rejected if one were inserted', function (): void {
+
+	// Lock the existing "overlays in v1 carry no API key" rule by simulating
+	// the same shipped overlays with a synthetic {KEY} appended; every record
+	// must be dropped by the validator.
+	$keyed_set = [
+		'wmt-hiking-keyed'  => tlr_overlay_record( [ 'url' => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png?key={KEY}' ] ),
+		'wmt-cycling-keyed' => tlr_overlay_record( [ 'url' => 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png?key={KEY}' ] ),
+		'wmt-mtb-keyed'     => tlr_overlay_record( [ 'url' => 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png?key={KEY}' ] ),
+		'openseamap-keyed'  => tlr_overlay_record( [ 'url' => 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png?key={KEY}' ] ),
+		'opensnowmap-keyed' => tlr_overlay_record( [ 'url' => 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png?key={KEY}' ] ),
+	];
+
+	tlr_filter_returns( 'kntnt_gpx_blocks_tile_overlays', $keyed_set );
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays )->toBe( [] );
+
+} );
+
+test( 'default overlays resolve in editor-configured order without an explicit filter override', function (): void {
+
+	// Reaches through `resolve_overlays()` so the runtime path that the GPX
+	// Map block actually uses is exercised against the shipped defaults.
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays( [ 'wmt-cycling', 'wmt-mtb', 'openseamap', 'opensnowmap', 'wmt-hiking' ] );
+
+	expect( $resolved )->toHaveCount( 5 );
+	expect( $resolved[0]['id'] )->toBe( 'wmt-cycling' );
+	expect( $resolved[1]['id'] )->toBe( 'wmt-mtb' );
+	expect( $resolved[2]['id'] )->toBe( 'openseamap' );
+	expect( $resolved[3]['id'] )->toBe( 'opensnowmap' );
+	expect( $resolved[4]['id'] )->toBe( 'wmt-hiking' );
 
 } );
 

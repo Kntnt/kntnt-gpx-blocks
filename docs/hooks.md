@@ -87,7 +87,7 @@ $providers = apply_filters( 'kntnt_gpx_blocks_tile_providers', $defaults );
 
 ### `kntnt_gpx_blocks_tile_overlays`
 
-Map of overlay layers keyed by overlay id. The default ships one entry: `wmt-hiking` (Waymarked Trails Hiking).
+Map of overlay layers keyed by overlay id. The default ships five entries, all free and key-less: `wmt-hiking` (Waymarked Trails Hiking), `wmt-cycling` (Waymarked Trails Cycling), `wmt-mtb` (Waymarked Trails MTB), `openseamap` (OpenSeaMap sea marks), and `opensnowmap` (OpenSnowMap pistes).
 
 ```php
 $overlays = apply_filters( 'kntnt_gpx_blocks_tile_overlays', $defaults );

@@ -654,10 +654,34 @@ final class Tile_Layer_Registry {
 	private static function default_overlays(): array {
 
 		return [
-			'wmt-hiking' => [
+			'wmt-hiking'   => [
 				'label'       => __( 'Waymarked Trails — Hiking', 'kntnt-gpx-blocks' ),
 				'url'         => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
 				'attribution' => '&copy; <a href="https://hiking.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+				'maxZoom'     => 18,
+			],
+			'wmt-cycling'  => [
+				'label'       => __( 'Waymarked Trails — Cycling', 'kntnt-gpx-blocks' ),
+				'url'         => 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png',
+				'attribution' => '&copy; <a href="https://cycling.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+				'maxZoom'     => 18,
+			],
+			'wmt-mtb'      => [
+				'label'       => __( 'Waymarked Trails — MTB', 'kntnt-gpx-blocks' ),
+				'url'         => 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png',
+				'attribution' => '&copy; <a href="https://mtb.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+				'maxZoom'     => 18,
+			],
+			'openseamap'   => [
+				'label'       => __( 'OpenSeaMap (sea marks)', 'kntnt-gpx-blocks' ),
+				'url'         => 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+				'attribution' => '&copy; <a href="https://www.openseamap.org/">OpenSeaMap</a> contributors',
+				'maxZoom'     => 18,
+			],
+			'opensnowmap'  => [
+				'label'       => __( 'OpenSnowMap (pistes)', 'kntnt-gpx-blocks' ),
+				'url'         => 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png',
+				'attribution' => '&copy; <a href="https://www.opensnowmap.org/">OpenSnowMap</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
 				'maxZoom'     => 18,
 			],
 		];
