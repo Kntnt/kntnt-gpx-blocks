@@ -183,6 +183,34 @@ const DEFAULT_TRACK_COLOR = '#0073aa';
 const DEFAULT_WAYPOINT_COLOR = '#d63638';
 
 /**
+ * Earth radius in metres for Haversine summation along the track polyline.
+ *
+ * Matches the value used by Render_Elevation::build_distance_elevation_series
+ * and Statistics_Calculator so the editor's midpoint computation lines up
+ * exactly with the server's distance figures.
+ *
+ * @since 1.0.0
+ */
+const EARTH_RADIUS_METERS = 6371000.0;
+
+/**
+ * Pixel offset applied between the projected anchor point and the tooltip's
+ * top-left corner so the preview sits next to (rather than over) the marker.
+ *
+ * @since 1.0.0
+ */
+const ANCHOR_OFFSET_X = 10;
+
+/**
+ * Pixel offset applied on the Y axis between the projected anchor point and
+ * the tooltip. A small negative value visually centres the tooltip beside
+ * the marker for typical line heights.
+ *
+ * @since 1.0.0
+ */
+const ANCHOR_OFFSET_Y = -8;
+
+/**
  * Editor preview for the GPX Map block.
  *
  * Fetches the cached GeoJSON for the given attachmentId via the plugin's
@@ -228,6 +256,16 @@ export const MapEditorPreview = ( {
 	const [ payload, setPayload ] = useState< PreviewPayload | null >( null );
 	const [ error, setError ] = useState< ApiError | null >( null );
 	const [ loading, setLoading ] = useState< boolean >( true );
+
+	// Pixel position of the waypoint-info preview within the map host, driven
+	// by re-projecting the chosen geographic anchor on every Leaflet move/zoom.
+	// `null` while the map is still mounting or no anchor could be resolved;
+	// the preview keeps its previous position until the first projection
+	// resolves so it does not flash at (0, 0) on first paint.
+	const [ tooltipPosition, setTooltipPosition ] = useState< {
+		left: number;
+		top: number;
+	} | null >( null );
 
 	// Per-Notice dismissal state, scoped to this block instance for the
 	// remainder of the editor session. Each Notice tracks its own flag so
@@ -410,6 +448,48 @@ export const MapEditorPreview = ( {
 			color: trackColor || DEFAULT_TRACK_COLOR,
 		} );
 	}, [ trackColor ] );
+
+	// Anchor the floating waypoint-info preview on real track geometry.
+	// Resolves the geographic anchor (first waypoint when present, otherwise
+	// the polyline midpoint at fraction = 0.5), projects it to container-pixel
+	// coordinates via Leaflet's `latLngToContainerPoint`, and registers
+	// `move` / `zoom` listeners so the preview re-projects whenever the map
+	// pans or zooms. Without those listeners the tooltip would "swim" off the
+	// anchor on any viewport change; Leaflet's fit-to-bounds on first mount is
+	// itself a zoom + move and is captured by the same handlers.
+	useEffect( () => {
+		const map = mapRef.current;
+		if ( ! map || ! payload ) {
+			setTooltipPosition( null );
+			return;
+		}
+
+		const anchor = pickPreviewAnchor( payload.geojson );
+		if ( ! anchor ) {
+			setTooltipPosition( null );
+			return;
+		}
+
+		const project = (): void => {
+			const point = map.latLngToContainerPoint( [
+				anchor.lat,
+				anchor.lon,
+			] );
+			setTooltipPosition( {
+				left: point.x + ANCHOR_OFFSET_X,
+				top: point.y + ANCHOR_OFFSET_Y,
+			} );
+		};
+
+		project();
+		map.on( 'move', project );
+		map.on( 'zoom', project );
+
+		return () => {
+			map.off( 'move', project );
+			map.off( 'zoom', project );
+		};
+	}, [ payload ] );
 
 	// Synchronise the base tile layer with the current `provider` prop without
 	// rebuilding the whole map. Leaflet does not expose a "swap base layer"
@@ -650,6 +730,18 @@ export const MapEditorPreview = ( {
 		firstWaypoint?.desc?.trim() ||
 		__( 'Sample description', 'kntnt-gpx-blocks' );
 
+	// Build the inline style for the tooltip-preview wrapper. Once the
+	// projection effect resolves a pixel position, the tooltip is anchored
+	// at `left` / `top` driven by JS; before that, `visibility: hidden` keeps
+	// the element out of view so it does not flash at the wrapper's
+	// top-left corner on first paint.
+	const tooltipPreviewStyle: React.CSSProperties = tooltipPosition
+		? {
+				left: `${ tooltipPosition.left }px`,
+				top: `${ tooltipPosition.top }px`,
+		  }
+		: { visibility: 'hidden' };
+
 	return (
 		<>
 			{ notices }
@@ -662,6 +754,7 @@ export const MapEditorPreview = ( {
 				<div
 					className="kntnt-gpx-blocks-tooltip-preview"
 					aria-hidden="true"
+					style={ tooltipPreviewStyle }
 				>
 					{ tooltipShowName && (
 						<div className="kntnt-gpx-blocks-tooltip-name">
@@ -680,21 +773,55 @@ export const MapEditorPreview = ( {
 };
 
 /**
- * Extracts the first waypoint's `name` / `desc` from a GeoJSON payload.
+ * Result of the first-waypoint lookup over a cached GeoJSON payload.
+ *
+ * `lat` / `lon` are the projected coordinates of the waypoint so the editor
+ * preview can anchor the floating tooltip on the same geographic point the
+ * runtime tooltip would attach to. `name` / `desc` are the corresponding
+ * label strings, with empty strings substituted when the property is
+ * missing — callers fall back to translatable placeholders.
+ *
+ * @since 1.0.0
+ */
+export interface FirstWaypoint {
+	readonly lat: number;
+	readonly lon: number;
+	readonly name: string;
+	readonly desc: string;
+}
+
+/**
+ * Geographic anchor for the editor's waypoint-info preview.
+ *
+ * Either the first waypoint's projected position (when at least one `Point`
+ * feature exists in the cached GeoJSON) or the LineString midpoint at
+ * fraction = 0.5 (when no waypoints exist). Returning `null` means neither
+ * could be resolved — the preview is hidden in that case.
+ *
+ * @since 1.0.0
+ */
+export interface PreviewAnchor {
+	readonly lat: number;
+	readonly lon: number;
+}
+
+/**
+ * Extracts the first waypoint's `name` / `desc` / coordinates from a
+ * GeoJSON payload.
  *
  * Waypoints are encoded as `Point` features in the same FeatureCollection
  * that holds the track `LineString`. The function returns `null` when the
  * payload is not yet available, has no `Point` features, or the first
- * `Point` has no usable string properties.
+ * `Point` has malformed coordinates.
  *
  * @since 1.0.0
  *
  * @param geojson Cached GeoJSON payload, or `undefined` when not yet loaded.
- * @return First waypoint's `{ name, desc }` strings, or `null` when absent.
+ * @return First waypoint's `{ lat, lon, name, desc }`, or `null` when absent.
  */
-function pickFirstWaypoint(
+export function pickFirstWaypoint(
 	geojson: GeoJSON.GeoJsonObject | undefined
-): { name: string; desc: string } | null {
+): FirstWaypoint | null {
 	if ( ! geojson || geojson.type !== 'FeatureCollection' ) {
 		return null;
 	}
@@ -703,10 +830,193 @@ function pickFirstWaypoint(
 		if ( feature.geometry?.type !== 'Point' ) {
 			continue;
 		}
+		const point = feature.geometry as GeoJSON.Point;
+		const coords = point.coordinates;
+		if (
+			! Array.isArray( coords ) ||
+			coords.length < 2 ||
+			typeof coords[ 0 ] !== 'number' ||
+			typeof coords[ 1 ] !== 'number'
+		) {
+			continue;
+		}
 		const props = feature.properties ?? {};
 		const name = typeof props.name === 'string' ? props.name : '';
 		const desc = typeof props.desc === 'string' ? props.desc : '';
-		return { name, desc };
+		return { lat: coords[ 1 ], lon: coords[ 0 ], name, desc };
 	}
 	return null;
+}
+
+/**
+ * Computes the projected position halfway along the track's LineString.
+ *
+ * Walks the first LineString found in the FeatureCollection, summing
+ * Haversine distances between consecutive points to obtain the total
+ * length, then steps along the chain again to locate the segment that
+ * contains 50 % of that length and linearly interpolates the latitude /
+ * longitude within it. Mirrors the math in
+ * `Render_Elevation::build_distance_elevation_series` but stays
+ * client-side — distances are computed in JS so the editor never crosses
+ * the PHP boundary at preview time.
+ *
+ * Edge cases handled:
+ * - Empty / non-FeatureCollection payload → returns `null`.
+ * - LineString missing or with zero coordinates → returns `null`.
+ * - Single-point LineString → returns that point (no segment to bisect).
+ * - Two-point LineString → returns the segment's true midpoint.
+ * - Total distance of zero (all points colocated) → returns the first point.
+ *
+ * @since 1.0.0
+ *
+ * @param geojson Cached GeoJSON payload, or `undefined` when not yet loaded.
+ * @return Midpoint `{ lat, lon }`, or `null` when the polyline is absent.
+ */
+export function computeLineMidpoint(
+	geojson: GeoJSON.GeoJsonObject | undefined
+): PreviewAnchor | null {
+	if ( ! geojson || geojson.type !== 'FeatureCollection' ) {
+		return null;
+	}
+	const fc = geojson as GeoJSON.FeatureCollection;
+
+	// Locate the first LineString feature; tracks always live in a single
+	// LineString in this plugin's GeoJSON output.
+	let coords: GeoJSON.Position[] | null = null;
+	for ( const feature of fc.features ) {
+		if ( feature.geometry?.type === 'LineString' ) {
+			const ls = feature.geometry as GeoJSON.LineString;
+			if ( Array.isArray( ls.coordinates ) ) {
+				coords = ls.coordinates;
+				break;
+			}
+		}
+	}
+	if ( ! coords || coords.length === 0 ) {
+		return null;
+	}
+
+	// Normalise each coordinate to a `[lon, lat]` numeric pair, dropping
+	// anything malformed so the walker does not need to revalidate.
+	const valid: Array< { lat: number; lon: number } > = [];
+	for ( const entry of coords ) {
+		if (
+			Array.isArray( entry ) &&
+			entry.length >= 2 &&
+			typeof entry[ 0 ] === 'number' &&
+			typeof entry[ 1 ] === 'number'
+		) {
+			valid.push( { lon: entry[ 0 ], lat: entry[ 1 ] } );
+		}
+	}
+	if ( valid.length === 0 ) {
+		return null;
+	}
+	if ( valid.length === 1 ) {
+		return { lat: valid[ 0 ].lat, lon: valid[ 0 ].lon };
+	}
+
+	// First pass: sum the cumulative distance along the chain.
+	let total = 0;
+	for ( let i = 1; i < valid.length; i++ ) {
+		total += haversineMeters(
+			valid[ i - 1 ].lat,
+			valid[ i - 1 ].lon,
+			valid[ i ].lat,
+			valid[ i ].lon
+		);
+	}
+	if ( total <= 0 ) {
+		return { lat: valid[ 0 ].lat, lon: valid[ 0 ].lon };
+	}
+
+	// Second pass: walk until the cumulative distance crosses the halfway
+	// mark, then linearly interpolate within the bracketing segment.
+	const target = total * 0.5;
+	let accumulated = 0;
+	for ( let i = 1; i < valid.length; i++ ) {
+		const segment = haversineMeters(
+			valid[ i - 1 ].lat,
+			valid[ i - 1 ].lon,
+			valid[ i ].lat,
+			valid[ i ].lon
+		);
+		if ( accumulated + segment >= target ) {
+			const t = segment > 0 ? ( target - accumulated ) / segment : 0;
+			const lat =
+				valid[ i - 1 ].lat +
+				( valid[ i ].lat - valid[ i - 1 ].lat ) * t;
+			const lon =
+				valid[ i - 1 ].lon +
+				( valid[ i ].lon - valid[ i - 1 ].lon ) * t;
+			return { lat, lon };
+		}
+		accumulated += segment;
+	}
+
+	// Fallback: floating-point drift left the loop without picking a segment.
+	// Pin to the last point so the preview still resolves to a real geometry.
+	const last = valid[ valid.length - 1 ];
+	return { lat: last.lat, lon: last.lon };
+}
+
+/**
+ * Picks the geographic anchor for the editor's waypoint-info preview.
+ *
+ * Returns the first waypoint's position when at least one `Point` feature
+ * exists in the cached GeoJSON; otherwise falls back to the polyline's
+ * midpoint at fraction = 0.5. Returns `null` only when neither is
+ * resolvable (no Point features, no LineString, or both are malformed) —
+ * the caller then hides the preview.
+ *
+ * @since 1.0.0
+ *
+ * @param geojson Cached GeoJSON payload, or `undefined` when not yet loaded.
+ * @return Anchor `{ lat, lon }`, or `null` when nothing usable was found.
+ */
+export function pickPreviewAnchor(
+	geojson: GeoJSON.GeoJsonObject | undefined
+): PreviewAnchor | null {
+	const waypoint = pickFirstWaypoint( geojson );
+	if ( waypoint ) {
+		return { lat: waypoint.lat, lon: waypoint.lon };
+	}
+	return computeLineMidpoint( geojson );
+}
+
+/**
+ * Great-circle distance between two lat/lon pairs in metres.
+ *
+ * Mirrors `Render_Elevation::haversine_meters` so the editor's midpoint
+ * computation lines up exactly with the server's distance figures.
+ *
+ * @since 1.0.0
+ *
+ * @param lat1 Latitude of point 1, decimal degrees.
+ * @param lon1 Longitude of point 1, decimal degrees.
+ * @param lat2 Latitude of point 2, decimal degrees.
+ * @param lon2 Longitude of point 2, decimal degrees.
+ * @return Great-circle distance in metres.
+ */
+function haversineMeters(
+	lat1: number,
+	lon1: number,
+	lat2: number,
+	lon2: number
+): number {
+	const toRad = ( deg: number ): number => ( deg * Math.PI ) / 180;
+	const phi1 = toRad( lat1 );
+	const phi2 = toRad( lat2 );
+	const dPhi = toRad( lat2 - lat1 );
+	const dLambda = toRad( lon2 - lon1 );
+
+	const a =
+		Math.sin( dPhi / 2 ) ** 2 +
+		Math.cos( phi1 ) * Math.cos( phi2 ) * Math.sin( dLambda / 2 ) ** 2;
+
+	return (
+		EARTH_RADIUS_METERS *
+		2 *
+		Math.atan2( Math.sqrt( a ), Math.sqrt( 1 - a ) )
+	);
 }

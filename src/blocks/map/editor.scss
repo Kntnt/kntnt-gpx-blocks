@@ -35,21 +35,27 @@
 	}
 
 	// Floating waypoint-info preview — a non-interactive WYSIWYG hint anchored
-	// to the lower-right corner of the map host so editors see live feedback
-	// while they adjust the *Waypoint info* styling controls. The preview
-	// inherits its background, per-line colour, and per-line typography from
-	// the same `--kntnt-gpx-blocks-tooltip-*` custom properties the runtime
-	// tooltip reads (see style.scss); editing the inspector controls
-	// repaints both surfaces in lock-step. The element collapses entirely
-	// when both *Show name* and *Show description* are off — the empty
-	// container then has no children and the `:empty` rule hides it. The
-	// shared `.kntnt-gpx-blocks-tooltip-{name,desc}` rules from style.scss
-	// already cover colour and typography, so this stylesheet only
-	// contributes positioning, the surface background, and the hide rule.
+	// to a real geographic point on the rendered track so editors see live
+	// feedback in context while they adjust the *Waypoint info* styling
+	// controls. The preview anchors on the first waypoint's projected
+	// position when at least one Point feature exists in the cached GeoJSON,
+	// otherwise on the polyline midpoint at fraction = 0.5; the JS in
+	// editor-preview.tsx re-projects the chosen lat/lon to container-pixel
+	// coordinates on every Leaflet move/zoom and writes the resulting
+	// `left` / `top` values directly on this element. The preview inherits
+	// its background, per-line colour, and per-line typography from the same
+	// `--kntnt-gpx-blocks-tooltip-*` custom properties the runtime tooltip
+	// reads (see style.scss); editing the inspector controls repaints both
+	// surfaces in lock-step. The element collapses entirely when both
+	// *Show name* and *Show description* are off — the empty container then
+	// has no children and the `:empty` rule hides it. The shared
+	// `.kntnt-gpx-blocks-tooltip-{name,desc}` rules from style.scss already
+	// cover colour and typography, so this stylesheet only contributes the
+	// positioning baseline, the surface background, and the hide rule.
 	.kntnt-gpx-blocks-tooltip-preview {
 		position: absolute;
-		right: 12px;
-		bottom: 12px;
+		left: 0;
+		top: 0;
 		max-width: calc(100% - 24px);
 		padding: 6px 8px;
 		background-color: var(--kntnt-gpx-blocks-tooltip-bg);
