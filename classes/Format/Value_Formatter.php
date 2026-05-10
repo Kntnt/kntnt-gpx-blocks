@@ -16,7 +16,7 @@ declare( strict_types = 1 );
 namespace Kntnt\Gpx_Blocks\Format;
 
 /**
- * Formats raw float values for display through the GPX Statistics bindings source.
+ * Formats raw float values for display through the GPX Statistics shortcode.
  *
  * @package Kntnt\Gpx_Blocks
  * @since 1.0.0

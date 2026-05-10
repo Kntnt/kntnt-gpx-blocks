@@ -1,6 +1,6 @@
 # Block specifications
 
-This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and the GPX Statistics block-variation + bindings source: attributes, editor UI, render output, interactivity behaviour, accessibility. Read it when implementing or modifying any of the three. For the data flow that feeds them, see [`architecture.md`](architecture.md). For the cache they read from, see [`caching.md`](caching.md).
+This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and the GPX Statistics block-variation + `[kntnt-gpx <key>]` shortcode: attributes, editor UI, render output, interactivity behaviour, accessibility. Read it when implementing or modifying any of the three. For the data flow that feeds them, see [`architecture.md`](architecture.md). For the cache they read from, see [`caching.md`](caching.md).
 
 ## Common to both blocks
 
@@ -14,7 +14,7 @@ This document specifies the two Gutenberg blocks (GPX Map, GPX Elevation) and th
 - **Persistence:** every attribute that is a colour or a font reference stores whatever the WordPress editor component delivers — for colours that is hex 3/4/6/8 (including alpha-bearing `#rrggbbaa` from the alpha-enabled `ColorPicker` surfaces); for typography presets it is a `var(--wp--preset--…)` reference. Empty/null falls back to a hardcoded default in CSS. The render path runs every colour value through `Rendering\Color_Sanitizer::sanitize()` before emitting it as a CSS custom property — see [`security.md`](security.md) for the full accepted/rejected list.
 - **Block icon:** each block ships its own inline SVG icon authored as a React element in `src/blocks/<slug>/icon.tsx` and passed to `registerBlockType()` via the `icon` field on the settings object. Map uses a teardrop pin over a winding track segment; Elevation uses a mountain-profile polyline over a baseline. Both share the same 24x24 viewBox, `currentColor` strokes, 1.5 stroke width, and round caps/joins as the GPX Statistics variation icon (`js/statistics-variation.js`) so the three read as one cohesive family in the inserter, List View, breadcrumb, and Document Outline. The `icon` field is intentionally absent from `block.json` — when JS provides one, the JSON-side value would be ignored anyway, so we keep the editor-side asset out of the server-side metadata.
 
-The GPX Statistics variation and its bindings source follow a different model — see *GPX Statistics variation* at the bottom of this doc. The variation lives in `js/statistics-variation.js` (a plain ES2022 file using `window.wp.blocks.registerBlockVariation`); the script is enqueued by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets`. The bindings source is `kntnt-gpx-blocks/statistics`, registered by `Bindings\Statistics_Source` with `uses_context: ['postId']`.
+The GPX Statistics variation and the `[kntnt-gpx <key>]` shortcode follow a different model — see *GPX Statistics variation* at the bottom of this doc. The variation lives in `js/statistics-variation.js` (a plain ES2022 file using `window.wp.blocks.registerBlockVariation`); the script is enqueued by `Bootstrap\Variation_Registrar` on `enqueue_block_editor_assets`. The shortcode tag is `kntnt-gpx`, registered by `Bindings\Statistics_Shortcode` on `init`.
 
 ## GPX Map
 
@@ -270,7 +270,7 @@ The Map's own errors propagate up if the underlying attachment is broken — Ele
 
 ## GPX Statistics variation
 
-The GPX Statistics summary is **not** a block. It is a *`core/group` block-variation* + a *Block Bindings source*. The variation provides the layout (a 2×3 grid of label/value paragraph pairs, first row spanning both columns) and is registered with `scope: ['inserter']` so it appears as a standalone item in the block inserter alongside GPX Map and GPX Elevation. The bindings source provides the data (one formatted statistic per binding key). All theming is whatever the user's theme + the standard core paragraph controls give — there is no plugin-specific theming surface.
+The GPX Statistics summary is **not** a block. It is a *`core/group` block-variation* + a `[kntnt-gpx <key>]` *shortcode*. The variation provides the layout (a two-column grid of paragraph rows, first row spanning both columns) and is registered with `scope: ['inserter']` so it appears as a standalone item in the block inserter alongside GPX Map and GPX Elevation. The shortcode provides the data (one formatted statistic per invocation). All theming is whatever the user's theme + the standard core paragraph controls give — there is no plugin-specific theming surface.
 
 ### Block variation
 
@@ -283,51 +283,60 @@ The GPX Statistics summary is **not** a block. It is a *`core/group` block-varia
 - **Inserted markup shape:**
 
 ```html
-<!-- wp:group {"metadata":{"name":"GPX Statistics"},"layout":{"type":"grid","columnCount":2}} -->
-  <!-- wp:group {"metadata":{"name":"Total length"},"style":{"layout":{"columnSpan":2}},"layout":{"type":"flex"}} -->
-    <!-- wp:paragraph {"metadata":{"name":"Label"}} --><p><strong>Total length:</strong></p><!-- /wp:paragraph -->
-    <!-- wp:paragraph {"metadata":{"name":"Value","bindings":{"content":{"source":"kntnt-gpx-blocks/statistics","args":{"key":"distance"}}}}} -->
-      <p></p>
-    <!-- /wp:paragraph -->
-  <!-- /wp:group -->
-  <!-- ... four more rows for min_elevation, max_elevation, ascent, descent ... -->
+<!-- wp:group {"metadata":{"name":"GPX Statistics"},"style":{"spacing":{"blockGap":"var:preset|spacing|small"}},"layout":{"type":"grid","columnCount":2,"minimumColumnWidth":null}} -->
+<div class="wp-block-group">
+  <!-- wp:paragraph {"metadata":{"name":"Total length"},"style":{"layout":{"columnSpan":2}}} -->
+  <p><strong>Total length:</strong> [kntnt-gpx distance]</p>
+  <!-- /wp:paragraph -->
+
+  <!-- wp:paragraph {"metadata":{"name":"Lowest elevation"}} -->
+  <p><strong>Lowest elevation:</strong> [kntnt-gpx min-elevation]</p>
+  <!-- /wp:paragraph -->
+
+  <!-- wp:paragraph {"metadata":{"name":"Highest elevation"}} -->
+  <p><strong>Highest elevation:</strong> [kntnt-gpx max-elevation]</p>
+  <!-- /wp:paragraph -->
+
+  <!-- wp:paragraph {"metadata":{"name":"Total ascent"}} -->
+  <p><strong>Total ascent:</strong> [kntnt-gpx ascent]</p>
+  <!-- /wp:paragraph -->
+
+  <!-- wp:paragraph {"metadata":{"name":"Total descent"}} -->
+  <p><strong>Total descent:</strong> [kntnt-gpx descent]</p>
+  <!-- /wp:paragraph -->
+</div>
 <!-- /wp:group -->
 ```
 
-The `metadata.name` strings on the inner blocks (`Total length`, `Label`, `Value`, etc.) are deliberately fixed English — Gutenberg's `metadata.name` is editor-side metadata, and Core's own templates leave it as a fixed English string. The visitor-facing label paragraph content (`Total length:`) stays translated through the plugin's text domain.
+The `metadata.name` strings on the inner blocks (`Total length`, `Lowest elevation`, etc.) are deliberately fixed English — Gutenberg's `metadata.name` is editor-side metadata, and Core's own templates leave it as a fixed English string. The visitor-facing label content (`Total length:`) stays translated through the plugin's text domain.
 
-Once the user inserts the variation, the markup is standard `core/group` and `core/paragraph` content — the variation's role ends at insertion time; the post_content carries no reference back to the variation name.
+Once the user inserts the variation, the markup is standard `core/group` and `core/paragraph` content with inline `[kntnt-gpx <key>]` shortcodes — the variation's role ends at insertion time; the post_content carries no reference back to the variation name.
 
-### Bindings source
+### Shortcode
 
-- **Source name:** `kntnt-gpx-blocks/statistics`.
-- **Class:** `Bindings\Statistics_Source` (held as a private property on `Plugin`, registered on `init`).
-- **`uses_context`:** `['postId']`. Required because `core/paragraph` does not declare `postId` in its own context.
-- **Args schema:**
-  - `key` (required) — one of `'distance'`, `'min_elevation'`, `'max_elevation'`, `'ascent'`, `'descent'`. Other values resolve to an empty string + `Plugin::warning()`.
-  - `mapId` (optional) — defaults to `'auto'`. Forwarded to `Resolve_Map_Id::resolve()` along with the host post ID.
+- **Tag:** `kntnt-gpx`.
+- **Class:** `Bindings\Statistics_Shortcode` (held as a private property on `Plugin`, registered on `init` via `add_shortcode( 'kntnt-gpx', [ $this, 'render' ] )`).
+- **Syntax:**
+  - `[kntnt-gpx <key>]` — auto-resolves to the single GPX Map on the page.
+  - `[kntnt-gpx <key> map="<map_id>"]` — resolves to the named map; `map=""` coerces to `"auto"`.
+- **Key allow-list:** the first positional attribute is one of `'distance'`, `'min-elevation'`, `'max-elevation'`, `'ascent'`, `'descent'`. The hyphenated form is the only public vocabulary — the cache shape uses underscores internally and `Statistics_Shortcode` maps between the two at the boundary. Other values resolve to an empty string + `Plugin::warning()`.
 - **Return value:** a string, locale-formatted via `Format\Value_Formatter` (the same formatter the plugin uses elsewhere). Distance gets auto-metric units (m below 1000, km above); elevations are always whole metres. Both go through the existing `kntnt_gpx_blocks_format_distance` and `kntnt_gpx_blocks_format_elevation` filters.
-- **Error contract:** every error path (no map, multiple maps with `'auto'`, mapId not found, cache parse error, missing file, unknown key, missing postId) returns the empty string. The misconfiguration is logged once per render via `Plugin::error()` (resolve/cache errors) or `Plugin::warning()` (unknown key) — bindings cannot return HTML, so the editor's only signal is the visible empty values in the editor preview.
-- **Per-request memoization:** an instance-level array keyed by `"$post_id|$map_id"` collapses the five binding-key calls per inserted variation into one map resolve + one cache fetch + one log line. The memo lives for the request only; cleared by PHP shutdown.
+- **Host post resolution:** the shortcode reads the host post via `get_the_ID()` — the same anchor every other template-tag-flavoured WordPress function uses. Outside the loop (`get_the_ID()` returns `false`), the shortcode renders empty.
+- **Error contract:** every error path (no map, multiple maps with `'auto'`, mapId not found, cache parse error, missing file, unknown key, missing post context) renders empty. The misconfiguration is logged once per render via `Plugin::error()` (resolve/cache errors) or `Plugin::warning()` (unknown key) — the shortcode contract is plain text, so the editor's only signal is the visible empty value once the page is previewed.
+- **Per-request memoization:** an instance-level array keyed by `"$post_id|$map_id"` collapses the five inline shortcodes per inserted variation into one map resolve + one cache fetch + one log line. The memo lives for the request only; cleared by PHP shutdown.
 
 ### Render output
 
-The inserted markup is plain `core/group` + `core/paragraph`. The post_content persists as standard core blocks; only the `metadata.bindings` slot on each value paragraph references the plugin. There is no plugin-specific HTML wrapper, no plugin-specific CSS class, and no plugin-specific JS at render time.
+The inserted markup is plain `core/group` + `core/paragraph` with `[kntnt-gpx <key>]` tokens inline. The post_content persists as standard core blocks. There is no plugin-specific HTML wrapper, no plugin-specific CSS class, and no plugin-specific JS at render time — `do_shortcode()` runs against `the_content`, the shortcode handler returns the formatted string, and the paragraph renders normally.
 
-When the track has no elevation data, the four elevation rows render with empty values (the binding callback returns `''` for null statistics). The static label paragraphs still render — the user can delete unwanted rows from the inserted variation if they want to hide them entirely.
+When the track has no elevation data, the four elevation rows render with empty values (the shortcode returns `''` for null statistics). The static label still renders — the user can delete unwanted rows from the inserted variation if they want to hide them entirely.
 
 ### Errors (visitor side)
 
-Bound paragraph values render as empty strings on every error path. Visitors see the static label "Lowest elevation:" with a blank value beside it. There is no editor-only `.kntnt-gpx-blocks-error` notice — the bindings API does not allow returning HTML for that purpose. The error is logged once per render via the plugin's logging API for editors who check `error_log`.
+Inline `[kntnt-gpx]` tokens render as empty strings on every error path. Visitors see the static label "Lowest elevation:" with a blank value beside it. There is no editor-only `.kntnt-gpx-blocks-error` notice — a shortcode handler cannot inject HTML notices into the surrounding paragraph content without breaking the inline reading order. The error is logged once per render via the plugin's logging API for editors who check `error_log`.
 
-### Editor preview
+### Editor experience
 
-The editor needs richer feedback than the front-end render provides. Without intervention, every bound paragraph in the editor falls back to the source's `label` ("GPX statistics") because the bindings system shows the label whenever the resolved value is an empty string — and `Statistics_Source::get_value()` deliberately returns `''` from any error path, so the editor would show that label uniformly across all five rows even after a Map block is configured.
+The editor shows the literal shortcode token (`[kntnt-gpx distance]`) inside each paragraph — the same way it shows `[gallery]`, `[caption]`, or any other shortcode token inside paragraph content. No editor preview HOC, no editor-only REST endpoint, and no shadow rendering chain are involved. To verify the resolved values, the editor previews the post via the standard Preview button — `do_shortcode()` runs in that path and the values appear in place.
 
-Two editor-only assets fix this:
-
-- A REST endpoint, `GET /wp-json/kntnt-gpx-blocks/v1/statistics-preview?postId={int}&mapId={string}`, served by `Rest\Statistics_Preview_Controller` (capability-gated to `edit_posts`). It runs the same `Resolve_Map_Id` + `Attachment_Cache` + `Value_Formatter` chain as the bindings source and returns `{ attachmentId, mapId, values: { distance, min_elevation, max_elevation, ascent, descent } }`. Each value is the formatted string the front end would render, or `null` for statistics the track does not carry (e.g. a no-elevation GPX). On any error, the response is a `WP_Error` whose code matches the documented vocabulary (`no-map`, `multiple-maps`, `map-not-found`, `parse-failed`, `file-missing`, `too-large`, `wrong-mime`, `no-track`, `too-few-points`).
-
-- An editor-only script, `js/statistics-preview.js`, registers an `editor.BlockEdit` HOC (via `wp.hooks.addFilter`) that wraps `core/paragraph`'s edit component for paragraphs whose `metadata.bindings.content.source` equals `kntnt-gpx-blocks/statistics`. The HOC reads the host post id from `core/editor`, derives a stable fingerprint of all GPX Map blocks in the live block tree (`useSelect( select => select( 'core/block-editor' ).getBlocks() )`), and fetches the resolved values via `wp.apiFetch`. Concurrent fetches for the same `(postId, mapId)` pair coalesce on a module-level promise cache; the fingerprint busts the cache whenever a Map block is added, removed, or its `attachmentId` / `mapId` attribute changes. The HOC then hands the wrapped `BlockEdit` a shallow-cloned attributes object whose `content` field carries an inline `<span class="kntnt-gpx-blocks-statistics-preview …">` with the formatted value (or fallback hint, or em-dash for null statistics). The override never reaches `setAttributes`, so the saved post content stays as the empty string the bindings system writes. The matching stylesheet, `css/statistics-preview.css`, colours the span with `var(--wp-block-synced-color, #7a00df)` — the same purple Gutenberg uses for the connected/bound attribute indicator chip — making the visual contract self-evident: purple text in the editor is a dynamic source-resolved value, not authored content. Italic styling is reserved for the fallback hints (`"GPX Map not found"`, `"Add a GPX Map to see values"`, etc.) so resolved values and error states are visually distinct.
-
-The script and stylesheet are enqueued in the block editor by `Bootstrap\Variation_Registrar` alongside `js/statistics-variation.js`. Both are plain ES2022 / plain CSS — no `@wordpress/scripts` build step. The front-end render path is unaffected: visitors continue to see the values produced by `Statistics_Source::get_value()` with no plugin-specific markup or styling.
+Editors who want to retarget a single row to a different Map block edit the inline `map="…"` attribute directly in the paragraph content (e.g. change `[kntnt-gpx distance]` to `[kntnt-gpx distance map="map-xyz"]`); the shortcode is a plain inline token, so there is no separate "bindings args" surface to dive into. The shortcode is equally usable outside the variation — drop `[kntnt-gpx ascent]` into any paragraph, heading, list item, or widget on the same page and it resolves to the corresponding statistic.

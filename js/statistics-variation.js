@@ -4,9 +4,11 @@
  * Registers a `kntnt-gpx-blocks-statistics` variation of `core/group` so the
  * statistics layout appears as a discoverable item under the `kntnt` block
  * category — same place visitors find GPX Map and GPX Elevation. Inserting
- * the variation materialises a 2x3 grid of label/value paragraph pairs whose
- * value paragraphs are bound to the `kntnt-gpx-blocks/statistics` Block
- * Bindings source.
+ * the variation materialises a two-column grid of label/value paragraph rows;
+ * each paragraph's `content` contains a `[kntnt-gpx <key>]` shortcode that
+ * resolves at render time through `Bindings\Statistics_Shortcode`. The same
+ * shortcode is equally usable outside the variation — in any paragraph,
+ * heading, list item, classic block, or widget on the page.
  *
  * `scope: ['inserter']` keeps the variation out of the Group block's
  * placeholder picker — it appears only as a standalone inserter entry, so
@@ -69,58 +71,39 @@
 	/**
 	 * Builds the markup for one label-and-value row.
 	 *
-	 * The English `name` strings (the row's English label and the literal
-	 * `'Label'` / `'Value'` strings on the inner paragraphs) populate
-	 * `metadata.name` so the editor's List View / Document Outline shows
-	 * meaningful names instead of the generic *Group* / *Paragraph* labels.
-	 * They are deliberately NOT translated through the plugin's text domain:
-	 * `metadata.name` is editor-side metadata, and the Gutenberg convention —
-	 * which Core itself follows — is to leave it as a fixed English string.
-	 * The visitor-facing label content (the `<strong>…</strong>` paragraph)
-	 * remains translated via the separate `translatedLabel` argument.
+	 * Each row is a single `core/paragraph` whose `content` carries both the
+	 * translated label (in `<strong>…</strong>`) and the inline shortcode
+	 * `[kntnt-gpx <key>]`. The shortcode is processed by `do_shortcode()` at
+	 * render time, so visitors see "Total length: 5.5 km" and editors see the
+	 * same after the shortcode runs through the editor preview's content
+	 * filter chain.
+	 *
+	 * The English `name` string populates `metadata.name` so the editor's
+	 * List View / Document Outline shows a meaningful name instead of the
+	 * generic *Paragraph* label. It is deliberately NOT translated through
+	 * the plugin's text domain: `metadata.name` is editor-side metadata, and
+	 * the Gutenberg convention — which Core itself follows — is to leave it
+	 * as a fixed English string. The visitor-facing label remains translated.
 	 *
 	 * @param {string}  englishName     Fixed English row name for `metadata.name`.
 	 * @param {string}  translatedLabel Translated label text (without trailing colon).
-	 * @param {string}  bindingKey      Statistics key passed to the bindings source.
+	 * @param {string}  shortcodeKey    Hyphenated key passed to `[kntnt-gpx …]`.
 	 * @param {boolean} columnSpan      When true, the row spans both columns of the grid.
 	 * @return {Array} A nested innerBlocks tuple suitable for variation.innerBlocks.
 	 */
-	function row( englishName, translatedLabel, bindingKey, columnSpan ) {
+	function row( englishName, translatedLabel, shortcodeKey, columnSpan ) {
 
-		const groupAttrs = {
+		const paragraphAttrs = {
+			content:
+				'<strong>' + translatedLabel + ':</strong> [kntnt-gpx ' + shortcodeKey + ']',
 			metadata: { name: englishName },
-			style: {
-				spacing: { blockGap: '0.5em' },
-			},
-			layout: { type: 'flex', flexWrap: 'nowrap' },
 		};
 
 		if ( columnSpan ) {
-			groupAttrs.style.layout = { columnSpan: 2 };
+			paragraphAttrs.style = { layout: { columnSpan: 2 } };
 		}
 
-		return [
-			'core/group',
-			groupAttrs,
-			[
-				[ 'core/paragraph', {
-					content: '<strong>' + translatedLabel + ':</strong>',
-					metadata: { name: 'Label' },
-				} ],
-				[ 'core/paragraph', {
-					content: '',
-					metadata: {
-						name: 'Value',
-						bindings: {
-							content: {
-								source: 'kntnt-gpx-blocks/statistics',
-								args: { key: bindingKey },
-							},
-						},
-					},
-				} ],
-			],
-		];
+		return [ 'core/paragraph', paragraphAttrs ];
 
 	}
 
@@ -144,8 +127,8 @@
 		},
 		innerBlocks: [
 			row( 'Total length',      __( 'Total length',     'kntnt-gpx-blocks' ), 'distance',      true  ),
-			row( 'Lowest elevation',  __( 'Lowest elevation', 'kntnt-gpx-blocks' ), 'min_elevation', false ),
-			row( 'Highest elevation', __( 'Highest elevation','kntnt-gpx-blocks' ), 'max_elevation', false ),
+			row( 'Lowest elevation',  __( 'Lowest elevation', 'kntnt-gpx-blocks' ), 'min-elevation', false ),
+			row( 'Highest elevation', __( 'Highest elevation','kntnt-gpx-blocks' ), 'max-elevation', false ),
 			row( 'Total ascent',      __( 'Total ascent',     'kntnt-gpx-blocks' ), 'ascent',        false ),
 			row( 'Total descent',     __( 'Total descent',    'kntnt-gpx-blocks' ), 'descent',       false ),
 		],

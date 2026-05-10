@@ -907,7 +907,7 @@ in this document to the concrete values that apply to the
 | Block JS source root | `src/blocks/<slug>/` |
 | Block build output root | `build/blocks/<slug>/` |
 | Block names | `kntnt-gpx-blocks/map`, `kntnt-gpx-blocks/elevation` |
-| Block Bindings source name | `kntnt-gpx-blocks/statistics` |
+| Shortcode tag | `kntnt-gpx` (registered by `Bindings\Statistics_Shortcode`) |
 | Block variation name | `kntnt-gpx-blocks-statistics` (variation of `core/group`) |
 
 ### Versions and platform targets
@@ -915,7 +915,7 @@ in this document to the concrete values that apply to the
 | Dimension | Value |
 |---|---|
 | PHP minimum (runtime + plugin header) | 8.4 |
-| WordPress minimum | 6.7 (Block Bindings `uses_context` argument) |
+| WordPress minimum | 6.7 |
 | WordPress tested up to | matches latest stable at release |
 | Block API version | 3 |
 | TypeScript target | ES2022 |

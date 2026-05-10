@@ -6,8 +6,8 @@ This document specifies what is tested, with what tooling, and what is deliberat
 
 | Layer | Tooling | Where | What it covers |
 |---|---|---|---|
-| PHP unit | Pest + Brain Monkey + Mockery | `tests/Unit/` | Conversion (parser, GeoJSON converter, statistics calculator), cache (read/write/version/hash), rendering algorithms (Douglas-Peucker, LTTB, climb hysteresis), value formatters, the `Resolve_Map_Id` algorithm, the `Statistics_Source` bindings dispatch, the `Variation_Registrar` script enqueue |
-| PHP integration | WordPress Playground + Pest | `tests/Integration/` | The plugin actually loads in WordPress, the two blocks register, the bindings source and the pattern register, an end-to-end "upload GPX → block renders / pattern values resolve" flow works |
+| PHP unit | Pest + Brain Monkey + Mockery | `tests/Unit/` | Conversion (parser, GeoJSON converter, statistics calculator), cache (read/write/version/hash), rendering algorithms (Douglas-Peucker, LTTB, climb hysteresis), value formatters, the `Resolve_Map_Id` algorithm, the `Statistics_Shortcode` dispatch, the `Variation_Registrar` script enqueue |
+| PHP integration | WordPress Playground + Pest | `tests/Integration/` | The plugin actually loads in WordPress, the two blocks register, the shortcode and the variation register, an end-to-end "upload GPX → block renders / shortcode values resolve" flow works |
 | Block JS unit | Jest via `wp-scripts test-unit-js` | `src/blocks/<slug>/*.test.ts(x)` (co-located) | Pure geometry helpers behind the cursor sync; Edit-component coverage is the next target |
 | Block end-to-end | Playwright + `@wordpress/e2e-test-utils-playwright` | `tests/e2e/` | The block can be inserted in the editor, the editor preview matches the frontend, cursor sync between Map and Elevation works |
 
@@ -70,18 +70,21 @@ The XXE tests use a fixture that includes an external entity reference. The expe
 - Distance ≥1000 m formats as kilometres (one decimal).
 - Locale switching changes thousands separator and decimal mark via `number_format_i18n`.
 
-### `Bindings\Statistics_Source`
+### `Bindings\Statistics_Shortcode`
 
-- Each of the five binding keys (`distance`, `min_elevation`, `max_elevation`, `ascent`, `descent`) returns a correctly formatted value for the resolved track.
+- Each of the five hyphenated keys (`distance`, `min-elevation`, `max-elevation`, `ascent`, `descent`) returns a correctly formatted value for the resolved track.
 - Returns the empty string when the track has no elevation data (the four elevation keys) but distance still formats correctly.
-- Auto-resolves to the single Map on the page when `mapId` is absent or `'auto'`; honours an explicit `mapId` arg.
-- Returns the empty string for every error path: no map, multiple maps with `'auto'`, mapId not found, cache parse error, unknown key, missing `postId` context.
-- The per-request memo collapses five binding-key calls into one `parse_blocks()` call and one `Attachment_Cache::get()` call (verified via `Functions\expect( 'parse_blocks' )->once()`).
+- Auto-resolves to the single Map on the page when `map` is absent or `'auto'`; honours an explicit `map="…"` attribute.
+- `map=""` coerces to `"auto"` rather than being treated as an unknown map id.
+- Returns the empty string for every error path: no map, multiple maps with `'auto'`, mapId not found, cache parse error, unknown key, missing post context.
+- Rejects underscored cache-shape keys (e.g. `min_elevation`) — the public surface is hyphenated only.
+- WordPress's "no attributes" calling convention (`$atts === ''`) renders empty without raising a PHP warning.
+- The per-request memo collapses five inline shortcodes into one `parse_blocks()` call and one `Attachment_Cache::get()` call (verified via `Functions\expect( 'parse_blocks' )->once()`).
 - Separate `(postId, mapId)` pairs are memoized independently — different posts on the same request do not collide.
 
 ### `Bootstrap\Variation_Registrar`
 
-- Enqueues the variation script with the `kntnt-gpx-blocks-statistics-variation` handle and dependencies on `wp-blocks` and `wp-i18n`.
+- Enqueues the variation script with the `kntnt-gpx-blocks-statistics-variation` handle and dependencies on `wp-blocks`, `wp-element`, and `wp-i18n`.
 - Calls `wp_set_script_translations()` for the same handle so the script's `__()` calls pick up entries from the `kntnt-gpx-blocks` text domain.
 - The enqueued URL points at `js/statistics-variation.js`.
 - Logs a warning and skips enqueue when the script file is missing.

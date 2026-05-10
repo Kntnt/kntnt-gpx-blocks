@@ -116,28 +116,17 @@ final class Plugin {
 	private ?Rest\Preview_Controller $preview_controller = null;
 
 	/**
-	 * The Statistics_Preview_Controller instance bound to rest_api_init.
-	 *
-	 * Held as a property so the array callable passed to add_action() keeps a
-	 * strong reference to the object for the lifetime of the request.
-	 *
-	 * @since 1.0.0
-	 * @var Rest\Statistics_Preview_Controller|null
-	 */
-	private ?Rest\Statistics_Preview_Controller $statistics_preview_controller = null;
-
-	/**
-	 * The Statistics_Source instance bound to init.
+	 * The Statistics_Shortcode instance bound to init.
 	 *
 	 * Held as a property so the array callable passed to add_action() keeps a
 	 * strong reference to the object for the lifetime of the request — and
-	 * so the source's per-request memo of resolved (post, map) pairs survives
-	 * across the five binding-key calls per pattern instance.
+	 * so the shortcode's per-request memo of resolved (post, map) pairs
+	 * survives across the five inline shortcodes per inserted variation.
 	 *
 	 * @since 1.0.0
-	 * @var Bindings\Statistics_Source|null
+	 * @var Bindings\Statistics_Shortcode|null
 	 */
-	private ?Bindings\Statistics_Source $statistics_source = null;
+	private ?Bindings\Statistics_Shortcode $statistics_shortcode = null;
 
 	/**
 	 * The Variation_Registrar instance bound to enqueue_block_editor_assets.
@@ -412,19 +401,14 @@ final class Plugin {
 		$this->preview_controller = new Rest\Preview_Controller( $attachment_cache );
 		add_action( 'rest_api_init', [ $this->preview_controller, 'register_routes' ] );
 
-		// Register the editor-only statistics preview REST endpoint so the
-		// editor JS can replace the bindings-source label ("GPX statistics")
-		// with the real resolved values for each bound paragraph. The
-		// front-end render path uses Bindings\Statistics_Source directly.
-		$this->statistics_preview_controller = new Rest\Statistics_Preview_Controller( $attachment_cache );
-		add_action( 'rest_api_init', [ $this->statistics_preview_controller, 'register_routes' ] );
-
-		// Register the Block Bindings source that exposes the cached GPX
-		// statistics to bound paragraphs in the bundled GPX Statistics
-		// pattern. Pattern + bindings together carry distance, elevation
-		// extremes, and ascent/descent into ordinary core paragraphs.
-		$this->statistics_source = new Bindings\Statistics_Source( $attachment_cache );
-		add_action( 'init', [ $this->statistics_source, 'register' ] );
+		// Register the [kntnt-gpx <key>] shortcode that exposes the cached
+		// GPX statistics anywhere shortcodes resolve. The GPX Statistics
+		// block-variation ships five `core/paragraph`s whose `content`
+		// contains the shortcode inline; the same shortcode is equally
+		// available in any other paragraph, heading, list item, classic
+		// block, or widget on the page.
+		$this->statistics_shortcode = new Bindings\Statistics_Shortcode( $attachment_cache );
+		add_action( 'init', [ $this->statistics_shortcode, 'register' ] );
 
 		// Enqueue the editor-only script that registers the GPX Statistics
 		// block variation of core/group. The variation surfaces the layout
