@@ -1196,3 +1196,192 @@ test( 'wrapper carries the user-supplied additional CSS class', function (): voi
 	expect( $html )->toContain( 'is-style-rounded my-extra-class' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Tile-layer registry — default (no tileProvider) resolves to osm-standard
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state carries osm-standard tile provider when no attribute is saved', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 200, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 200, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 200,
+			'mapId'        => 'map-default-tile',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-default-tile'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice )->toHaveKey( 'tileProvider' );
+	expect( $slice['tileProvider']['id'] )->toBe( 'osm-standard' );
+	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
+	expect( $slice['tileProvider']['attribution'] )->toContain( 'OpenStreetMap' );
+	expect( $slice['tileProvider']['url'] )->not->toContain( '{KEY}' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tile-layer registry — explicit provider plus API key substitutes {KEY}
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state substitutes the per-block tileApiKey into {KEY}', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 201, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 201, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 201,
+			'mapId'        => 'map-thunderforest',
+			'tileProvider' => 'thunderforest-outdoors',
+			'tileApiKey'   => 'ABC123',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-thunderforest'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
+	expect( $slice['tileProvider']['url'] )->not->toContain( '{KEY}' );
+	expect( $slice['tileProvider']['url'] )->toContain( 'apikey=ABC123' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tile-layer registry — unknown provider id falls back to osm-standard
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state falls back to osm-standard for an unknown tileProvider', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 202, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 202, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 202,
+			'mapId'        => 'map-unknown-tile',
+			'tileProvider' => 'definitely-not-a-real-provider',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-unknown-tile'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['id'] )->toBe( 'osm-standard' );
+	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Tile-layer registry — selected overlays appear; unknown ids are dropped
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state carries selected tileOverlays and drops unknown ids', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 203, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 203, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 203,
+			'mapId'        => 'map-overlays',
+			'tileOverlays' => [ 'wmt-hiking', 'definitely-not-real' ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-overlays'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice )->toHaveKey( 'tileOverlays' );
+	expect( $slice['tileOverlays'] )->toHaveCount( 1 );
+	expect( $slice['tileOverlays'][0]['id'] )->toBe( 'wmt-hiking' );
+
+} );
+
+test( 'wp_interactivity_state defaults tileOverlays to an empty array', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 204, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 204, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 204,
+			'mapId'        => 'map-no-overlays',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-no-overlays'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileOverlays'] )->toBe( [] );
+
+} );

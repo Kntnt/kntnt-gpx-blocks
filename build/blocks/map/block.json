@@ -175,6 +175,21 @@
     "tooltipDescTextTransform": {
       "type": "string",
       "default": ""
+    },
+    "tileProvider": {
+      "type": "string",
+      "default": "osm-standard"
+    },
+    "tileApiKey": {
+      "type": "string",
+      "default": ""
+    },
+    "tileOverlays": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
     }
   }
 }

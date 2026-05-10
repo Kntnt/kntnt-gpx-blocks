@@ -64,6 +64,78 @@ $threshold = apply_filters( 'kntnt_gpx_blocks_climb_threshold_meters', 3.0 );
 
 Read once at conversion time, not per render. Changing the value invalidates cached statistics — you must bump `Cache_Version::CURRENT` or run `wp kntnt-gpx regenerate --all` for the change to take effect on existing attachments. The default rejects sub-3-metre wobble, which is the dominant source of GPS noise in consumer recordings. Raising over-corrects (real climbs disappear); lowering under-corrects (noise becomes ascent).
 
+## Tile providers
+
+The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileApiKey` string, and a `tileOverlays` id list as attributes; the registry validates the filtered set, substitutes `{KEY}` server-side, and writes the resolved record(s) into the per-block Interactivity state. Unknown provider ids fall back silently to `osm-standard` with a `Plugin::warning()` log; unknown overlay ids are dropped silently with the same log level.
+
+### `kntnt_gpx_blocks_tile_providers`
+
+Map of base-tile providers keyed by provider id. The default ships eight entries: `osm-standard`, `opentopomap`, `cyclosm`, `thunderforest-outdoors`, `thunderforest-landscape`, `stadia-outdoors`, `maptiler-outdoor`, and `mapbox-outdoors`.
+
+```php
+$providers = apply_filters( 'kntnt_gpx_blocks_tile_providers', $defaults );
+// array<string, array{
+//     label: string,        // Translatable display label.
+//     url: string,          // Tile URL with {z}/{x}/{y}; {KEY} iff requiresKey.
+//     attribution: string,  // HTML snippet — trusted to the filter callback.
+//     maxZoom: int,         // 0..22 inclusive.
+//     requiresKey: bool,    // Mirrors {KEY} placeholder in url.
+//     signupUrl?: string,   // Optional https:// URL where users obtain a key.
+//     subdomains?: string[], // Optional Leaflet {s} substitution list.
+// }>
+```
+
+### `kntnt_gpx_blocks_tile_overlays`
+
+Map of overlay layers keyed by overlay id. The default ships one entry: `wmt-hiking` (Waymarked Trails Hiking).
+
+```php
+$overlays = apply_filters( 'kntnt_gpx_blocks_tile_overlays', $defaults );
+// array<string, array{
+//     label: string,        // Translatable display label.
+//     url: string,          // Tile URL with {z}/{x}/{y}; no {KEY} (overlays
+//                           // carry no per-block API key in v1).
+//     attribution: string,  // HTML snippet — trusted to the filter callback.
+//     maxZoom: int,         // 0..22 inclusive.
+//     subdomains?: string[], // Optional Leaflet {s} substitution list.
+// }>
+```
+
+### Validation rules
+
+Every record is validated at filter-application time. Records that fail any rule are dropped with a `Plugin::warning()` log naming the offending id and the failing constraint:
+
+- The id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
+- `url` must start with `https://` and contain the literals `{z}`, `{x}`, `{y}`.
+- For base providers: the URL contains `{KEY}` iff `requiresKey === true`.
+- For overlays: the URL must not contain `{KEY}` (overlays carry no key in v1).
+- `maxZoom` is an integer in `[0, 22]`. Floats and numeric strings are rejected.
+- `label` and `attribution` are non-empty strings.
+- `signupUrl`, when present, is an `https://` URL.
+- `subdomains`, when present, is a non-empty list of non-empty strings.
+
+The HTML in `attribution` is trusted to the filter callback — keep it tightly scoped (anchor tags and entities) and never include script content.
+
+The canonical `osm-standard` provider is always preserved: if a filter callback drops it, the registry re-injects it with a warning so the resolver always has a fallback target.
+
+### Adding a custom provider
+
+```php
+add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $providers ): array {
+	$providers['my-vector'] = [
+		'label'       => 'My Vector Tiles',
+		'url'         => 'https://tiles.example.com/v1/{z}/{x}/{y}.png?token={KEY}',
+		'attribution' => '&copy; <a href="https://example.com/">Example</a>',
+		'maxZoom'     => 20,
+		'requiresKey' => true,
+		'signupUrl'   => 'https://example.com/signup',
+	];
+	return $providers;
+} );
+```
+
+The new provider becomes available to every editor on the site; the editor UI for picking a provider lists the validated set returned by this filter.
+
 ## Formatting
 
 ### `kntnt_gpx_blocks_format_distance`

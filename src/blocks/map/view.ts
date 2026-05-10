@@ -94,6 +94,27 @@ interface MapSettings {
 }
 
 /**
+ * Resolved tile-layer record carried in the per-map state.
+ *
+ * Mirrors the validated shape `Tile_Layer_Registry` writes server-side: the
+ * URL is fully formed (any `{KEY}` placeholder has already been substituted
+ * with the per-block API key in PHP), `attribution` is the trusted HTML
+ * snippet that Leaflet appends to its attribution control verbatim, and
+ * `maxZoom` is the integer ceiling supplied by the provider. `subdomains`
+ * is forwarded straight to Leaflet — when present, Leaflet picks one per tile
+ * URL when expanding `{s}`. The `id` field is informational only.
+ *
+ * @since 1.0.0
+ */
+interface TileLayerRecord {
+	readonly id: string;
+	readonly url: string;
+	readonly attribution: string;
+	readonly maxZoom: number;
+	readonly subdomains?: readonly string[];
+}
+
+/**
  * Shape of the per-map state slice hydrated from PHP via wp_interactivity_state.
  *
  * @since 1.0.0
@@ -112,6 +133,10 @@ interface MapState {
 	waypoints: GeoJSON.GeoJsonObject;
 	/** URL to the original .gpx attachment; null when unavailable. */
 	gpxFileUrl: string | null;
+	/** Resolved base-tile provider record; never null on the frontend. */
+	tileProvider: TileLayerRecord;
+	/** Resolved overlay records in editor-configured order. */
+	tileOverlays: readonly TileLayerRecord[];
 	settings: MapSettings;
 	fraction: number | null;
 	/**
@@ -226,22 +251,58 @@ function getCssVar(
 }
 
 /**
- * Build and add the OSM tile layer to the given map.
+ * Build and add the base-tile layer to the given map from a hydrated record.
  *
- * Extracted to keep `bootMount` readable; the tile URL and attribution are the
- * same for every instance.
+ * The record is supplied by `Tile_Layer_Registry` server-side and reaches the
+ * view module through `state[mapId].tileProvider`. The URL has already been
+ * fully resolved (any `{KEY}` placeholder substituted in PHP), so this helper
+ * forwards URL, attribution, maxZoom, and the optional subdomains list to
+ * Leaflet without further interpretation. `{s}` is expanded by Leaflet at
+ * tile-fetch time using the supplied subdomains.
  *
  * @since 1.0.0
  *
- * @param map - Leaflet map instance to add the layer to.
+ * @param map      - Leaflet map instance to add the layer to.
+ * @param provider - Resolved base-tile provider record.
  * @return The added tile layer.
  */
-function addTileLayer( map: L.Map ): L.TileLayer {
-	return L.tileLayer( 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-		maxZoom: 19,
-		attribution:
-			'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-	} ).addTo( map );
+function addTileLayer( map: L.Map, provider: TileLayerRecord ): L.TileLayer {
+	const options: L.TileLayerOptions = {
+		maxZoom: provider.maxZoom,
+		attribution: provider.attribution,
+	};
+	if ( provider.subdomains && provider.subdomains.length > 0 ) {
+		options.subdomains = [ ...provider.subdomains ];
+	}
+	return L.tileLayer( provider.url, options ).addTo( map );
+}
+
+/**
+ * Add the configured overlay tile layers on top of the base layer.
+ *
+ * Each overlay carries the same URL/attribution/maxZoom/subdomains contract
+ * as the base provider. Overlays are added in the order they appear in the
+ * input array so the editor's stacking order is preserved.
+ *
+ * @since 1.0.0
+ *
+ * @param map      - Leaflet map instance to add the overlays to.
+ * @param overlays - Resolved overlay records in stacking order.
+ */
+function addOverlayLayers(
+	map: L.Map,
+	overlays: readonly TileLayerRecord[]
+): void {
+	for ( const overlay of overlays ) {
+		const options: L.TileLayerOptions = {
+			maxZoom: overlay.maxZoom,
+			attribution: overlay.attribution,
+		};
+		if ( overlay.subdomains && overlay.subdomains.length > 0 ) {
+			options.subdomains = [ ...overlay.subdomains ];
+		}
+		L.tileLayer( overlay.url, options ).addTo( map );
+	}
 }
 
 /**
@@ -607,9 +668,11 @@ function bootMount(
 				boxZoom: false,
 			} );
 
-			// Add the OSM tile layer — only reached when the consent contract
-			// permits proceeding (or in editor bypass).
-			addTileLayer( map );
+			// Add the base-tile layer from the hydrated provider record, then
+			// stack the configured overlays on top. Reached only when the
+			// consent contract permits proceeding (or in editor bypass).
+			addTileLayer( map, mapState.tileProvider );
+			addOverlayLayers( map, mapState.tileOverlays );
 
 			// Read the track colour CSS variables once at mount time.
 			// Leaflet canvas-rendered shapes receive their colour through JS

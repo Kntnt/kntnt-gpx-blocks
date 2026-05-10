@@ -140,6 +140,27 @@ final class Render_Map {
 		$tooltip_desc_text_decoration = self::sanitize_text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
 		$tooltip_desc_text_transform  = self::sanitize_text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
 
+		// Read the saved tile-provider id and per-block API key. The id is
+		// resolved against the validated registry below; an unknown id falls
+		// back silently to OpenStreetMap with a warning. The key is forwarded
+		// verbatim — it is substituted into the URL by the registry, never
+		// emitted in the rendered HTML.
+		$tile_provider_id = isset( $attributes['tileProvider'] ) && is_string( $attributes['tileProvider'] ) && '' !== $attributes['tileProvider']
+			? $attributes['tileProvider']
+			: Tile_Layer_Registry::FALLBACK_PROVIDER_ID;
+		$tile_api_key     = isset( $attributes['tileApiKey'] ) && is_string( $attributes['tileApiKey'] ) ? $attributes['tileApiKey'] : '';
+
+		// Read the saved overlay-id list. Each entry is validated and resolved
+		// against the overlay registry; unknown ids are dropped with a warning.
+		$tile_overlay_ids = [];
+		if ( isset( $attributes['tileOverlays'] ) && is_array( $attributes['tileOverlays'] ) ) {
+			foreach ( $attributes['tileOverlays'] as $overlay_id ) {
+				if ( is_string( $overlay_id ) && '' !== $overlay_id ) {
+					$tile_overlay_ids[] = $overlay_id;
+				}
+			}
+		}
+
 		// No attachment configured yet — the editor shows MediaPlaceholder instead.
 		if ( $attachment_id <= 0 ) {
 			return '';
@@ -200,6 +221,18 @@ final class Render_Map {
 		// editor preview is being rendered, irrespective of consent state.
 		$bypass_consent = defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'edit_posts' );
 
+		// Resolve the tile-layer records for the per-block Interactivity state.
+		// The registry validates the filtered defaults, substitutes the
+		// per-block API key into `{KEY}`, and falls back silently to
+		// `osm-standard` on unknown provider ids (with a warning log). Overlay
+		// records mirror the provider shape minus the API-key handling. The
+		// view module reads url/attribution/maxZoom/subdomains from these
+		// records to build its tile layer; the {KEY}-substituted URL is the
+		// only place the API key reaches the browser.
+		$tile_registry = new Tile_Layer_Registry();
+		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_api_key );
+		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_ids );
+
 		// Register the per-map state slice with the Interactivity API. The plugin
 		// performs no consent-requiring action server-side; the JS view module
 		// gates tile loading client-side via window.kntnt_gpx_blocks (see
@@ -213,6 +246,8 @@ final class Render_Map {
 				'totalDistance' => $total_distance,
 				'waypoints'     => $waypoints,
 				'gpxFileUrl'    => $gpx_file_url,
+				'tileProvider'  => $tile_provider,
+				'tileOverlays'  => $tile_overlays,
 				'settings'      => [
 					'showZoomButtons'       => $show_zoom_buttons,
 					'showScale'             => $show_scale,
