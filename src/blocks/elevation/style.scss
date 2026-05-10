@@ -27,12 +27,12 @@
 	// These are the fallback values used when the editor leaves a field empty.
 	// All seven properties must be declared here so var() always resolves even
 	// when the server-side renderer emits no inline style for that property.
-	--kntnt-gpx-blocks-background-color: transparent;
+	--kntnt-gpx-blocks-background-color: #00000005;
 	--kntnt-gpx-blocks-axis-color: #1e1e1e;
 	--kntnt-gpx-blocks-axis-label-color: #1e1e1e;
 	--kntnt-gpx-blocks-line-color: #0073aa;
 	--kntnt-gpx-blocks-cursor-color: #d63638;
-	--kntnt-gpx-blocks-tooltip-background: #1e1e1e;
+	--kntnt-gpx-blocks-tooltip-background: #000000cc;
 	--kntnt-gpx-blocks-tooltip-color: #fff;
 
 	// ─── Typography defaults ──────────────────────────────────────────────
