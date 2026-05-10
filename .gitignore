@@ -21,8 +21,10 @@ coverage/
 *.swp
 *~
 
-# Local AI-agent config (Claude Code etc.) — per-developer, not project content
-.claude/
+# Local AI-agent config (Claude Code etc.) — per-developer, not project content.
+# Skills under .claude/skills/ encode project-specific procedure and ARE committed.
+.claude/*
+!.claude/skills/
 
 # Local config
 .env
