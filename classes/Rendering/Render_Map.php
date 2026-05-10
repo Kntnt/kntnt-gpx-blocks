@@ -97,10 +97,9 @@ final class Render_Map {
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
 
 		// Read and sanitize the two track colour attributes through the shared
-		// Color_Sanitizer (alpha-aware hex 3/4/6/8 plus strict `var(--ident)`
-		// references). PanelColorSettings on these controls runs with
-		// `enableAlpha`, so a non-opaque hex8 round-trips into the rendered
-		// CSS custom property.
+		// Color_Sanitizer (alpha-aware hex 3/4/6/8). PanelColorSettings on
+		// these controls runs with `enableAlpha`, so a non-opaque hex8
+		// round-trips into the rendered CSS custom property.
 		$track_color        = Color_Sanitizer::sanitize( $attributes['trackColor'] ?? '' );
 		$track_cursor_color = Color_Sanitizer::sanitize( $attributes['trackCursorColor'] ?? '' );
 
