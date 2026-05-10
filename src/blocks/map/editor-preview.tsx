@@ -53,6 +53,25 @@ interface ApiError {
 }
 
 /**
+ * Resolved overlay record forwarded from `edit.tsx` to the preview.
+ *
+ * Mirrors the runtime tile-layer record shape used on the frontend
+ * (`view.ts`'s `TileLayerRecord`) but typed independently here so the
+ * editor preview does not pull a frontend type. `id` is informational;
+ * the URL/attribution/maxZoom/subdomains are forwarded directly to
+ * `L.tileLayer()`.
+ *
+ * @since 1.0.0
+ */
+export interface EditorOverlayRecord {
+	readonly id: string;
+	readonly url: string;
+	readonly attribution: string;
+	readonly maxZoom: number;
+	subdomains?: string[];
+}
+
+/**
  * Attributes the preview reads. A subset of the Map block's attribute set —
  * only the ones that affect preview appearance.
  *
@@ -65,6 +84,10 @@ interface ApiError {
  * tooltip-show toggles drive the floating waypoint-info preview; the rest
  * of the tooltip styling reaches the preview through CSS custom properties
  * the parent wrapper carries (see `edit.tsx`'s `useBlockProps` style).
+ * `overlays` carries the resolved overlay records from
+ * `window.kntntGpxBlocks` (resolved upstream in `edit.tsx` so the preview
+ * does not redo the lookup) and is mounted on top of the hardcoded base
+ * tile layer.
  *
  * @since 1.0.0
  */
@@ -74,6 +97,7 @@ interface PreviewAttributes {
 	waypointColor: string;
 	tooltipShowName: boolean;
 	tooltipShowDesc: boolean;
+	overlays: readonly EditorOverlayRecord[];
 }
 
 /**
@@ -142,6 +166,7 @@ export const MapEditorPreview = ( {
 	const containerRef = useRef< HTMLDivElement >( null );
 	const mapRef = useRef< L.Map | null >( null );
 	const layerRef = useRef< L.GeoJSON | null >( null );
+	const overlayLayersRef = useRef< L.TileLayer[] >( [] );
 	const [ payload, setPayload ] = useState< PreviewPayload | null >( null );
 	const [ error, setError ] = useState< ApiError | null >( null );
 	const [ loading, setLoading ] = useState< boolean >( true );
@@ -152,6 +177,7 @@ export const MapEditorPreview = ( {
 		waypointColor,
 		tooltipShowName,
 		tooltipShowDesc,
+		overlays,
 	} = attributes;
 
 	// Fetch the preview payload whenever the attachment changes. Cancellation
@@ -208,6 +234,7 @@ export const MapEditorPreview = ( {
 			mapRef.current.remove();
 			mapRef.current = null;
 			layerRef.current = null;
+			overlayLayersRef.current = [];
 		}
 
 		// Build a non-interactive Leaflet preview. The editor map is for
@@ -235,6 +262,13 @@ export const MapEditorPreview = ( {
 			maxZoom: 19,
 			attribution: TILE_ATTRIBUTION,
 		} ).addTo( map );
+
+		// Overlay tile layers are seeded by the dedicated sync effect below,
+		// which fires after this mount effect on every render and is the
+		// single source of truth for what overlays exist on the map. Keeping
+		// the seeding in one place avoids the wipe-and-readd burst that would
+		// otherwise happen on first mount.
+		overlayLayersRef.current = [];
 
 		// Render the polyline + waypoints from the cached GeoJSON.
 		const layer = L.geoJSON( payload.geojson, {
@@ -270,6 +304,7 @@ export const MapEditorPreview = ( {
 			map.remove();
 			mapRef.current = null;
 			layerRef.current = null;
+			overlayLayersRef.current = [];
 		};
 		// payload + colours intentionally drive a fresh remount; React's hook
 		// lint rule wants every dep listed but trackColor/waypointColor are
@@ -291,6 +326,43 @@ export const MapEditorPreview = ( {
 			color: trackColor || DEFAULT_TRACK_COLOR,
 		} );
 	}, [ trackColor ] );
+
+	// Synchronise the overlay tile layers with the current `overlays` prop
+	// without rebuilding the whole map. The mount effect above seeds
+	// `overlayLayersRef` with whatever was selected at mount time; this
+	// effect handles every subsequent toggle change. The simplest correct
+	// strategy is to wipe and re-add — Leaflet adds tile layers cheaply, the
+	// overlay count is small, and rebuilding preserves the desired stacking
+	// order without per-id reconciliation. Note: a fresh remount triggered
+	// by the payload effect above will also fire this effect (the array
+	// identity changes on every parent render because resolveOverlaysForPreview
+	// returns a new array), but the wipe-and-readd is idempotent against the
+	// just-seeded state.
+	useEffect( () => {
+		const map = mapRef.current;
+		if ( ! map ) {
+			return;
+		}
+
+		for ( const layer of overlayLayersRef.current ) {
+			map.removeLayer( layer );
+		}
+
+		const next: L.TileLayer[] = [];
+		for ( const overlay of overlays ) {
+			const overlayOptions: L.TileLayerOptions = {
+				maxZoom: overlay.maxZoom,
+				attribution: overlay.attribution,
+			};
+			if ( overlay.subdomains && overlay.subdomains.length > 0 ) {
+				overlayOptions.subdomains = [ ...overlay.subdomains ];
+			}
+			next.push(
+				L.tileLayer( overlay.url, overlayOptions ).addTo( map )
+			);
+		}
+		overlayLayersRef.current = next;
+	}, [ overlays ] );
 
 	// Keep Leaflet's internal size in sync with the wrapper's actual size.
 	// Toggling alignwide/alignfull (and any other layout change that resizes

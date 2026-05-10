@@ -608,6 +608,39 @@ test( 'resolve_overlays drops non-string entries', function (): void {
 
 } );
 
+test( 'overlay filter surfaces a custom overlay alongside the default wmt-hiking', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'wmt-hiking'  => tlr_overlay_record( [
+				'label' => 'Waymarked Trails — Hiking',
+				'url'   => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
+			] ),
+			'custom-grid' => tlr_overlay_record( [
+				'label' => 'Custom Grid',
+				'url'   => 'https://grid.example.com/{z}/{x}/{y}.png',
+			] ),
+		]
+	);
+
+	$registry = new Tile_Layer_Registry();
+
+	$overlays = $registry->get_overlays();
+	expect( $overlays )->toHaveKey( 'wmt-hiking' );
+	expect( $overlays )->toHaveKey( 'custom-grid' );
+	expect( count( $overlays ) )->toBe( 2 );
+
+	// Resolution preserves the editor-configured order, so requesting
+	// custom-grid first and wmt-hiking second yields exactly that order.
+	$resolved = $registry->resolve_overlays( [ 'custom-grid', 'wmt-hiking' ] );
+	expect( $resolved )->toHaveCount( 2 );
+	expect( $resolved[0]['id'] )->toBe( 'custom-grid' );
+	expect( $resolved[0]['url'] )->toBe( 'https://grid.example.com/{z}/{x}/{y}.png' );
+	expect( $resolved[1]['id'] )->toBe( 'wmt-hiking' );
+
+} );
+
 // ---------------------------------------------------------------------------
 // Caching — filter is applied at most once per registry instance
 // ---------------------------------------------------------------------------

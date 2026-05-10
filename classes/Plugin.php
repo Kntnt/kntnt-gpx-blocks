@@ -151,6 +151,17 @@ final class Plugin {
 	private ?Bootstrap\Variation_Registrar $variation_registrar = null;
 
 	/**
+	 * The Editor_Data_Enqueuer instance bound to enqueue_block_editor_assets.
+	 *
+	 * Held as a property so the array callable passed to add_action() keeps a
+	 * strong reference to the object for the lifetime of the request.
+	 *
+	 * @since 1.0.0
+	 * @var Bootstrap\Editor_Data_Enqueuer|null
+	 */
+	private ?Bootstrap\Editor_Data_Enqueuer $editor_data_enqueuer = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -408,6 +419,14 @@ final class Plugin {
 		// same bindings on the inner paragraphs as a manual insertion.
 		$this->variation_registrar = new Bootstrap\Variation_Registrar();
 		add_action( 'enqueue_block_editor_assets', [ $this->variation_registrar, 'enqueue' ] );
+
+		// Inline `window.kntntGpxBlocks` with the validated tile-provider and
+		// overlay registries on every editor request so the GPX Map block's
+		// Inspector controls can enumerate them. Both the per-block tile
+		// dropdown (issue #79) and the overlay toggles (issue #80) read from
+		// this single global.
+		$this->editor_data_enqueuer = new Bootstrap\Editor_Data_Enqueuer();
+		add_action( 'enqueue_block_editor_assets', [ $this->editor_data_enqueuer, 'enqueue' ] );
 
 	}
 

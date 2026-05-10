@@ -1385,3 +1385,193 @@ test( 'wp_interactivity_state defaults tileOverlays to an empty array', function
 	expect( $slice['tileOverlays'] )->toBe( [] );
 
 } );
+
+test( 'wp_interactivity_state carries multiple selected overlays in editor-configured order', function (): void {
+
+	// Filter the registry to publish two overlays so we can verify ordering
+	// against the saved attribute array, not against the registry's internal
+	// key order.
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $name, mixed $value ): mixed {
+			if ( $name === 'kntnt_gpx_blocks_tile_overlays' ) {
+				return [
+					'wmt-hiking' => [
+						'label'       => 'Waymarked Trails — Hiking',
+						'url'         => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
+						'attribution' => '&copy; Waymarked',
+						'maxZoom'     => 18,
+					],
+					'custom-grid' => [
+						'label'       => 'Custom Grid',
+						'url'         => 'https://grid.example.com/{z}/{x}/{y}.png',
+						'attribution' => '&copy; Example',
+						'maxZoom'     => 19,
+					],
+				];
+			}
+			return $value;
+		}
+	);
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 205, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 205, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 205,
+			'mapId'        => 'map-multi-overlays',
+			'tileOverlays' => [ 'custom-grid', 'wmt-hiking' ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-multi-overlays'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileOverlays'] )->toHaveCount( 2 );
+	expect( $slice['tileOverlays'][0]['id'] )->toBe( 'custom-grid' );
+	expect( $slice['tileOverlays'][1]['id'] )->toBe( 'wmt-hiking' );
+
+} );
+
+test( 'overlay records in state carry url, attribution, and maxZoom', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 206, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 206, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 206,
+			'mapId'        => 'map-overlay-record-shape',
+			'tileOverlays' => [ 'wmt-hiking' ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$record = $captured_state['map-overlay-record-shape']['tileOverlays'][0] ?? null;
+
+	expect( $record )->not->toBeNull();
+	expect( $record )->toHaveKey( 'id' );
+	expect( $record )->toHaveKey( 'url' );
+	expect( $record )->toHaveKey( 'attribution' );
+	expect( $record )->toHaveKey( 'maxZoom' );
+
+	expect( $record['id'] )->toBe( 'wmt-hiking' );
+	expect( $record['url'] )->toContain( 'waymarkedtrails.org' );
+	expect( $record['attribution'] )->toContain( 'Waymarked' );
+	expect( $record['maxZoom'] )->toBe( 18 );
+
+	// wmt-hiking ships without subdomains, so the resolver must omit the
+	// subdomains key rather than emitting it as null.
+	expect( array_key_exists( 'subdomains', $record ) )->toBeFalse();
+
+} );
+
+test( 'overlay records in state preserve subdomains when present in the registry', function (): void {
+
+	// Inject a custom overlay that carries a subdomains list so the resolver
+	// has something to forward verbatim. The default wmt-hiking has none.
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $name, mixed $value ): mixed {
+			if ( $name === 'kntnt_gpx_blocks_tile_overlays' ) {
+				return [
+					'sd-overlay' => [
+						'label'       => 'Subdomains Overlay',
+						'url'         => 'https://{s}.overlay.example.com/{z}/{x}/{y}.png',
+						'attribution' => '&copy; Example',
+						'maxZoom'     => 20,
+						'subdomains'  => [ 'a', 'b', 'c' ],
+					],
+				];
+			}
+			return $value;
+		}
+	);
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 207, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 207, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 207,
+			'mapId'        => 'map-overlay-subdomains',
+			'tileOverlays' => [ 'sd-overlay' ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$record = $captured_state['map-overlay-subdomains']['tileOverlays'][0] ?? null;
+
+	expect( $record )->not->toBeNull();
+	expect( $record['subdomains'] )->toBe( [ 'a', 'b', 'c' ] );
+
+} );
+
+test( 'unknown overlay ids in attributes are silently dropped from state', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 208, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 208, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 208,
+			'mapId'        => 'map-overlay-unknown-only',
+			'tileOverlays' => [ 'definitely-not-real', 'also-not-real' ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-overlay-unknown-only'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileOverlays'] )->toBe( [] );
+
+} );

@@ -51,8 +51,67 @@ import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
 import { useEnsureUniqueMapId } from './use-ensure-unique-map-id';
-import { MapEditorPreview } from './editor-preview';
+import { MapEditorPreview, type EditorOverlayRecord } from './editor-preview';
 import { flattenPresets } from '../shared/flatten-presets';
+
+// ─── Editor data global (window.kntntGpxBlocks) ─────────────────────────────
+
+/**
+ * Editor-only overlay record exposed via `window.kntntGpxBlocks.overlays`.
+ *
+ * Inlined by `Bootstrap\Editor_Data_Enqueuer` on every editor request as
+ * `before` script of the GPX Map block's editor handle. The editor needs
+ * URL/attribution/maxZoom so `MapEditorPreview` can mount the overlay
+ * directly via `L.tileLayer()`. Subdomains is optional.
+ *
+ * @since 1.0.0
+ */
+interface EditorRegistryOverlay {
+	readonly label: string;
+	readonly url: string;
+	readonly attribution: string;
+	readonly maxZoom: number;
+	readonly subdomains?: readonly string[];
+}
+
+/**
+ * Editor-only provider record exposed via `window.kntntGpxBlocks.providers`.
+ *
+ * Reserved for issue #79's tile-provider dropdown; this issue (#80) uses
+ * only the `overlays` half of the global. The shape is documented here so
+ * the type-safety contract for the global is centralised in one place.
+ *
+ * @since 1.0.0
+ */
+interface EditorRegistryProvider {
+	readonly label: string;
+	readonly requiresKey: boolean;
+	readonly signupUrl?: string;
+}
+
+/**
+ * Shape of the editor data global injected by PHP.
+ *
+ * @since 1.0.0
+ */
+interface EditorRegistry {
+	readonly providers: Readonly< Record< string, EditorRegistryProvider > >;
+	readonly overlays: Readonly< Record< string, EditorRegistryOverlay > >;
+}
+
+declare global {
+	interface Window {
+		/**
+		 * Validated tile-provider and overlay registries inlined by
+		 * `Bootstrap\Editor_Data_Enqueuer` on `enqueue_block_editor_assets`.
+		 * Optional in the type so the editor JS stays robust if the inline
+		 * script is stripped or this code is reached outside the editor.
+		 *
+		 * @since 1.0.0
+		 */
+		kntntGpxBlocks?: EditorRegistry;
+	}
+}
 
 /**
  * Attributes for the GPX Map block.
@@ -94,6 +153,9 @@ interface MapAttributes {
 	tooltipDescLetterSpacing: string;
 	tooltipDescTextDecoration: string;
 	tooltipDescTextTransform: string;
+	tileProvider: string;
+	tileApiKey: string;
+	tileOverlays: string[];
 	[ key: string ]: unknown;
 }
 
@@ -353,6 +415,109 @@ function TypographyToolsPanel( {
 }
 
 /**
+ * Renders the "Overlays" inspector panel when the registry is non-empty.
+ *
+ * Reads the validated overlay registry from `window.kntntGpxBlocks.overlays`
+ * (populated by `Bootstrap\Editor_Data_Enqueuer`) and renders one
+ * `ToggleControl` per id. The toggle's checked state mirrors whether the id
+ * is present in `attributes.tileOverlays`; toggling adds or removes the id
+ * from the array. When the registry is empty (e.g. a site builder dropped
+ * every default overlay via the `kntnt_gpx_blocks_tile_overlays` filter)
+ * the panel collapses to nothing — the issue spec calls for "no PanelBody",
+ * not an empty panel.
+ *
+ * @since 1.0.0
+ *
+ * @param props             Component props.
+ * @param props.selectedIds Current `tileOverlays` array.
+ * @param props.onChange    Setter that writes the new array.
+ */
+function OverlaysPanel( {
+	selectedIds,
+	onChange,
+}: {
+	selectedIds: string[];
+	onChange: ( next: string[] ) => void;
+} ): JSX.Element | null {
+	const overlays = window.kntntGpxBlocks?.overlays ?? {};
+	const ids = Object.keys( overlays );
+	if ( ids.length === 0 ) {
+		return null;
+	}
+
+	return (
+		<PanelBody title={ __( 'Overlays', 'kntnt-gpx-blocks' ) }>
+			{ ids.map( ( id ) => {
+				const overlay = overlays[ id ];
+				if ( ! overlay ) {
+					return null;
+				}
+				const checked = selectedIds.includes( id );
+				return (
+					<ToggleControl
+						key={ id }
+						label={ overlay.label }
+						checked={ checked }
+						onChange={ ( next: boolean ) => {
+							if ( next ) {
+								if ( checked ) {
+									return;
+								}
+								onChange( [ ...selectedIds, id ] );
+							} else {
+								onChange(
+									selectedIds.filter(
+										( existing ) => existing !== id
+									)
+								);
+							}
+						} }
+					/>
+				);
+			} ) }
+		</PanelBody>
+	);
+}
+
+/**
+ * Resolves a list of saved overlay ids to runtime records for the editor preview.
+ *
+ * Mirrors the server-side `Tile_Layer_Registry::resolve_overlays()` contract
+ * narrowed to what the editor preview needs: only the `id` survives because
+ * URL/attribution/maxZoom/subdomains are not exposed to the editor. Unknown
+ * ids are dropped silently — the editor is not the place to surface
+ * mis-configurations; PHP logs them on the rendered page.
+ *
+ * @since 1.0.0
+ *
+ * @param ids - Overlay ids from `attributes.tileOverlays`.
+ * @return Resolved records in the input order, with unknown ids removed.
+ */
+function resolveOverlaysForPreview(
+	ids: readonly string[]
+): EditorOverlayRecord[] {
+	const overlays = window.kntntGpxBlocks?.overlays ?? {};
+	const out: EditorOverlayRecord[] = [];
+	for ( const id of ids ) {
+		const record = overlays[ id ];
+		if ( ! record ) {
+			continue;
+		}
+		const entry: EditorOverlayRecord = {
+			id,
+			url: record.url,
+			attribution: record.attribution,
+			maxZoom: record.maxZoom,
+		};
+		if ( record.subdomains && record.subdomains.length > 0 ) {
+			entry.subdomains = [ ...record.subdomains ];
+		}
+		out.push( entry );
+	}
+	return out;
+}
+
+/**
  * Editor preview for the GPX Map block.
  *
  * Shows a MediaPlaceholder when no attachment is selected; otherwise
@@ -412,6 +577,7 @@ export const MapEdit = ( {
 		tooltipDescLetterSpacing,
 		tooltipDescTextDecoration,
 		tooltipDescTextTransform,
+		tileOverlays,
 	} = attributes;
 
 	// Resolve the attached media's source URL so MediaReplaceFlow can label
@@ -701,6 +867,12 @@ export const MapEdit = ( {
 						}
 					/>
 				</PanelBody>
+				<OverlaysPanel
+					selectedIds={ tileOverlays }
+					onChange={ ( next ) =>
+						setAttributes( { tileOverlays: next } )
+					}
+				/>
 			</InspectorControls>
 			<InspectorControls group="styles">
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
@@ -888,6 +1060,7 @@ export const MapEdit = ( {
 						waypointColor,
 						tooltipShowName,
 						tooltipShowDesc,
+						overlays: resolveOverlaysForPreview( tileOverlays ),
 					} }
 				/>
 			</div>
