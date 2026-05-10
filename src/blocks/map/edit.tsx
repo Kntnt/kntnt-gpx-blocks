@@ -571,6 +571,18 @@ function resolveProviderForPreview(
 		return null;
 	}
 
+	// Polyline-only gate: when the resolved provider requires a key and the
+	// per-block `tileApiKey` is empty (or whitespace-only), do not return a
+	// preview record at all. Returning `null` makes the preview's base-tile
+	// useEffect skip the tile layer entirely, mirroring the frontend
+	// `Render_Map` PHP gate where the URL is nulled in state. Issue #82's
+	// Notice surfaces the missing-key diagnostic above the canvas; this
+	// branch makes the canvas itself show polyline-only instead of issuing
+	// failing tile requests with a useless `?apikey=` query parameter.
+	if ( record.requiresKey && apiKey.trim() === '' ) {
+		return null;
+	}
+
 	const url = record.requiresKey
 		? substituteTileApiKey( record.url, apiKey )
 		: record.url;

@@ -120,10 +120,12 @@ interface PreviewAttributes {
 	tooltipShowDesc: boolean;
 	/**
 	 * Resolved base-tile provider with `{KEY}` already substituted client-side
-	 * from `attributes.tileApiKey`. `null` when the editor-data global is
-	 * unavailable — the preview then renders the polyline and waypoints over
-	 * an empty tile background, matching the documented "fail visually" path
-	 * for issue #79.
+	 * from `attributes.tileApiKey`. `null` in two cases: the editor-data
+	 * global is unavailable, or the resolved provider requires a key and the
+	 * per-block `tileApiKey` is empty (the documented polyline-only state —
+	 * issue #81). Either way the preview renders polyline + waypoints over
+	 * an empty tile background; the editor surface ships polyline-only
+	 * rather than issuing failing tile requests.
 	 */
 	provider: EditorProviderRecord | null;
 	overlays: readonly EditorOverlayRecord[];
@@ -415,9 +417,10 @@ export const MapEditorPreview = ( {
 	// new one in its place. `bringToBack()` keeps the freshly added base
 	// beneath the overlays already on the map, so a provider change does not
 	// flicker overlays above the new base. When the provider is null
-	// (registry global stripped), the previous base layer is removed and no
-	// replacement is added — the polyline renders over an empty tile
-	// background, which is the documented "fail visually" path for #79.
+	// (registry global stripped, or the documented polyline-only state for
+	// paid providers without a key — issue #81), the previous base layer is
+	// removed and no replacement is added; the polyline renders over an
+	// empty tile background.
 	useEffect( () => {
 		const map = mapRef.current;
 		if ( ! map ) {

@@ -233,6 +233,23 @@ final class Render_Map {
 		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_api_key );
 		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_ids );
 
+		// Polyline-only gate: when the resolved provider requires an API key
+		// and the per-block `tileApiKey` is empty, null out the URL so the
+		// frontend view module ships polyline-only instead of issuing failing
+		// tile requests with a bare `apikey=` query parameter. The rest of
+		// the record (id, attribution, maxZoom, subdomains) survives so JS
+		// keeps the metadata for diagnostics; the documented contract is
+		// `url === null` ⇒ no base tile layer. This rule applies to the
+		// editor preview path too — `bypassConsent === true` only governs
+		// the consent gate, not the missing-key gate. See docs/consent.md
+		// "What the plugin renders" and the issue #81 acceptance criteria.
+		$resolved_record  = $tile_registry->get_providers()[ $tile_provider['id'] ] ?? null;
+		$requires_key     = $resolved_record !== null ? $resolved_record['requiresKey'] : false;
+		$key_is_empty     = '' === trim( $tile_api_key );
+		if ( $requires_key && $key_is_empty ) {
+			$tile_provider['url'] = null;
+		}
+
 		// Register the per-map state slice with the Interactivity API. The plugin
 		// performs no consent-requiring action server-side; the JS view module
 		// gates tile loading client-side via window.kntnt_gpx_blocks (see

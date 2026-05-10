@@ -56,7 +56,7 @@ The plugin exposes three primitives on the client side, all on the global namesp
 | `mayProceed( category )` | Returns `true` when the signal is granting *or* absent; `false` only when denying. |
 | `onConsentChanged( handler )` | Subscribes to consent transitions. Returns an unsubscribe function. |
 
-The plugin *MUST* use `mayProceed` (or an equivalent helper that respects the same default-allow rule) as the decision point before mounting the Leaflet tile layer. The plugin *MUST* use `onConsentChanged` to subscribe to mid-session transitions so that a `'denying'` signal triggers a Leaflet tear-down and a subsequent `'granting'` signal triggers a re-mount.
+The plugin *MUST* use `mayProceed` (or an equivalent helper that respects the same default-allow rule) as the decision point before mounting the Leaflet tile layer. The plugin *MUST* use `onConsentChanged` to subscribe to mid-session transitions so that a `'denying'` signal triggers tile-layer removal and a subsequent `'granting'` signal triggers a tile-layer re-add. The polyline, cursor, controls, and waypoint markers — all of them locally-rendered SVG/canvas drawn from cached GeoJSON — are not subject to the contract and stay visible across both transitions.
 
 The site builder's glue feeds the plugin its consent state by dispatching a `CustomEvent` on `window`:
 
@@ -153,7 +153,7 @@ This is correct and intentional. The plugin *MUST* be fully functional out of th
 
 The plugin *MUST* always render a working map inside the WordPress block editor (Gutenberg, Site Editor) regardless of consent state. The editor is an authoring surface, not a visitor-facing surface — the editor needs to see the actual map to set up colours, inspect waypoints, and verify the file resolved correctly.
 
-**Implementation.** The Map block's editor preview is a parallel React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) that mounts Leaflet directly inside the editor iframe via `useEffect`, using GeoJSON fetched from the plugin's auth-gated REST endpoint `kntnt-gpx-blocks/v1/preview/<id>`. It does not consult the consent contract at all. The editor never goes through `view.ts`, so the consent contract simply does not apply.
+**Implementation.** The Map block's editor preview is a parallel React component (`MapEditorPreview` in `src/blocks/map/editor-preview.tsx`) that mounts Leaflet directly inside the editor iframe via `useEffect`, using GeoJSON fetched from the plugin's auth-gated REST endpoint `kntnt-gpx-blocks/v1/preview/<id>`. It does not consult the consent contract at all. The editor never goes through `view.ts`, so the consent contract simply does not apply. The editor preview does, however, honour the missing-key gate: when the resolved provider requires an API key and the per-block `tileApiKey` is empty, the preview ships polyline-only with a Notice above the canvas explaining why (the same end state the frontend produces, surfaced for the editor's benefit — issues #81 and #82).
 
 The PHP render path also sets `bypassConsent: true` in the per-map state slice when invoked under a `REST_REQUEST` with `edit_posts`. That flag is documented for completeness but is currently a vestigial signal — `view.ts` would honour it, but `view.ts` is not actually run for the editor preview because the Interactivity API runtime does not bootstrap inside ServerSideRender's injected DOM. The flag survives in case a future iteration restores the SSR + Interactivity editor path.
 
@@ -163,19 +163,23 @@ The editor bypass is implemented entirely in the plugin's PHP and JS — it is n
 
 When a `'denying'` signal is received for `'external_media'` after Leaflet has already mounted, the plugin *MUST*:
 
-1. Tear down the Leaflet map instance (`map.remove()`), which removes its DOM and detaches all event listeners.
-2. Stop issuing tile requests (a consequence of the tear-down).
-3. Leave the block element in the DOM as an empty correctly-sized container.
+1. Remove the base tile layer and any overlay tile layers from the Leaflet map instance, which stops issuing tile requests.
+2. Leave the polyline, cursor marker, Leaflet controls, and waypoint markers in place. Those are locally-rendered SVG/canvas drawn from the cached GeoJSON in `wp_interactivity_state()` — they reach no third party and they are not consent-requiring actions.
+3. Leave the block element in the DOM with the polyline + waypoints visible over a plain (transparent) background where the tiles used to be.
 
-The plugin does not set cookies of its own. It does not call third-party JavaScript APIs that need to be opted out of. The tear-down is the entire withdrawal action.
+A subsequent `'granting'` signal restores the tile layers via the same per-block `addTiles` call the initial mount used; the polyline et al. are unaffected because they were never removed.
+
+The plugin does not set cookies of its own. It does not call third-party JavaScript APIs that need to be opted out of. Tile-layer removal is the entire withdrawal action.
 
 OSM's tile servers may have set their own cookies in the visitor's browser via tile responses. These cookies are scoped to `*.tile.openstreetmap.org`, not to the plugin's site, and the plugin *cannot* delete them — same-origin policy forbids it. The site builder's CMP is responsible for any cross-origin cookie cleanup it cares about. The plugin documents this as a known limitation.
 
-After tear-down, the block element stays in the DOM. The CMP's content blocker (if any) is expected to reclaim the visual area with whatever placeholder the CMP provides. The plugin renders no placeholder of its own.
+The CMP's content blocker (if any) may still render whatever placeholder it likes over the block, but the visitor-facing default is the polyline-only render — the route geometry stays visible because it is local data.
 
 ## What the plugin renders when consent is denying
 
-Nothing. The block element is emitted with its inline-style dimensions (so the layout does not jump), with the `data-wp-*` Interactivity directives, and with the GeoJSON hydrated in `wp_interactivity_state()`. The view module reads `mayProceed` and either mounts Leaflet (granting/absent) or skips the mount and leaves the container empty (denying). The CMP owns the visitor-facing UX.
+The track polyline, cursor marker, Leaflet controls, and waypoint markers — drawn from the cached GeoJSON in `wp_interactivity_state()`. The block element is emitted with its inline-style dimensions (so the layout does not jump), with the `data-wp-*` Interactivity directives, and with the GeoJSON hydrated in `wp_interactivity_state()`. The view module reads `mayProceed` and adds the tile layers when granting/absent or skips them when denying; the rest of the map mounts unconditionally because the polyline is local SVG and the consent contract only governs third-party requests.
+
+The same polyline-only render applies when the resolved tile provider requires an API key (`requiresKey === true`) and the per-block `tileApiKey` is empty — the server-side render writes `tileProvider.url = null` and the view module skips `addTiles` regardless of consent. Consent-denied and missing-key are unified into a single "tiles unavailable" visual state from the visitor's perspective.
 
 ## Builder glue template
 
@@ -250,7 +254,8 @@ The implementation conforms to this contract if and only if all of the following
 - [ ] `window.kntnt_gpx_blocks` exposes `getConsent`, `mayProceed`, and `onConsentChanged` exactly as specified in the stub above.
 - [ ] The plugin listens for `kntnt_gpx_blocks:consent` on `window` and updates its internal state accordingly.
 - [ ] The stub is enqueued as an inline script in `<head>` before any block view module that depends on the consent state.
-- [ ] When a `'denying'` signal is received after Leaflet has mounted, the map is torn down via `map.remove()`.
+- [ ] When a `'denying'` signal is received after Leaflet has mounted, the base tile layer and overlay tile layers are removed; the polyline, cursor, controls, and waypoint markers remain visible.
+- [ ] When a `'granting'` signal is received after a previous denial, the tile layers are re-added without re-mounting the rest of the map.
 - [ ] The plugin works with no errors and a fully functional Map block when no CMP and no glue are present.
 - [ ] The plugin exposes no PHP filter for consent — neither `apply_filters()` nor `do_action()` for any consent-related hook appears anywhere in the plugin's PHP source.
 - [ ] The plugin's PHP and JS code contain no references to `wp_has_consent`, `wp_listen_for_consent_change`, Real Cookie Banner, Complianz, CookieYes, or any other CMP-specific identifier.

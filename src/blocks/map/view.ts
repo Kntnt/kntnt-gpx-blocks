@@ -3,13 +3,17 @@
  *
  * Registers the `kntnt-gpx-blocks` store and implements:
  *
- * - `callbacks.initMap` — mounts Leaflet directly into the block element when
- *   the consent contract permits it. The contract is exposed by the inline
- *   stub on `window.kntnt_gpx_blocks` (see `js/consent-stub.js` and
- *   `docs/consent.md`). The single category is `'external_media'`. The default
- *   is permitted: an absent signal does not block tile loading. Subscribes to
- *   subsequent transitions via `onConsentChanged` so a denying signal tears
- *   the map down and a granting signal re-mounts it.
+ * - `callbacks.initMap` — mounts Leaflet directly into the block element. The
+ *   polyline, cursor, controls, and waypoint markers mount unconditionally
+ *   (they are local SVG/canvas drawn from cached GeoJSON and are not subject
+ *   to the consent contract). Tile layers are added or removed independently
+ *   based on the consent contract exposed by the inline stub on
+ *   `window.kntnt_gpx_blocks` (see `js/consent-stub.js` and `docs/consent.md`).
+ *   The single category is `'external_media'`. The default is permitted: an
+ *   absent signal does not block tile loading. The callback subscribes to
+ *   subsequent transitions via `onConsentChanged` so a denying signal removes
+ *   tiles (`removeTiles`) and a granting signal restores them (`addTiles`).
+ *   The polyline et al. survive both transitions.
  * - `callbacks.onMapCursorChange` — reacts to `state[mapId].fraction` changes
  *   (from Map itself or from GPX Elevation) by moving the cursor marker along
  *   the polyline without re-emitting the fraction. Namespaced per block so the
@@ -18,8 +22,10 @@
  *
  * Editor bypass: when PHP detects a REST `block-renderer` request from a user
  * with `edit_posts`, it sets `bypassConsent: true` in the per-map state slice.
- * The view module then mounts Leaflet immediately and skips the consent
- * subscription — the editor authoring surface always shows a working map.
+ * The view module then attempts to add tiles immediately and skips the
+ * consent subscription — the editor authoring surface always shows a working
+ * map. (The polyline mounts regardless; the bypass only affects whether the
+ * tile-add gate is consulted.)
  *
  * The map is deferred until the container enters the viewport via
  * IntersectionObserver. A WeakMap guards against double-mounting on
@@ -37,6 +43,14 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
 import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
+import {
+	addTiles,
+	createEmptyTileRefs,
+	hasUsableUrl,
+	removeTiles,
+	type TileLayerRecord,
+	type TileLayerRefs,
+} from './tile-lifecycle';
 import { classifyWheel } from './wheel';
 
 // ─── Global type augmentation ────────────────────────────────────────────────
@@ -94,27 +108,6 @@ interface MapSettings {
 }
 
 /**
- * Resolved tile-layer record carried in the per-map state.
- *
- * Mirrors the validated shape `Tile_Layer_Registry` writes server-side: the
- * URL is fully formed (any `{KEY}` placeholder has already been substituted
- * with the per-block API key in PHP), `attribution` is the trusted HTML
- * snippet that Leaflet appends to its attribution control verbatim, and
- * `maxZoom` is the integer ceiling supplied by the provider. `subdomains`
- * is forwarded straight to Leaflet — when present, Leaflet picks one per tile
- * URL when expanding `{s}`. The `id` field is informational only.
- *
- * @since 1.0.0
- */
-interface TileLayerRecord {
-	readonly id: string;
-	readonly url: string;
-	readonly attribution: string;
-	readonly maxZoom: number;
-	readonly subdomains?: readonly string[];
-}
-
-/**
  * Shape of the per-map state slice hydrated from PHP via wp_interactivity_state.
  *
  * @since 1.0.0
@@ -133,7 +126,14 @@ interface MapState {
 	waypoints: GeoJSON.GeoJsonObject;
 	/** URL to the original .gpx attachment; null when unavailable. */
 	gpxFileUrl: string | null;
-	/** Resolved base-tile provider record; never null on the frontend. */
+	/**
+	 * Resolved base-tile provider record. The record itself is always present
+	 * on the frontend, but its `url` is `null` exactly when the resolved
+	 * provider requires an API key (`requiresKey === true` server-side) and
+	 * the per-block `tileApiKey` is empty — the documented polyline-only
+	 * state. The view module checks `hasUsableUrl(tileProvider)` before
+	 * calling `addTiles` and skips the base layer otherwise.
+	 */
 	tileProvider: TileLayerRecord;
 	/** Resolved overlay records in editor-configured order. */
 	tileOverlays: readonly TileLayerRecord[];
@@ -192,8 +192,20 @@ interface MapEntry {
 	trackCumDist: number[];
 	/** Total track distance in metres. */
 	totalDistance: number;
-	/** Aborts document-level listeners (scrub end, hint timer) on tear-down. */
+	/**
+	 * Aborts document-level listeners (scrub end, hint timer) when a future
+	 * block-detach path needs to release them in one call. Consent
+	 * transitions do not consult this — they only add or remove tiles via
+	 * `tile-lifecycle` helpers above.
+	 */
 	disposer: AbortController;
+	/**
+	 * References to the tile layers currently attached to the map. Mutated by
+	 * `addTiles` / `removeTiles` (see `./tile-lifecycle`) so consent
+	 * transitions can add or detach the third-party tile requests without
+	 * touching the polyline, cursor, controls, or waypoint markers above.
+	 */
+	tiles: TileLayerRefs;
 }
 
 // ─── Module constants ────────────────────────────────────────────────────────
@@ -248,61 +260,6 @@ function getCssVar(
 		getComputedStyle( element ).getPropertyValue( property ).trim() ||
 		fallback
 	);
-}
-
-/**
- * Build and add the base-tile layer to the given map from a hydrated record.
- *
- * The record is supplied by `Tile_Layer_Registry` server-side and reaches the
- * view module through `state[mapId].tileProvider`. The URL has already been
- * fully resolved (any `{KEY}` placeholder substituted in PHP), so this helper
- * forwards URL, attribution, maxZoom, and the optional subdomains list to
- * Leaflet without further interpretation. `{s}` is expanded by Leaflet at
- * tile-fetch time using the supplied subdomains.
- *
- * @since 1.0.0
- *
- * @param map      - Leaflet map instance to add the layer to.
- * @param provider - Resolved base-tile provider record.
- * @return The added tile layer.
- */
-function addTileLayer( map: L.Map, provider: TileLayerRecord ): L.TileLayer {
-	const options: L.TileLayerOptions = {
-		maxZoom: provider.maxZoom,
-		attribution: provider.attribution,
-	};
-	if ( provider.subdomains && provider.subdomains.length > 0 ) {
-		options.subdomains = [ ...provider.subdomains ];
-	}
-	return L.tileLayer( provider.url, options ).addTo( map );
-}
-
-/**
- * Add the configured overlay tile layers on top of the base layer.
- *
- * Each overlay carries the same URL/attribution/maxZoom/subdomains contract
- * as the base provider. Overlays are added in the order they appear in the
- * input array so the editor's stacking order is preserved.
- *
- * @since 1.0.0
- *
- * @param map      - Leaflet map instance to add the overlays to.
- * @param overlays - Resolved overlay records in stacking order.
- */
-function addOverlayLayers(
-	map: L.Map,
-	overlays: readonly TileLayerRecord[]
-): void {
-	for ( const overlay of overlays ) {
-		const options: L.TileLayerOptions = {
-			maxZoom: overlay.maxZoom,
-			attribution: overlay.attribution,
-		};
-		if ( overlay.subdomains && overlay.subdomains.length > 0 ) {
-			options.subdomains = [ ...overlay.subdomains ];
-		}
-		L.tileLayer( overlay.url, options ).addTo( map );
-	}
 }
 
 /**
@@ -615,7 +572,17 @@ function attachWheelHandler(
  * IntersectionObserver so the map has real layout dimensions at init time.
  * The `mountedMaps` WeakMap is checked before entering the observer; the
  * observer callback also guards against redundant mounts in case of race
- * conditions.
+ * conditions. Idempotent: re-entry returns early when `mountedMaps` already
+ * has an entry for the block element.
+ *
+ * Mounts only the local pieces — polyline, hit layer, cursor, waypoint
+ * markers, and Leaflet controls. **Tile layers are not added here**: they are
+ * added (and removed) by `addTiles` / `removeTiles` in response to consent
+ * transitions and tile-config validity. The polyline therefore renders
+ * regardless of consent state, while the third-party tile requests gate
+ * separately. After mount, the caller (`initMap`) decides whether to bring
+ * up tiles immediately based on consent and on whether the resolved
+ * provider has a usable URL.
  *
  * After fitBounds, calls `map.invalidateSize()` once to force Leaflet to
  * re-measure the container — necessary when the element became visible just
@@ -668,11 +635,10 @@ function bootMount(
 				boxZoom: false,
 			} );
 
-			// Add the base-tile layer from the hydrated provider record, then
-			// stack the configured overlays on top. Reached only when the
-			// consent contract permits proceeding (or in editor bypass).
-			addTileLayer( map, mapState.tileProvider );
-			addOverlayLayers( map, mapState.tileOverlays );
+			// Tile layers are NOT added here — `initMap` calls `addTiles`
+			// after mount when consent permits and the resolved provider has
+			// a usable URL. Keeping tile lifecycle out of `bootMount` means
+			// the polyline et al. always mount regardless of consent state.
 
 			// Read the track colour CSS variables once at mount time.
 			// Leaflet canvas-rendered shapes receive their colour through JS
@@ -818,8 +784,11 @@ function bootMount(
 			}
 
 			// AbortController carrying every document-level listener attached
-			// below so tearDown() can release them in one call. Stored in the
-			// MapEntry so the cleanup path stays mechanical.
+			// below so a future block-detach path can release them in one
+			// call. Stored on the MapEntry so the cleanup contract is
+			// mechanical when needed. Consent transitions do not abort the
+			// disposer — they only add or remove tile layers via the helpers
+			// below.
 			const disposer = new AbortController();
 
 			// Replace Leaflet's scrollWheelZoom with a wheel handler that
@@ -1020,6 +989,7 @@ function bootMount(
 			// Record the instance so subsequent init calls are no-ops and
 			// onMapCursorChange can access the cursor, coords, and the
 			// distance arrays needed to glide the cursor between vertices.
+			// `tiles` starts empty — `addTiles` populates it on first call.
 			mountedMaps.set( blockEl, {
 				map,
 				cursor,
@@ -1027,7 +997,19 @@ function bootMount(
 				trackCumDist,
 				totalDistance,
 				disposer,
+				tiles: createEmptyTileRefs(),
 			} );
+
+			// Bring up tile layers when the configuration permits. The editor
+			// bypass mounts unconditionally; the frontend consults the
+			// consent contract directly. Either way, `ensureTilesForState`
+			// already short-circuits when the resolved provider has a `null`
+			// URL (the documented polyline-only state for paid providers
+			// without a key), so a missing-key block ships polyline-only
+			// regardless of consent.
+			if ( mapState.bypassConsent || consentPermitsTiles() ) {
+				ensureTilesForState( blockEl, mapState );
+			}
 
 			// Wire pointer tracking on the invisible fat overlay so the hit
 			// zone for hover and press is wide enough to feel smooth. Hover
@@ -1060,25 +1042,79 @@ function bootMount(
 }
 
 /**
- * Tear down the Leaflet instance attached to the given block element, if any.
+ * Resolve the consent contract once and return whether tiles may proceed.
  *
- * Called when the consent contract reports a denying signal for
- * `'external_media'`. The block element is left in the DOM with no visible
- * content; the active CMP's content blocker is expected to reclaim the visual
- * area. The plugin renders no placeholder of its own — see `docs/consent.md`.
+ * Centralised so both the IntersectionObserver callback inside `bootMount`
+ * (which decides whether to bring tiles up at first paint) and `initMap`
+ * (which uses the same answer to decide whether to subscribe and how to act
+ * on the initial state) see the same truth. The default-allow rule is the
+ * stub's responsibility: `mayProceed` returns `true` for granting and
+ * absent and `false` only for denying. When the inline stub is missing
+ * entirely (an optimisation plugin stripped it), the function returns
+ * `true` and the caller is expected to log the misconfiguration once.
  *
  * @since 1.0.0
  *
- * @param blockEl - The block wrapper element.
+ * @return `true` when tiles may load, `false` only on a literal denying
+ *         signal from the contract.
  */
-function tearDown( blockEl: Element ): void {
+function consentPermitsTiles(): boolean {
+	const consent = window.kntnt_gpx_blocks;
+	if ( ! consent ) {
+		return true;
+	}
+	return consent.mayProceed( CONSENT_CATEGORY );
+}
+
+/**
+ * Bring up tile layers for a freshly-mounted map when the configuration permits.
+ *
+ * Called immediately after `bootMount` populates `mountedMaps` and from the
+ * granting branch of the consent observer. The function inspects the
+ * resolved provider record on `mapState.tileProvider` and only calls
+ * `addTiles` when the URL is usable — a `null` URL signals the documented
+ * polyline-only state (paid provider with empty `tileApiKey`) and ships
+ * forever without tiles. Idempotent via `addTiles`'s own guard.
+ *
+ * @since 1.0.0
+ *
+ * @param blockEl  - Block wrapper element keyed in `mountedMaps`.
+ * @param mapState - Hydrated state slice carrying the resolved tile records.
+ */
+function ensureTilesForState( blockEl: Element, mapState: MapState ): void {
 	const entry = mountedMaps.get( blockEl );
 	if ( ! entry ) {
 		return;
 	}
-	entry.disposer.abort();
-	entry.map.remove();
-	mountedMaps.delete( blockEl );
+
+	// `null`-URL records short-circuit; `addTiles` itself also gates on
+	// `hasUsableUrl`, but checking here first keeps the call site self-
+	// documenting at the level of "did this block ever get tiles?".
+	const baseRecord = hasUsableUrl( mapState.tileProvider )
+		? mapState.tileProvider
+		: null;
+	addTiles( entry.map, baseRecord, mapState.tileOverlays, entry.tiles );
+}
+
+/**
+ * Detach the tile layers from a mounted map without touching the rest of it.
+ *
+ * Called from the denying branch of the consent observer. Removes the base
+ * tile layer and any overlay tile layers; leaves the map instance, polyline,
+ * cursor, controls, and waypoint markers intact. A subsequent granting
+ * signal restores tiles via `ensureTilesForState`. Idempotent: when no tiles
+ * are attached the call is a no-op.
+ *
+ * @since 1.0.0
+ *
+ * @param blockEl - Block wrapper element keyed in `mountedMaps`.
+ */
+function removeTilesForBlock( blockEl: Element ): void {
+	const entry = mountedMaps.get( blockEl );
+	if ( ! entry ) {
+		return;
+	}
+	removeTiles( entry.map, entry.tiles );
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -1087,28 +1123,39 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 	state: {} as PluginState,
 	callbacks: {
 		/**
-		 * Initialise the block: consult the consent contract and mount Leaflet
-		 * when permitted, then subscribe to subsequent consent transitions.
+		 * Initialise the block.
 		 *
-		 * Called by `data-wp-init` on the block's root element. The decision
-		 * tree is:
+		 * Mounts the local pieces (polyline, cursor, controls, waypoint
+		 * markers) unconditionally — those are SVG/canvas drawn from cached
+		 * GeoJSON and reach no third party. Tile layers, by contrast, are
+		 * gated by the JS-only consent contract (`window.kntnt_gpx_blocks`)
+		 * because tile requests transmit the visitor's IP to OpenStreetMap
+		 * (or the configured paid provider). The decision tree is:
 		 *
-		 *  1. If `bypassConsent` is true (editor preview), mount immediately
-		 *     and skip the subscription — the editor authoring surface always
-		 *     shows a working map.
-		 *  2. Otherwise consult `window.kntnt_gpx_blocks.mayProceed` for the
-		 *     `'external_media'` category. Mount when it returns true (the
-		 *     default-allow rule means absent signal also returns true).
-		 *  3. Subscribe to `onConsentChanged`. On a denying transition, tear
-		 *     down via `map.remove()`. On a granting transition, re-mount
-		 *     (idempotent — guarded by `mountedMaps`). An absent transition
-		 *     (handler called with `null`) is a no-op: the contract's
-		 *     default-allow rule keeps any already-mounted map running.
+		 *  1. Always call `bootMount`. It schedules an IntersectionObserver;
+		 *     when the observer fires, the rest of the map mounts and the
+		 *     observer's own callback decides whether to bring tiles up,
+		 *     based on `bypassConsent` (editor preview) or
+		 *     `consentPermitsTiles()` (frontend).
+		 *  2. If `bypassConsent` is true (editor preview), skip the consent
+		 *     subscription — the editor authoring surface always shows tiles
+		 *     when the resolved provider has a usable URL.
+		 *  3. Otherwise subscribe to `onConsentChanged`. On `granted === true`,
+		 *     call `ensureTilesForState` (idempotent — `addTiles` no-ops
+		 *     when tiles are already up). On `granted === false`, call
+		 *     `removeTilesForBlock` (idempotent the same way). An absent
+		 *     transition (`null`) is a no-op: there is no defined
+		 *     revoke-to-absent transition in the contract, and falling back
+		 *     to default-allow on absent would fight any pending denial.
 		 *
-		 * When the inline stub is unexpectedly missing — for example when an
-		 * optimisation plugin has stripped it — the contract's default-allow
-		 * rule applies and Leaflet mounts normally. A console warning is
-		 * emitted so the misconfiguration is visible.
+		 * Crucially, neither consent branch tears down the rest of the map —
+		 * the polyline, cursor, controls, and waypoints all survive a denying
+		 * signal. See `docs/consent.md` for the polyline-always render
+		 * contract.
+		 *
+		 * When the inline stub is unexpectedly missing — e.g. an optimisation
+		 * plugin stripped it — the default-allow rule applies and tiles
+		 * mount normally. A console warning surfaces the misconfiguration.
 		 *
 		 * @since 1.0.0
 		 */
@@ -1124,49 +1171,52 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Editor short-circuit: when PHP flagged this render as an editor
-			// preview, mount immediately and do not subscribe to consent.
+			// Mount the local map pieces unconditionally — polyline, cursor,
+			// controls, and waypoint markers are not subject to the consent
+			// contract. The IntersectionObserver inside `bootMount` defers
+			// the heavy work, and the observer callback consults
+			// `consentPermitsTiles()` itself before adding tiles, so the
+			// synchronous-page-load case where consent is already permitting
+			// brings tiles up at first paint. Idempotent via the
+			// `mountedMaps` guard.
+			bootMount( ref, mapId, mapState );
+
+			// Editor short-circuit: PHP flagged this as an editor preview, so
+			// the consent contract does not apply. The polyline mounts above;
+			// tiles mount via `ensureTilesForState` already called inside the
+			// observer. Skip the consent subscription entirely.
 			if ( mapState.bypassConsent ) {
-				bootMount( ref, mapId, mapState );
 				return;
 			}
 
 			// Resolve the consent contract from the inline stub. The stub is
 			// enqueued unconditionally in <head>; if it is missing here, an
-			// optimisation plugin has stripped it. Default-allow keeps the
-			// map functional in that case, but the misconfiguration is worth
-			// surfacing.
+			// optimisation plugin has stripped it. Default-allow keeps tile
+			// loading functional in that case, but the misconfiguration is
+			// worth surfacing once.
 			const consent = window.kntnt_gpx_blocks;
 			if ( ! consent ) {
 				// eslint-disable-next-line no-console
 				console.warn(
 					'[kntnt-gpx-blocks] window.kntnt_gpx_blocks is missing; mounting under default-allow. See docs/consent.md.'
 				);
-				bootMount( ref, mapId, mapState );
 				return;
 			}
 
-			// Mount when the contract permits proceeding. mayProceed returns
-			// true on granting and on absent — only literal denying blocks.
-			if ( consent.mayProceed( CONSENT_CATEGORY ) ) {
-				bootMount( ref, mapId, mapState );
-			}
-
-			// Subscribe to subsequent transitions. Granting re-mounts (the
-			// WeakMap guards against duplicates). Denying tears down. Absent
-			// (null) is a no-op — the contract has no defined revoke-to-absent
-			// transition, and falling back to default-allow on absent would
-			// fight any pending tear-down.
+			// Subscribe to subsequent transitions. Granting adds tiles
+			// (idempotent), denying removes them (idempotent), absent (null)
+			// is a no-op. The polyline, cursor, controls, and waypoints
+			// survive both transitions.
 			consent.onConsentChanged( ( category, granted ) => {
 				if ( category !== CONSENT_CATEGORY ) {
 					return;
 				}
 				if ( granted === true ) {
-					bootMount( ref, mapId, mapState );
+					ensureTilesForState( ref, mapState );
 					return;
 				}
 				if ( granted === false ) {
-					tearDown( ref );
+					removeTilesForBlock( ref );
 				}
 			} );
 		},

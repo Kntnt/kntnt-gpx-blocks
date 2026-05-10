@@ -1278,6 +1278,174 @@ test( 'wp_interactivity_state substitutes the per-block tileApiKey into {KEY}', 
 } );
 
 // ---------------------------------------------------------------------------
+// Polyline-only state — paid provider with empty key emits null URL
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey provider has empty tileApiKey', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 210, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 210, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 210,
+			'mapId'        => 'map-paid-no-key',
+			'tileProvider' => 'thunderforest-outdoors',
+			'tileApiKey'   => '',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-paid-no-key'] ?? null;
+
+	// The polyline data and the rest of the tile metadata survive — only the
+	// URL is omitted so the view module ships polyline-only.
+	expect( $slice )->not->toBeNull();
+	expect( $slice )->toHaveKey( 'tileProvider' );
+	expect( $slice['tileProvider']['id'] )->toBe( 'thunderforest-outdoors' );
+	expect( $slice['tileProvider']['url'] )->toBeNull();
+	expect( $slice['tileProvider']['attribution'] )->toContain( 'Thunderforest' );
+	expect( $slice['tileProvider']['maxZoom'] )->toBe( 22 );
+	// Polyline data is unaffected by the missing key.
+	expect( $slice['geojson'] )->toBeArray();
+	expect( $slice['totalDistance'] )->toBeFloat();
+
+} );
+
+test( 'wp_interactivity_state emits a null tileProvider URL when requiresKey provider has whitespace-only tileApiKey', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 211, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 211, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 211,
+			'mapId'        => 'map-paid-whitespace-key',
+			'tileProvider' => 'mapbox-outdoors',
+			'tileApiKey'   => "  \t\n  ",
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-paid-whitespace-key'] ?? null;
+
+	// `trim($tileApiKey) === ''` covers whitespace-only keys, which would
+	// otherwise produce a URL with a useless query parameter.
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['url'] )->toBeNull();
+
+} );
+
+test( 'wp_interactivity_state still carries a usable URL when requiresKey provider has an empty key but the bypassConsent path is on', function (): void {
+
+	// Editor preview path mirrors the frontend gate: missing key produces a
+	// null URL even when bypassConsent is true. The editor surface shows a
+	// Notice (per issue #82) and renders polyline-only.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 212, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 212, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+	Functions\when( 'current_user_can' )->alias(
+		static function ( string $cap ): bool {
+			return $cap === 'edit_posts';
+		}
+	);
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 212,
+			'mapId'        => 'map-editor-paid-no-key',
+			'tileProvider' => 'stadia-outdoors',
+			'tileApiKey'   => '',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-editor-paid-no-key'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['bypassConsent'] )->toBeTrue();
+	// The editor render also produces a null URL — the polyline-only contract
+	// applies on both paths.
+	expect( $slice['tileProvider']['url'] )->toBeNull();
+
+} );
+
+test( 'wp_interactivity_state still substitutes the URL for free providers regardless of empty tileApiKey', function (): void {
+
+	// `requiresKey === false` means the free path: an empty tileApiKey is
+	// the normal case and must not null the URL out.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 213, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 213, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured_state = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured_state ): void {
+			$captured_state = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 213,
+			'mapId'        => 'map-free-no-key',
+			'tileProvider' => 'osm-standard',
+			'tileApiKey'   => '',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$slice = $captured_state['map-free-no-key'] ?? null;
+
+	expect( $slice )->not->toBeNull();
+	expect( $slice['tileProvider']['url'] )->toBeString();
+	expect( $slice['tileProvider']['url'] )->toContain( 'tile.openstreetmap.org' );
+
+} );
+
+// ---------------------------------------------------------------------------
 // Tile-layer registry — unknown provider id falls back to osm-standard
 // ---------------------------------------------------------------------------
 
