@@ -2,11 +2,13 @@
 /**
  * Tests for Rendering\Color_Sanitizer.
  *
- * Covers every accepted hex shape (3, 4, 6, 8 digits in mixed case) and a
+ * Covers every accepted hex shape (3, 4, 6, 8 digits in mixed case), every
+ * accepted `var(--ident)` shape with and without a hex fallback, and a
  * battery of rejected inputs: empty string, non-string scalars, structured
  * values, URL-injection probes, hex-but-wrong-length, missing leading `#`,
- * and out-of-alphabet characters. The validator is pure, has no WordPress
- * dependencies, and can be tested without Brain Monkey.
+ * out-of-alphabet characters, nested `var()`, non-hex `var()` fallbacks,
+ * malformed idents, and unbalanced parens. The validator is pure, has no
+ * WordPress dependencies, and can be tested without Brain Monkey.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -120,6 +122,62 @@ test( 'sanitize: rejects named CSS colour', function (): void {
 	expect( Color_Sanitizer::sanitize( 'red' ) )->toBe( '' );
 } );
 
-test( 'sanitize: rejects CSS variable reference', function (): void {
-	expect( Color_Sanitizer::sanitize( 'var(--my-color)' ) )->toBe( '' );
+// ---------------------------------------------------------------------------
+// Accepted var(--ident) references — with and without a hex fallback
+// ---------------------------------------------------------------------------
+
+test( 'sanitize: accepts var(--ident) with no fallback', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--wp--preset--color--primary)' ) )->toBe( 'var(--wp--preset--color--primary)' );
+} );
+
+test( 'sanitize: accepts var(--ident, #rgb) fallback', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--my-token, #abc)' ) )->toBe( 'var(--my-token, #abc)' );
+} );
+
+test( 'sanitize: accepts var(--ident, #rrggbbaa) fallback', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--my-token, #aabbccdd)' ) )->toBe( 'var(--my-token, #aabbccdd)' );
+} );
+
+test( 'sanitize: accepts var(--ident,#hex) without whitespace around comma', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x,#fff)' ) )->toBe( 'var(--x,#fff)' );
+} );
+
+test( 'sanitize: accepts var(--ident , #hex) with padded comma', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x , #fff)' ) )->toBe( 'var(--x , #fff)' );
+} );
+
+// ---------------------------------------------------------------------------
+// Rejected var() shapes — anything outside the strict single-arg grammar
+// ---------------------------------------------------------------------------
+
+test( 'sanitize: rejects nested var() fallback', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--a, var(--b))' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() with named-colour fallback', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x, red)' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() with rgb() fallback', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x, rgb(0,0,0))' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() carrying CSS-injection payload', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x; color:red)' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() with empty ident', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--)' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() ident starting with a digit', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--1foo)' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() with unbalanced parens', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x' ) )->toBe( '' );
+} );
+
+test( 'sanitize: rejects var() with double comma', function (): void {
+	expect( Color_Sanitizer::sanitize( 'var(--x,, #fff)' ) )->toBe( '' );
 } );
