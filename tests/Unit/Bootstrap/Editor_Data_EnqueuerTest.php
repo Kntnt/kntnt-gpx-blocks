@@ -71,7 +71,7 @@ test( 'enqueues window.kntntGpxBlocks as a before inline script on the map edito
 
 } );
 
-test( 'inline payload carries every default provider id and the wmt-hiking overlay', function (): void {
+test( 'inline payload carries every default base provider id and every default overlay provider id', function (): void {
 
 	$captured_inline = null;
 	Functions\when( 'wp_add_inline_script' )->alias(
@@ -95,7 +95,7 @@ test( 'inline payload carries every default provider id and the wmt-hiking overl
 	expect( $decoded )->toHaveKey( 'providers' );
 	expect( $decoded )->toHaveKey( 'overlays' );
 
-	// Every default provider id appears.
+	// Every default base provider id appears.
 	foreach ( [ 'carto', 'esri', 'jawg-maps', 'mapbox', 'maptiler', 'openstreetmap', 'opentopomap', 'stadia-maps', 'thunderforest' ] as $id ) {
 		expect( $decoded['providers'] )->toHaveKey( $id );
 	}
@@ -104,12 +104,79 @@ test( 'inline payload carries every default provider id and the wmt-hiking overl
 	expect( $decoded['providers']['openstreetmap']['requiresKey'] )->toBeFalse();
 	expect( $decoded['providers']['mapbox']['requiresKey'] )->toBeTrue();
 
-	// The single default overlay is present and carries enough data for the
-	// editor preview to mount it via L.tileLayer().
-	expect( $decoded['overlays'] )->toHaveKey( 'wmt-hiking' );
-	expect( $decoded['overlays']['wmt-hiking']['url'] )->toContain( 'waymarkedtrails.org' );
-	expect( $decoded['overlays']['wmt-hiking']['attribution'] )->toContain( 'Waymarked' );
-	expect( $decoded['overlays']['wmt-hiking']['maxZoom'] )->toBe( 18 );
+	// Every default overlay provider id appears with its nested layers map.
+	foreach ( [ 'openseamap', 'opensnowmap', 'openweathermap', 'waymarked-trails' ] as $id ) {
+		expect( $decoded['overlays'] )->toHaveKey( $id );
+		expect( $decoded['overlays'][ $id ] )->toHaveKey( 'layers' );
+	}
+
+	// Sanity-check one layer from waymarked-trails carries url/attribution/maxZoom.
+	expect( $decoded['overlays']['waymarked-trails']['layers']['hiking']['url'] )->toContain( 'waymarkedtrails.org' );
+	expect( $decoded['overlays']['waymarked-trails']['layers']['hiking']['attribution'] )->toContain( 'Waymarked' );
+	expect( $decoded['overlays']['waymarked-trails']['layers']['hiking']['maxZoom'] )->toBe( 18 );
+
+} );
+
+test( 'overlay records carry the nested layers map with per-layer url/attribution/maxZoom and {KEY} for paid providers', function (): void {
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	// waymarked-trails has six layers; pick a couple and assert shape.
+	$wmt = $decoded['overlays']['waymarked-trails'];
+	expect( $wmt['requiresKey'] )->toBeFalse();
+	foreach ( [ 'hiking', 'cycling', 'mtb', 'riding', 'skating', 'winter' ] as $layer_id ) {
+		expect( $wmt['layers'] )->toHaveKey( $layer_id );
+		expect( $wmt['layers'][ $layer_id ]['url'] )->not->toContain( '{KEY}' );
+		expect( $wmt['layers'][ $layer_id ]['url'] )->toStartWith( 'https://' );
+	}
+
+	// The winter layer points at slopes/ per Waymarked Trails' own naming.
+	expect( $wmt['layers']['winter']['url'] )->toContain( 'waymarkedtrails.org/slopes/' );
+
+	// openweathermap is key-required; every layer URL retains {KEY} for client-side substitution.
+	$owm = $decoded['overlays']['openweathermap'];
+	expect( $owm['requiresKey'] )->toBeTrue();
+	expect( $owm )->toHaveKey( 'signupUrl' );
+	expect( $owm['signupUrl'] )->toBe( 'https://openweathermap.org/' );
+	foreach ( [ 'clouds', 'precipitation', 'pressure', 'temperature', 'wind-speed' ] as $layer_id ) {
+		expect( $owm['layers'] )->toHaveKey( $layer_id );
+		expect( $owm['layers'][ $layer_id ]['url'] )->toContain( '{KEY}' );
+	}
+
+} );
+
+test( 'overlay records expose signupUrl for paid overlay providers, omit it for free ones', function (): void {
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	expect( $decoded['overlays']['openweathermap'] )->toHaveKey( 'signupUrl' );
+	expect( array_key_exists( 'signupUrl', $decoded['overlays']['waymarked-trails'] ) )->toBeFalse();
+	expect( array_key_exists( 'signupUrl', $decoded['overlays']['openseamap'] ) )->toBeFalse();
+	expect( array_key_exists( 'signupUrl', $decoded['overlays']['opensnowmap'] ) )->toBeFalse();
 
 } );
 
@@ -179,7 +246,7 @@ test( 'provider records expose signupUrl for paid providers, omit it for free on
 
 } );
 
-test( 'payload omits API keys (per-block tileApiKeys map is never inlined)', function (): void {
+test( 'payload omits API keys (per-block tileApiKeys / tileOverlayApiKeys maps are never inlined)', function (): void {
 
 	$captured_inline = null;
 	Functions\when( 'wp_add_inline_script' )->alias(
@@ -194,33 +261,41 @@ test( 'payload omits API keys (per-block tileApiKeys map is never inlined)', fun
 	$payload = (string) $captured_inline;
 
 	// The registry never carries a key in its records, but the assertion is
-	// structural: no field named `apiKey`, `tileApiKey`, or `tileApiKeys`
-	// may appear in the inlined string.
+	// structural: no field named `apiKey`, `tileApiKey`, `tileApiKeys`, or
+	// `tileOverlayApiKeys` may appear in the inlined string.
 	expect( $payload )->not->toContain( 'apiKey' );
 	expect( $payload )->not->toContain( 'tileApiKey' );
 	expect( $payload )->not->toContain( 'tileApiKeys' );
+	expect( $payload )->not->toContain( 'tileOverlayApiKeys' );
 
 } );
 
-test( 'overlays surface a custom registry entry added via the filter', function (): void {
+test( 'overlays surface a custom overlay-provider entry added via the filter', function (): void {
 
-	// Replace the default overlay set with the canonical wmt-hiking plus a
-	// site-builder-supplied overlay so we exercise the filter-flow integration.
+	// Replace the default overlay set with a site-builder-supplied overlay
+	// provider carrying multiple layers so we exercise the nested filter
+	// integration end-to-end.
 	Functions\when( 'apply_filters' )->alias(
 		static function ( string $name, mixed $value ): mixed {
 			if ( $name === 'kntnt_gpx_blocks_tile_overlays' ) {
 				return [
-					'wmt-hiking' => [
-						'label'       => 'Waymarked Trails — Hiking',
-						'url'         => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
-						'attribution' => '&copy; Waymarked',
-						'maxZoom'     => 18,
-					],
-					'custom-grid' => [
-						'label'       => 'Custom Grid',
-						'url'         => 'https://grid.example.com/{z}/{x}/{y}.png',
-						'attribution' => '&copy; Example',
-						'maxZoom'     => 19,
+					'custom-overlay' => [
+						'label'       => 'Custom Overlay',
+						'requiresKey' => false,
+						'layers'      => [
+							'grid'    => [
+								'label'       => 'Grid',
+								'url'         => 'https://grid.example.com/{z}/{x}/{y}.png',
+								'attribution' => '&copy; Example',
+								'maxZoom'     => 19,
+							],
+							'shading' => [
+								'label'       => 'Shading',
+								'url'         => 'https://shading.example.com/{z}/{x}/{y}.png',
+								'attribution' => '&copy; Example',
+								'maxZoom'     => 19,
+							],
+						],
 					],
 				];
 			}
@@ -242,8 +317,10 @@ test( 'overlays surface a custom registry entry added via the filter', function 
 	$json    = rtrim( $json, ';' );
 	$decoded = json_decode( $json, true );
 
-	expect( $decoded['overlays'] )->toHaveKey( 'custom-grid' );
-	expect( $decoded['overlays']['custom-grid']['label'] )->toBe( 'Custom Grid' );
+	expect( $decoded['overlays'] )->toHaveKey( 'custom-overlay' );
+	expect( $decoded['overlays']['custom-overlay']['label'] )->toBe( 'Custom Overlay' );
+	expect( $decoded['overlays']['custom-overlay']['layers'] )->toHaveKey( 'grid' );
+	expect( $decoded['overlays']['custom-overlay']['layers'] )->toHaveKey( 'shading' );
 
 } );
 

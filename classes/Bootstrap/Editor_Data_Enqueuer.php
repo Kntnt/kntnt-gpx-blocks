@@ -206,31 +206,52 @@ final class Editor_Data_Enqueuer {
 	}
 
 	/**
-	 * Shapes the overlay registry for the editor payload.
+	 * Shapes the overlay-provider registry for the editor payload.
 	 *
-	 * Carries everything the editor preview's `L.tileLayer()` call needs to
-	 * mount the overlay on top of the hardcoded base map in
-	 * `MapEditorPreview` — URL, attribution, maxZoom, and the optional
-	 * subdomains list. `label` drives the inspector toggle. Overlays in v1
-	 * carry no API key, so no `{KEY}` substitution is needed; if a future
-	 * overlay does, the editor will need to follow the same per-block-key
-	 * substitution path that the frontend provider already uses.
+	 * Forwards the nested overlay-provider/layer hierarchy verbatim into
+	 * the inline payload so the editor's `OverlaysPanel` can render one
+	 * sub-section per provider — provider label as a header, conditional
+	 * API-key TextControl + signup ExternalLink for `requiresKey === true`
+	 * providers, and one ToggleControl per layer — and so
+	 * `MapEditorPreview` can mount each enabled layer's tile layer via
+	 * `L.tileLayer()`. Provider-level fields surfaced: `label`,
+	 * `requiresKey`, optional `signupUrl`, optional `subdomains`. Per-layer
+	 * fields surfaced under `layers[ id ]`: `label`, `url` (with `{KEY}`
+	 * left intact for paid providers), `attribution`, `maxZoom`. The shape
+	 * is deliberately explicit so a future change to the registry's
+	 * internal record type does not silently leak through the editor
+	 * data; only the fields listed below ever reach the browser. The
+	 * per-block API keys are *never* part of this payload — they live in
+	 * `attributes.tileOverlayApiKeys` (a provider-keyed object) and the
+	 * entry for each enabled overlay layer's provider is substituted into
+	 * `{KEY}` client-side by `edit.tsx` before forwarding each layer's
+	 * URL to the preview.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<string, array{
 	 *     label: string,
-	 *     url: string,
-	 *     attribution: string,
-	 *     maxZoom: int,
+	 *     requiresKey: bool,
+	 *     layers: array<string, array{
+	 *         label: string,
+	 *         url: string,
+	 *         attribution: string,
+	 *         maxZoom: int,
+	 *     }>,
+	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
-	 * }> $overlays Validated overlay records keyed by id.
+	 * }> $overlays Validated overlay-provider records keyed by id.
 	 *
 	 * @return array<string, array{
 	 *     label: string,
-	 *     url: string,
-	 *     attribution: string,
-	 *     maxZoom: int,
+	 *     requiresKey: bool,
+	 *     layers: array<string, array{
+	 *         label: string,
+	 *         url: string,
+	 *         attribution: string,
+	 *         maxZoom: int,
+	 *     }>,
+	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
 	 * }>
 	 */
@@ -239,16 +260,33 @@ final class Editor_Data_Enqueuer {
 		$out = [];
 
 		foreach ( $overlays as $id => $record ) {
+
+			// Compose the per-layer sub-map. The shape mirrors the
+			// validator's typed layer record verbatim; the validator has
+			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
+			$layers = [];
+			foreach ( $record['layers'] as $layer_id => $layer ) {
+				$layers[ $layer_id ] = [
+					'label'       => $layer['label'],
+					'url'         => $layer['url'],
+					'attribution' => $layer['attribution'],
+					'maxZoom'     => $layer['maxZoom'],
+				];
+			}
+
 			$entry = [
 				'label'       => $record['label'],
-				'url'         => $record['url'],
-				'attribution' => $record['attribution'],
-				'maxZoom'     => $record['maxZoom'],
+				'requiresKey' => $record['requiresKey'],
+				'layers'      => $layers,
 			];
+			if ( isset( $record['signupUrl'] ) ) {
+				$entry['signupUrl'] = $record['signupUrl'];
+			}
 			if ( isset( $record['subdomains'] ) ) {
 				$entry['subdomains'] = $record['subdomains'];
 			}
 			$out[ $id ] = $entry;
+
 		}
 
 		return $out;

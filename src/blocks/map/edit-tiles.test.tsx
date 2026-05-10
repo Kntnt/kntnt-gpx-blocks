@@ -322,6 +322,7 @@ function buildAttributes(
 		tileStyle: 'mapnik',
 		tileApiKeys: {},
 		tileOverlays: [],
+		tileOverlayApiKeys: {},
 		...overrides,
 	};
 }

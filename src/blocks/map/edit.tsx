@@ -65,20 +65,45 @@ import { detectPreviewNotices } from './preview-notices';
 // ─── Editor data global (window.kntntGpxBlocks) ─────────────────────────────
 
 /**
- * Editor-only overlay record exposed via `window.kntntGpxBlocks.overlays`.
+ * Editor-only per-layer record nested inside each overlay-provider's
+ * `layers` map.
  *
- * Inlined by `Bootstrap\Editor_Data_Enqueuer` on every editor request as
- * `before` script of the GPX Map block's editor handle. The editor needs
- * URL/attribution/maxZoom so `MapEditorPreview` can mount the overlay
- * directly via `L.tileLayer()`. Subdomains is optional.
+ * Carries the tile-layer fields `MapEditorPreview` forwards to
+ * `L.tileLayer()` (URL with `{KEY}` left intact, attribution, maxZoom)
+ * plus the localised `label` the per-layer ToggleControl surfaces.
+ * `subdomains` is *not* on the layer record — it is a provider-level
+ * property inherited by every layer of that overlay-provider whose URL
+ * contains `{s}`.
  *
  * @since 1.0.0
  */
-interface EditorRegistryOverlay {
+interface EditorRegistryOverlayLayer {
 	readonly label: string;
 	readonly url: string;
 	readonly attribution: string;
 	readonly maxZoom: number;
+}
+
+/**
+ * Editor-only overlay-provider record exposed via
+ * `window.kntntGpxBlocks.overlays`.
+ *
+ * Inlined by `Bootstrap\Editor_Data_Enqueuer` on every editor request as
+ * `before` script of the GPX Map block's editor handle. Mirrors the
+ * base-provider shape minus `default` (overlays are multi-select). The
+ * editor needs `label` and `requiresKey` to drive the per-provider
+ * sub-section and the conditional API-key field; `signupUrl` powers the
+ * "Get one" ExternalLink; `subdomains` and per-layer URL/attribution/
+ * maxZoom let `MapEditorPreview` mount each enabled layer directly via
+ * `L.tileLayer()`.
+ *
+ * @since 1.0.0
+ */
+interface EditorRegistryOverlayProvider {
+	readonly label: string;
+	readonly requiresKey: boolean;
+	readonly layers: Readonly< Record< string, EditorRegistryOverlayLayer > >;
+	readonly signupUrl?: string;
 	readonly subdomains?: readonly string[];
 }
 
@@ -131,7 +156,26 @@ interface EditorRegistryProvider {
  */
 interface EditorRegistry {
 	readonly providers: Readonly< Record< string, EditorRegistryProvider > >;
-	readonly overlays: Readonly< Record< string, EditorRegistryOverlay > >;
+	readonly overlays: Readonly<
+		Record< string, EditorRegistryOverlayProvider >
+	>;
+}
+
+/**
+ * Persisted (provider, layer) overlay-pair shape used in
+ * `attributes.tileOverlays`.
+ *
+ * Mirrors `block.json`'s `tileOverlays` array entries. The pair preserves
+ * stacking order: the array's order is the order overlays are layered on
+ * top of the base map. Per-overlay-provider API keys live in the parallel
+ * `tileOverlayApiKeys` map keyed by provider id; the same key is shared
+ * across every layer of that provider that the editor enables.
+ *
+ * @since 1.0.0
+ */
+interface OverlayPair {
+	readonly provider: string;
+	readonly layer: string;
 }
 
 declare global {
@@ -191,7 +235,8 @@ interface MapAttributes {
 	tileProvider: string;
 	tileStyle: string;
 	tileApiKeys: Record< string, string >;
-	tileOverlays: string[];
+	tileOverlays: OverlayPair[];
+	tileOverlayApiKeys: Record< string, string >;
 	[ key: string ]: unknown;
 }
 
@@ -453,100 +498,278 @@ function TypographyToolsPanel( {
 /**
  * Renders the "Overlays" inspector panel when the registry is non-empty.
  *
- * Reads the validated overlay registry from `window.kntntGpxBlocks.overlays`
- * (populated by `Bootstrap\Editor_Data_Enqueuer`) and renders one
- * `ToggleControl` per id. The toggle's checked state mirrors whether the id
- * is present in `attributes.tileOverlays`; toggling adds or removes the id
- * from the array. When the registry is empty (e.g. a site builder dropped
- * every default overlay via the `kntnt_gpx_blocks_tile_overlays` filter)
- * the panel collapses to nothing — the issue spec calls for "no PanelBody",
+ * Reads the validated overlay-provider registry from
+ * `window.kntntGpxBlocks.overlays` (populated by
+ * `Bootstrap\Editor_Data_Enqueuer`) and renders one sub-section per
+ * provider. Each sub-section carries:
+ *
+ * - The provider's label as a sub-header.
+ * - For `requiresKey === true` providers: an API-key `TextControl` and a
+ *   "Get one" `ExternalLink` to `signupUrl` when present. The same key is
+ *   shared across every layer of that provider that the editor enables;
+ *   the value is read from and written to
+ *   `attributes.tileOverlayApiKeys[ providerId ]`.
+ * - One `ToggleControl` per layer. The toggle's checked state mirrors
+ *   whether the (provider, layer) pair is present in
+ *   `attributes.tileOverlays`; toggling adds or removes the pair from the
+ *   array, preserving stacking order.
+ *
+ * Stale-state surfacing — orphan saved pairs (the provider is gone, or
+ * the layer is gone within a still-present provider) are surfaced at the
+ * bottom of the panel as disabled toggles labelled with the orphan ids
+ * themselves so the editor reflects persisted state without silently
+ * rewriting it. The user removes them by saving the post with different
+ * choices or by manually unchecking the disabled toggle (which still
+ * fires the standard `onChange` because `disabled` is purely an
+ * affordance — the underlying state can be cleared with the same code
+ * path).
+ *
+ * When the registry is empty (e.g. a site builder dropped every default
+ * overlay provider via the `kntnt_gpx_blocks_tile_overlays` filter) the
+ * panel collapses to nothing — the issue spec calls for "no PanelBody",
  * not an empty panel.
  *
  * @since 1.0.0
  *
- * @param props             Component props.
- * @param props.selectedIds Current `tileOverlays` array.
- * @param props.onChange    Setter that writes the new array.
+ * @param props                Component props.
+ * @param props.selectedPairs  Current `tileOverlays` array (typed pairs).
+ * @param props.overlayApiKeys Current `tileOverlayApiKeys` map keyed by
+ *                             overlay-provider id.
+ * @param props.onPairsChange  Setter that writes the new `tileOverlays`
+ *                             array.
+ * @param props.onApiKeyChange Setter that writes a per-provider API key,
+ *                             merged into the existing
+ *                             `tileOverlayApiKeys` map.
  */
 function OverlaysPanel( {
-	selectedIds,
-	onChange,
+	selectedPairs,
+	overlayApiKeys,
+	onPairsChange,
+	onApiKeyChange,
 }: {
-	selectedIds: string[];
-	onChange: ( next: string[] ) => void;
+	selectedPairs: OverlayPair[];
+	overlayApiKeys: Record< string, string >;
+	onPairsChange: ( next: OverlayPair[] ) => void;
+	onApiKeyChange: ( providerId: string, apiKey: string ) => void;
 } ): JSX.Element | null {
 	const overlays = window.kntntGpxBlocks?.overlays ?? {};
-	const ids = Object.keys( overlays );
-	if ( ids.length === 0 ) {
+	const providerIds = Object.keys( overlays );
+	if ( providerIds.length === 0 ) {
 		return null;
 	}
 
+	// Pre-compute the orphan pairs (saved pairs whose provider is missing
+	// from the registry, or whose layer is missing within a present
+	// provider). They render as disabled toggles at the bottom of the
+	// panel so the editor sees the persisted state rather than having it
+	// silently rewritten on render.
+	const orphanPairs = selectedPairs.filter( ( pair ) => {
+		const provider = overlays[ pair.provider ];
+		if ( ! provider ) {
+			return true;
+		}
+		return ! provider.layers[ pair.layer ];
+	} );
+
 	return (
 		<PanelBody title={ __( 'Overlays', 'kntnt-gpx-blocks' ) }>
-			{ ids.map( ( id ) => {
-				const overlay = overlays[ id ];
-				if ( ! overlay ) {
+			{ providerIds.map( ( providerId ) => {
+				const provider = overlays[ providerId ];
+				if ( ! provider ) {
 					return null;
 				}
-				const checked = selectedIds.includes( id );
+				const layerIds = Object.keys( provider.layers );
 				return (
-					<ToggleControl
-						key={ id }
-						label={ overlay.label }
-						checked={ checked }
-						onChange={ ( next: boolean ) => {
-							if ( next ) {
-								if ( checked ) {
-									return;
+					<div
+						key={ providerId }
+						className="kntnt-gpx-blocks-overlay-provider"
+					>
+						<h3 className="kntnt-gpx-blocks-overlay-provider-label">
+							{ provider.label }
+						</h3>
+						{ provider.requiresKey && (
+							<TextControl
+								__next40pxDefaultSize
+								__nextHasNoMarginBottom
+								label={ __( 'API key', 'kntnt-gpx-blocks' ) }
+								value={ overlayApiKeys[ providerId ] ?? '' }
+								onChange={ ( next: string ) =>
+									onApiKeyChange( providerId, next )
 								}
-								onChange( [ ...selectedIds, id ] );
-							} else {
-								onChange(
-									selectedIds.filter(
-										( existing ) => existing !== id
+								help={
+									provider.signupUrl ? (
+										<>
+											{ __(
+												'This provider requires an API key.',
+												'kntnt-gpx-blocks'
+											) }{ ' ' }
+											<ExternalLink
+												href={ provider.signupUrl }
+											>
+												{ __(
+													'Get one',
+													'kntnt-gpx-blocks'
+												) }
+											</ExternalLink>
+										</>
+									) : (
+										__(
+											"This provider requires an API key. See the provider's documentation.",
+											'kntnt-gpx-blocks'
+										)
 									)
-								);
+								}
+							/>
+						) }
+						{ layerIds.map( ( layerId ) => {
+							const layer = provider.layers[ layerId ];
+							if ( ! layer ) {
+								return null;
 							}
-						} }
-					/>
+							const checked = selectedPairs.some(
+								( pair ) =>
+									pair.provider === providerId &&
+									pair.layer === layerId
+							);
+							return (
+								<ToggleControl
+									key={ layerId }
+									label={ layer.label }
+									checked={ checked }
+									onChange={ ( next: boolean ) => {
+										if ( next ) {
+											if ( checked ) {
+												return;
+											}
+											onPairsChange( [
+												...selectedPairs,
+												{
+													provider: providerId,
+													layer: layerId,
+												},
+											] );
+										} else {
+											onPairsChange(
+												selectedPairs.filter(
+													( pair ) =>
+														! (
+															pair.provider ===
+																providerId &&
+															pair.layer ===
+																layerId
+														)
+												)
+											);
+										}
+									} }
+								/>
+							);
+						} ) }
+					</div>
 				);
 			} ) }
+			{ orphanPairs.length > 0 && (
+				<div className="kntnt-gpx-blocks-overlay-provider kntnt-gpx-blocks-overlay-orphans">
+					<h3 className="kntnt-gpx-blocks-overlay-provider-label">
+						{ __( 'Unrecognised overlays', 'kntnt-gpx-blocks' ) }
+					</h3>
+					{ orphanPairs.map( ( pair ) => {
+						const orphanLabel = `${ pair.provider } / ${ pair.layer }`;
+						return (
+							<ToggleControl
+								key={ orphanLabel }
+								label={ orphanLabel }
+								checked={ true }
+								disabled
+								onChange={ ( next: boolean ) => {
+									if ( next ) {
+										return;
+									}
+									onPairsChange(
+										selectedPairs.filter(
+											( other ) =>
+												! (
+													other.provider ===
+														pair.provider &&
+													other.layer === pair.layer
+												)
+										)
+									);
+								} }
+							/>
+						);
+					} ) }
+				</div>
+			) }
 		</PanelBody>
 	);
 }
 
 /**
- * Resolves a list of saved overlay ids to runtime records for the editor preview.
+ * Resolves a list of saved overlay (provider, layer) pairs to runtime
+ * records for the editor preview.
  *
- * Mirrors the server-side `Tile_Layer_Registry::resolve_overlays()` contract
- * narrowed to what the editor preview needs: only the `id` survives because
- * URL/attribution/maxZoom/subdomains are not exposed to the editor. Unknown
- * ids are dropped silently — the editor is not the place to surface
- * mis-configurations; PHP logs them on the rendered page.
+ * Mirrors the server-side `Tile_Layer_Registry::resolve_overlays()`
+ * contract on the editor side: each pair is looked up in the editor-data
+ * registry, the per-overlay-provider API key is substituted into `{KEY}`
+ * for paid providers, and the resulting record is emitted in input
+ * order. Unknown providers, unknown layers, and missing-key drops are
+ * handled silently — the editor preview surfaces the resulting overlay
+ * stack without diagnostics here (PHP logs them on the rendered page).
+ *
+ * The `id` field on `EditorOverlayRecord` is set to `${provider}/${layer}`
+ * for telemetry parity with the previous flat shape; the preview does
+ * not actually need it to mount the layer.
  *
  * @since 1.0.0
  *
- * @param ids - Overlay ids from `attributes.tileOverlays`.
- * @return Resolved records in the input order, with unknown ids removed.
+ * @param pairs       - Overlay pairs from `attributes.tileOverlays`.
+ * @param overlayKeys - Per-overlay-provider API-key map from
+ *                    `attributes.tileOverlayApiKeys`.
+ * @return Resolved records in the input order, with unknown / missing-key
+ *         pairs removed.
  */
 function resolveOverlaysForPreview(
-	ids: readonly string[]
+	pairs: readonly OverlayPair[],
+	overlayKeys: Record< string, string >
 ): EditorOverlayRecord[] {
 	const overlays = window.kntntGpxBlocks?.overlays ?? {};
 	const out: EditorOverlayRecord[] = [];
-	for ( const id of ids ) {
-		const record = overlays[ id ];
-		if ( ! record ) {
+	for ( const pair of pairs ) {
+		const provider = overlays[ pair.provider ];
+		if ( ! provider ) {
+			continue;
+		}
+		const layer = provider.layers[ pair.layer ];
+		if ( ! layer ) {
+			continue;
+		}
+		if ( provider.requiresKey ) {
+			const apiKey = overlayKeys[ pair.provider ] ?? '';
+			if ( apiKey.trim() === '' ) {
+				continue;
+			}
+			const url = substituteTileApiKey( layer.url, apiKey );
+			const entry: EditorOverlayRecord = {
+				id: `${ pair.provider }/${ pair.layer }`,
+				url,
+				attribution: layer.attribution,
+				maxZoom: layer.maxZoom,
+			};
+			if ( provider.subdomains && provider.subdomains.length > 0 ) {
+				entry.subdomains = [ ...provider.subdomains ];
+			}
+			out.push( entry );
 			continue;
 		}
 		const entry: EditorOverlayRecord = {
-			id,
-			url: record.url,
-			attribution: record.attribution,
-			maxZoom: record.maxZoom,
+			id: `${ pair.provider }/${ pair.layer }`,
+			url: layer.url,
+			attribution: layer.attribution,
+			maxZoom: layer.maxZoom,
 		};
-		if ( record.subdomains && record.subdomains.length > 0 ) {
-			entry.subdomains = [ ...record.subdomains ];
+		if ( provider.subdomains && provider.subdomains.length > 0 ) {
+			entry.subdomains = [ ...provider.subdomains ];
 		}
 		out.push( entry );
 	}
@@ -851,6 +1074,7 @@ export const MapEdit = ( {
 		tileStyle,
 		tileApiKeys,
 		tileOverlays,
+		tileOverlayApiKeys,
 	} = attributes;
 
 	// Resolve the attached media's source URL so MediaReplaceFlow can label
@@ -1162,9 +1386,18 @@ export const MapEdit = ( {
 					} }
 				/>
 				<OverlaysPanel
-					selectedIds={ tileOverlays }
-					onChange={ ( next ) =>
+					selectedPairs={ tileOverlays }
+					overlayApiKeys={ tileOverlayApiKeys ?? {} }
+					onPairsChange={ ( next ) =>
 						setAttributes( { tileOverlays: next } )
+					}
+					onApiKeyChange={ ( providerId, apiKey ) =>
+						setAttributes( {
+							tileOverlayApiKeys: {
+								...( tileOverlayApiKeys ?? {} ),
+								[ providerId ]: apiKey,
+							},
+						} )
 					}
 				/>
 			</InspectorControls>
@@ -1338,7 +1571,10 @@ export const MapEdit = ( {
 							tileStyle,
 							tileApiKeys?.[ tileProvider ] ?? ''
 						),
-						overlays: resolveOverlaysForPreview( tileOverlays ),
+						overlays: resolveOverlaysForPreview(
+							tileOverlays,
+							tileOverlayApiKeys ?? {}
+						),
 					} }
 					{ ...detectPreviewNotices(
 						tileProvider,

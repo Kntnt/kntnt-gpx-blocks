@@ -161,13 +161,37 @@ final class Render_Map {
 		$raw_tile_api_key  = $tile_api_keys[ $tile_provider_id ] ?? '';
 		$tile_api_key      = is_string( $raw_tile_api_key ) ? $raw_tile_api_key : '';
 
-		// Read the saved overlay-id list. Each entry is validated and resolved
-		// against the overlay registry; unknown ids are dropped with a warning.
-		$tile_overlay_ids = [];
+		// Read the saved overlay (provider, layer) pair list and the
+		// per-overlay-provider API-key map. Each pair is validated and
+		// resolved against the overlay-provider registry; unknown
+		// providers, unknown layers, and missing-key drops happen inside
+		// the resolver with a per-drop warning. Malformed list entries
+		// (non-array, missing keys, non-string keys) are coerced out here
+		// so the resolver only ever sees the documented shape.
+		$tile_overlay_pairs = [];
 		if ( isset( $attributes['tileOverlays'] ) && is_array( $attributes['tileOverlays'] ) ) {
-			foreach ( $attributes['tileOverlays'] as $overlay_id ) {
-				if ( is_string( $overlay_id ) && '' !== $overlay_id ) {
-					$tile_overlay_ids[] = $overlay_id;
+			foreach ( $attributes['tileOverlays'] as $pair ) {
+				if ( ! is_array( $pair ) ) {
+					continue;
+				}
+				$provider_id = $pair['provider'] ?? null;
+				$layer_id    = $pair['layer'] ?? null;
+				if ( ! is_string( $provider_id ) || '' === $provider_id
+					|| ! is_string( $layer_id ) || '' === $layer_id ) {
+					continue;
+				}
+				$tile_overlay_pairs[] = [
+					'provider' => $provider_id,
+					'layer'    => $layer_id,
+				];
+			}
+		}
+		$raw_overlay_api_keys  = $attributes['tileOverlayApiKeys'] ?? [];
+		$tile_overlay_api_keys = [];
+		if ( is_array( $raw_overlay_api_keys ) ) {
+			foreach ( $raw_overlay_api_keys as $provider_id => $api_key ) {
+				if ( is_string( $provider_id ) && '' !== $provider_id ) {
+					$tile_overlay_api_keys[ $provider_id ] = $api_key;
 				}
 			}
 		}
@@ -234,17 +258,21 @@ final class Render_Map {
 
 		// Resolve the tile-layer records for the per-block Interactivity
 		// state. The registry validates the filtered defaults, walks the
-		// (provider, style) pair down the nested map, substitutes the
+		// (provider, style) pair down the nested base map, substitutes the
 		// per-provider API key into `{KEY}`, and falls back silently to
 		// `openstreetmap` on unknown provider ids (with a warning log).
-		// Overlay records mirror the provider shape minus the API-key
-		// handling. The view module reads url/attribution/maxZoom/
-		// subdomains from these records to build its tile layer; the
-		// {KEY}-substituted URL is the only place the API key reaches the
-		// browser.
+		// Overlay resolution walks each saved (provider, layer) pair down
+		// the parallel nested overlay map, substituting the per-overlay-
+		// provider key (from `tileOverlayApiKeys`) into `{KEY}` for paid
+		// overlay providers; pairs whose provider requires a key but whose
+		// entry is empty are dropped with a warning rather than rendering
+		// a polyline-only state — the base map and other overlays still
+		// render. The view module reads url/attribution/maxZoom/subdomains
+		// from these records to build its tile layer; the {KEY}-substituted
+		// URL is the only place the API key reaches the browser.
 		$tile_registry = new Tile_Layer_Registry();
 		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_style_id, $tile_api_key );
-		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_ids );
+		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_pairs, $tile_overlay_api_keys );
 
 		// Polyline-only gate: when the resolved provider requires an API
 		// key and the per-provider entry in `tileApiKeys` is empty, null

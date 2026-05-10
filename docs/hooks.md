@@ -66,7 +66,7 @@ Read once at conversion time, not per render. Changing the value invalidates cac
 
 ## Tile providers
 
-The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileStyle` id, a `tileApiKeys` object (per-provider key map keyed by provider id), and a `tileOverlays` id list as attributes; the renderer looks up `tileApiKeys[ tileProvider ]` and forwards it to the registry, which validates the filtered set, walks the (provider, style) pair down the nested map, substitutes `{KEY}` server-side, and writes the resolved record(s) into the per-block Interactivity state. Unknown provider ids fall back silently to `openstreetmap` (and to its default style) with a `Plugin::warning()` log; unknown style ids inside a known provider fall back to the provider's own `default` style; unknown overlay ids are dropped silently with the same log level.
+The GPX Map block resolves its base-tile provider and any overlay layers through `Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry`, which exposes two filters for site builders to add, replace, or remove records. The registry is **PHP-canonical** — there is no JS-side registration. Each block carries a `tileProvider` id, a `tileStyle` id, a `tileApiKeys` object (per-provider key map keyed by provider id), a `tileOverlays` array of `{provider, layer}` pairs, and a `tileOverlayApiKeys` object (per-overlay-provider key map keyed by overlay-provider id) as attributes. The renderer looks up `tileApiKeys[ tileProvider ]` and forwards it to the registry, which validates the filtered set, walks the (provider, style) pair down the nested map, substitutes `{KEY}` server-side, and writes the resolved record into the per-block Interactivity state. For each saved overlay pair the registry walks the parallel overlay-provider/layer map, substitutes the per-overlay-provider key from `tileOverlayApiKeys` into `{KEY}` for paid overlay providers, and appends the resolved record to the overlay stack. Unknown provider ids fall back silently to `openstreetmap` (and to its default style) with a `Plugin::warning()` log; unknown style ids inside a known provider fall back to the provider's own `default` style; unknown overlay providers, unknown overlay layers, and overlay pairs whose paid provider has no key are dropped silently with the same log level (the base map and other overlays still render — there is no polyline-only concept for overlays).
 
 ### `kntnt_gpx_blocks_tile_providers`
 
@@ -93,37 +93,59 @@ $providers = apply_filters( 'kntnt_gpx_blocks_tile_providers', $defaults );
 
 ### `kntnt_gpx_blocks_tile_overlays`
 
-Map of overlay layers keyed by overlay id. The default ships five entries, all free and key-less: `wmt-hiking` (Waymarked Trails Hiking), `wmt-cycling` (Waymarked Trails Cycling), `wmt-mtb` (Waymarked Trails MTB), `openseamap` (OpenSeaMap sea marks), and `opensnowmap` (OpenSnowMap pistes).
+Two-level map of overlay providers keyed by overlay-provider id, each carrying a nested `layers` map keyed by layer id. The default ships **4 providers** with the following layer counts: OpenSeaMap (1 layer `seamarks`, key-less), OpenSnowMap (1 layer `pistes`, key-less), OpenWeatherMap (5 layers `clouds`, `precipitation`, `pressure`, `temperature`, `wind-speed`, key-required), Waymarked Trails (6 layers `hiking`, `cycling`, `mtb`, `riding`, `skating`, `winter`, key-less). The block.json default seeds `tileOverlays: []` and `tileOverlayApiKeys: {}` so a freshly inserted block has no overlays enabled.
 
 ```php
 $overlays = apply_filters( 'kntnt_gpx_blocks_tile_overlays', $defaults );
 // array<string, array{
-//     label: string,        // Translatable display label.
-//     url: string,          // Tile URL with {z}/{x}/{y}; no {KEY} (overlays
-//                           // carry no per-block API key in v1).
-//     attribution: string,  // HTML snippet — trusted to the filter callback.
-//     maxZoom: int,         // 0..22 inclusive.
-//     subdomains?: string[], // Optional Leaflet {s} substitution list.
+//     label: string,         // Translatable overlay-provider display label.
+//     requiresKey: bool,     // One API key per provider, shared across all the provider's layers.
+//     layers: array<string, array{
+//         label: string,         // Translatable layer display label.
+//         url: string,           // Tile URL with {z}/{x}/{y}; {KEY} iff provider.requiresKey.
+//         attribution: string,   // HTML snippet — trusted to the filter callback.
+//         maxZoom: int,          // 0..22 inclusive.
+//     }>,
+//     signupUrl?: string,    // Optional https:// URL where users obtain a key.
+//     subdomains?: string[], // Optional Leaflet {s} substitution list,
+//                            // inherited by every layer of this provider
+//                            // whose URL contains {s}.
 // }>
 ```
 
+Unlike base providers, overlay providers carry **no `default` layer** — overlays are multi-select. The editor's "Overlays" panel renders one sub-section per provider with the provider label as a sub-header, the conditional API-key TextControl + signup ExternalLink for key-required providers, and one ToggleControl per layer. The single per-provider key is shared across every layer of that provider that the editor enables.
+
 ### Validation rules
 
-Every record is validated at filter-application time. The validator follows a **drop-the-narrowest-unit** rule: a bad single style drops just that style with one `Plugin::warning()` log; a provider-level failure (missing required field, `default` resolving to a dropped style, empty `styles` map, `{s}`-using style on a provider without `subdomains`) drops the whole provider. Each drop emits one log naming the failing id and the failing constraint:
+Every record is validated at filter-application time. The validator follows a **drop-the-narrowest-unit** rule across both halves of the registry: a bad single style (or overlay layer) drops just that entry with one `Plugin::warning()` log; a provider-level failure drops the whole provider with a separate warning. Each drop emits one log naming the failing id and the failing constraint.
+
+**Base providers (`kntnt_gpx_blocks_tile_providers`)**
 
 - Provider id and style id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
 - Provider-level: `label`, `requiresKey` (bool), `default` (non-empty string style id), and `styles` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present.
 - Per-style: `label`, `url`, `attribution`, `maxZoom` are required.
 - `url` must start with `https://` and contain the literals `{z}`, `{x}`, `{y}`.
-- For base providers: the per-style URL contains `{KEY}` iff `provider.requiresKey === true`.
-- For overlays: the URL must not contain `{KEY}` (overlays carry no key in v1).
+- The per-style URL contains `{KEY}` iff `provider.requiresKey === true`.
 - **`subdomains` inheritance:** a style whose URL contains the `{s}` placeholder requires its containing provider to declare `subdomains` at the provider level — Leaflet substitutes `{s}` against the provider's list. A `{s}`-using style on a provider without `subdomains` is dropped.
 - `maxZoom` is an integer in `[0, 22]`. Floats and numeric strings are rejected.
 - Provider survives only when at least one style survives validation **and** its declared `default` is among the survivors.
 
+**Overlay providers (`kntnt_gpx_blocks_tile_overlays`)**
+
+The rules mirror the base side minus the `default` requirement (overlays are multi-select):
+
+- Overlay-provider id and layer id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
+- Provider-level: `label`, `requiresKey` (bool), and `layers` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present.
+- Per-layer: `label`, `url`, `attribution`, `maxZoom` are required.
+- `url` must start with `https://` and contain the literals `{z}`, `{x}`, `{y}`.
+- The per-layer URL contains `{KEY}` iff `provider.requiresKey === true`. For key-required overlay providers, the renderer substitutes `tileOverlayApiKeys[ providerId ]` server-side; an enabled overlay pair whose provider requires a key but whose `tileOverlayApiKeys` entry is empty is dropped at render time with a `Plugin::warning()` log (the toggle state still saves; the base map and other overlays still render).
+- **`subdomains` inheritance:** identical to the base side. A `{s}`-using layer on a provider without `subdomains` is dropped.
+- `maxZoom` is an integer in `[0, 22]`. Floats and numeric strings are rejected.
+- Overlay provider survives only when at least one layer survives validation.
+
 The HTML in `attribution` is trusted to the filter callback — keep it tightly scoped (anchor tags and entities) and never include script content.
 
-The canonical `openstreetmap` provider is always preserved: if a filter callback drops it, the registry re-injects it with a warning so the resolver always has a fallback target. Resolution fall-backs are layered: unknown provider id → global fallback provider + its default style; known provider, unknown style id → provider's own `default` style; defensive fall-through (provider's `default` itself does not resolve) → global fallback provider's default style.
+The canonical `openstreetmap` base provider is always preserved: if a filter callback drops it, the registry re-injects it with a warning so the resolver always has a fallback target. Base resolution fall-backs are layered: unknown provider id → global fallback provider + its default style; known provider, unknown style id → provider's own `default` style; defensive fall-through (provider's `default` itself does not resolve) → global fallback provider's default style. Overlay resolution has no fall-back — overlays are multi-select, so an unknown saved (provider, layer) pair is simply dropped from the resolved overlay stack.
 
 ### Adding a custom provider
 
@@ -154,6 +176,35 @@ add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $provider
 ```
 
 The new provider becomes available to every editor on the site; the editor UI lists the validated set returned by this filter — first dropdown picks the provider, second dropdown lists that provider's styles, and a single API-key field captures the key shared across all the provider's styles.
+
+### Adding a custom overlay provider
+
+```php
+add_filter( 'kntnt_gpx_blocks_tile_overlays', static function ( array $overlays ): array {
+	$overlays['my-overlay'] = [
+		'label'       => 'My Overlay',
+		'requiresKey' => true,
+		'signupUrl'   => 'https://example.com/signup',
+		'layers'      => [
+			'heatmap' => [
+				'label'       => 'Heatmap',
+				'url'         => 'https://overlay.example.com/heatmap/{z}/{x}/{y}.png?token={KEY}',
+				'attribution' => '&copy; <a href="https://example.com/">Example</a>',
+				'maxZoom'     => 18,
+			],
+			'contours' => [
+				'label'       => 'Contours',
+				'url'         => 'https://overlay.example.com/contours/{z}/{x}/{y}.png?token={KEY}',
+				'attribution' => '&copy; <a href="https://example.com/">Example</a>',
+				'maxZoom'     => 18,
+			],
+		],
+	];
+	return $overlays;
+} );
+```
+
+The new overlay provider becomes available to every editor on the site; the Overlays panel renders one sub-section per validated provider — provider label as a sub-header, conditional API-key field for key-required providers, and one toggle per layer that adds or removes a `{provider, layer}` pair from `attributes.tileOverlays` while preserving stacking order.
 
 ## Formatting
 

@@ -192,8 +192,12 @@
       "type": "array",
       "default": [],
       "items": {
-        "type": "string"
+        "type": "object"
       }
+    },
+    "tileOverlayApiKeys": {
+      "type": "object",
+      "default": {}
     }
   }
 }

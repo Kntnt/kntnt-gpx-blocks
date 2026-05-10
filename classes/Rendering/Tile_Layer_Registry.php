@@ -2,30 +2,33 @@
 /**
  * Server-side registry of Leaflet tile-layer providers and overlay layers.
  *
- * Owns the canonical list of base providers (OpenStreetMap, OpenTopoMap,
- * Carto, Esri, Stadia Maps, Jawg Maps, MapTiler, Mapbox, Thunderforest) and
- * overlay layers (Waymarked Trails, OpenSeaMap, OpenSnowMap) that the GPX
- * Map block can choose between, and exposes two public PHP filters —
- * `kntnt_gpx_blocks_tile_providers` and `kntnt_gpx_blocks_tile_overlays` —
- * for site builders to add, replace, or remove records. The registry is
- * **PHP-canonical**: the JS view module reads the resolved record from the
- * per-block Interactivity state, never from a JS-side registry.
+ * Owns the canonical list of base providers (Carto, Esri, Jawg Maps,
+ * Mapbox, MapTiler, OpenStreetMap, OpenTopoMap, Stadia Maps, Thunderforest)
+ * and overlay providers (OpenSeaMap, OpenSnowMap, OpenWeatherMap,
+ * Waymarked Trails) that the GPX Map block can choose between, and exposes
+ * two public PHP filters — `kntnt_gpx_blocks_tile_providers` and
+ * `kntnt_gpx_blocks_tile_overlays` — for site builders to add, replace, or
+ * remove records. The registry is **PHP-canonical**: the JS view module
+ * reads the resolved record from the per-block Interactivity state, never
+ * from a JS-side registry.
  *
- * The provider registry is a two-level hierarchy: each provider carries a
+ * Both registries are two-level hierarchies. Each provider carries a
  * shared `label`, `requiresKey` flag (one API key per provider, shared
- * across all that provider's styles), `default` style id, optional
- * `signupUrl`, optional `subdomains` (inherited by every style of that
- * provider whose URL contains `{s}`), and a `styles` map keyed by style id
- * with per-style `label`, `url`, `attribution`, `maxZoom`. Overlays remain
- * a single-level map keyed by overlay id.
+ * across all that provider's styles/layers), optional `signupUrl`,
+ * optional `subdomains` (inherited by every nested style/layer whose URL
+ * contains `{s}`), and a nested map keyed by id with per-entry `label`,
+ * `url`, `attribution`, `maxZoom`. The base side keys the nested map
+ * `styles` and carries an additional provider-level `default` because
+ * exactly one base style is selected at a time; the overlay side keys it
+ * `layers` and omits `default` because overlays are multi-select.
  *
  * Validation is deterministic and follows a drop-the-narrowest-unit rule.
- * A bad single style drops just that style; provider-level failures
- * (missing required field, `default` resolves to a dropped style, empty
- * styles map, `{s}`-using style without provider-level `subdomains`) drop
- * the whole provider. Every drop emits one `Plugin::warning()` log naming
- * the failing id and the failing constraint so the integrator can locate
- * the mistake quickly.
+ * A bad single style or layer drops just that entry; provider-level
+ * failures (missing required field, `default` resolves to a dropped
+ * style, empty nested map, `{s}`-using entry without provider-level
+ * `subdomains`) drop the whole provider. Every drop emits one
+ * `Plugin::warning()` log naming the failing id and the failing
+ * constraint so the integrator can locate the mistake quickly.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -62,11 +65,17 @@ use Kntnt\Gpx_Blocks\Plugin;
  *     signupUrl?: string,
  *     subdomains?: list<string>,
  * }
- * @phpstan-type OverlayRecord array{
+ * @phpstan-type OverlayLayerRecord array{
  *     label: string,
  *     url: string,
  *     attribution: string,
  *     maxZoom: int,
+ * }
+ * @phpstan-type OverlayProviderRecord array{
+ *     label: string,
+ *     requiresKey: bool,
+ *     layers: array<string, OverlayLayerRecord>,
+ *     signupUrl?: string,
  *     subdomains?: list<string>,
  * }
  * @phpstan-type ResolvedProvider array{
@@ -76,7 +85,6 @@ use Kntnt\Gpx_Blocks\Plugin;
  *     subdomains?: list<string>,
  * }
  * @phpstan-type ResolvedOverlay array{
- *     id: string,
  *     url: string,
  *     attribution: string,
  *     maxZoom: int,
@@ -135,12 +143,15 @@ final class Tile_Layer_Registry {
 	private ?array $providers = null;
 
 	/**
-	 * Cached, validated overlay list for the current request.
+	 * Cached, validated overlay-provider list for the current request.
 	 *
-	 * Same lazy-resolution contract as `$providers`.
+	 * Same lazy-resolution contract as `$providers`. The structure mirrors
+	 * the base-provider hierarchy: keyed by overlay-provider id, each value
+	 * carries a nested `layers` map keyed by layer id. Overlays have no
+	 * `default` because overlays are multi-select.
 	 *
 	 * @since 1.0.0
-	 * @var array<string, OverlayRecord>|null
+	 * @var array<string, OverlayProviderRecord>|null
 	 */
 	private ?array $overlays = null;
 
@@ -176,14 +187,20 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Returns the validated overlay registry, applying the filter on first call.
+	 * Returns the validated overlay-provider registry, applying the filter on first call.
 	 *
-	 * Result shape mirrors the per-style record, minus `requiresKey` and
-	 * `signupUrl` — overlays in v1 do not carry an API key.
+	 * The result is keyed by overlay-provider id. Each value is the
+	 * validated provider record carrying `label`, `requiresKey`, the
+	 * per-layer `layers` map, and the optional `signupUrl` and
+	 * `subdomains` keys. Overlay providers have no `default` because
+	 * overlays are multi-select — there is no "the currently chosen
+	 * overlay layer" within a provider. The `{KEY}` placeholder is left
+	 * as-is in the per-layer URL; substitution happens in
+	 * `resolve_overlays()`.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @return array<string, OverlayRecord>
+	 * @return array<string, OverlayProviderRecord>
 	 */
 	public function get_overlays(): array {
 
@@ -306,50 +323,123 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Resolves a list of saved overlay ids to runtime tile-layer records.
+	 * Resolves a list of saved (provider, layer) pairs to runtime tile-layer records.
 	 *
-	 * Unknown ids are dropped silently with a `Plugin::warning()` log per id.
-	 * The returned array preserves the input order so the JS view module can
-	 * stack overlays in the same order the editor configured them.
+	 * Walks the input pairs in order, looking each (provider, layer) up in
+	 * the validated overlay registry. Pairs whose provider is missing,
+	 * whose layer is missing within a known provider, or whose
+	 * malformed-mixed shape fails the per-entry coercion are dropped
+	 * silently with a `Plugin::warning()` log naming the failing pair.
+	 * Pairs whose provider requires a key but whose `$api_keys[ provider ]`
+	 * entry is empty are also dropped (with a warning) — there is no
+	 * polyline-only concept for overlays; the base map and other overlays
+	 * still render. The returned list preserves the input order so the JS
+	 * view module can stack overlays in the same order the editor
+	 * configured them.
+	 *
+	 * The resolved record carries only the four Leaflet-facing fields
+	 * (`url`, `attribution`, `maxZoom`, optional `subdomains`) — slim and
+	 * symmetric with `resolve_provider`. The caller already has the
+	 * (provider, layer) ids in the block attributes, so they are not
+	 * embedded in the resolved record.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array<int, mixed> $ids Overlay ids from saved block attributes.
-	 *                               `mixed` because block attributes are
-	 *                               JSON-decoded; per-entry coercion happens
-	 *                               inside the loop.
+	 * @param array<int, mixed>          $pairs    Overlay pairs from saved
+	 *                                             block attributes. Each
+	 *                                             entry should be an array
+	 *                                             with `provider` and
+	 *                                             `layer` string keys;
+	 *                                             malformed entries are
+	 *                                             coerced and dropped.
+	 * @param array<string, string|mixed> $api_keys Per-overlay-provider API
+	 *                                              keys, keyed by provider
+	 *                                              id. Entries for providers
+	 *                                              that do not require a key
+	 *                                              are ignored.
 	 *
 	 * @return list<ResolvedOverlay>
 	 */
-	public function resolve_overlays( array $ids ): array {
+	public function resolve_overlays( array $pairs, array $api_keys ): array {
 
 		$overlays = $this->get_overlays();
 		$out      = [];
 
-		foreach ( $ids as $id ) {
+		foreach ( $pairs as $pair ) {
 
 			// Coerce defensively — block attributes are JSON-decoded mixed.
-			if ( ! is_string( $id ) || '' === $id ) {
+			// A pair must be an array carrying string `provider` and `layer`
+			// keys; anything else is silently dropped.
+			if ( ! is_array( $pair ) ) {
+				continue;
+			}
+			$provider_id = $pair['provider'] ?? null;
+			$layer_id    = $pair['layer'] ?? null;
+			if ( ! is_string( $provider_id ) || '' === $provider_id
+				|| ! is_string( $layer_id ) || '' === $layer_id ) {
 				continue;
 			}
 
-			$record = $overlays[ $id ] ?? null;
-			if ( $record === null ) {
+			// Locate the provider record; an unknown provider drops the pair.
+			$provider = $overlays[ $provider_id ] ?? null;
+			if ( $provider === null ) {
 				Plugin::warning(
-					sprintf( 'Tile_Layer_Registry: unknown tile overlay "%s"; dropping.', $id )
+					sprintf(
+						'Tile_Layer_Registry: unknown tile-overlay provider "%s" (layer "%s"); dropping.',
+						$provider_id,
+						$layer_id
+					)
 				);
 				continue;
 			}
 
-			// Compose the runtime record. Overlays never substitute a key in v1.
+			// Locate the layer record within the provider; an unknown layer drops the pair.
+			$layer = $provider['layers'][ $layer_id ] ?? null;
+			if ( $layer === null ) {
+				Plugin::warning(
+					sprintf(
+						'Tile_Layer_Registry: unknown tile-overlay layer "%s" within provider "%s"; dropping.',
+						$layer_id,
+						$provider_id
+					)
+				);
+				continue;
+			}
+
+			// Resolve the per-provider API key. When the provider requires a
+			// key and the key is missing or empty, drop the pair with a
+			// warning — overlays have no polyline-only concept, so a
+			// missing-key overlay simply does not render. Other overlays
+			// continue to render on top of the base layer.
+			$url = $layer['url'];
+			if ( $provider['requiresKey'] ) {
+				$raw_key = $api_keys[ $provider_id ] ?? '';
+				$api_key = is_string( $raw_key ) ? $raw_key : '';
+				if ( '' === trim( $api_key ) ) {
+					Plugin::warning(
+						sprintf(
+							'Tile_Layer_Registry: tile-overlay layer "%s" within provider "%s" requires an API key but none is configured; dropping.',
+							$layer_id,
+							$provider_id
+						)
+					);
+					continue;
+				}
+				$url = str_replace( '{KEY}', $api_key, $url );
+			}
+
+			// Compose the runtime record. `subdomains` is inherited from
+			// the provider (validator contract: a `{s}`-using layer
+			// requires its provider to declare `subdomains`) and is
+			// forwarded only when present so the JS side can branch on
+			// `record.subdomains`.
 			$entry = [
-				'id'          => $id,
-				'url'         => $record['url'],
-				'attribution' => $record['attribution'],
-				'maxZoom'     => $record['maxZoom'],
+				'url'         => $url,
+				'attribution' => $layer['attribution'],
+				'maxZoom'     => $layer['maxZoom'],
 			];
-			if ( isset( $record['subdomains'] ) ) {
-				$entry['subdomains'] = $record['subdomains'];
+			if ( isset( $provider['subdomains'] ) ) {
+				$entry['subdomains'] = $provider['subdomains'];
 			}
 			$out[] = $entry;
 
@@ -411,16 +501,19 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Validates a raw overlay set as supplied by the filter.
+	 * Validates a raw overlay-provider set as supplied by the filter.
 	 *
 	 * Same contract as `validate_provider_set()` but with the overlay
-	 * record shape (a single tile layer, no provider/style hierarchy).
+	 * provider/layer hierarchy. The id alphabet, drop-the-narrowest-unit
+	 * rule, and warning emission mirror the base-provider validator
+	 * verbatim — overlays have no `default` style and no
+	 * fallback-re-injection, but the per-entry path is otherwise the same.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array<int|string, mixed> $raw Raw overlay set from the filter.
+	 * @param array<int|string, mixed> $raw Raw overlay-provider set from the filter.
 	 *
-	 * @return array<string, OverlayRecord>
+	 * @return array<string, OverlayProviderRecord>
 	 */
 	private static function validate_overlay_set( array $raw ): array {
 
@@ -430,19 +523,19 @@ final class Tile_Layer_Registry {
 
 			if ( ! is_string( $id ) || ! is_array( $record ) ) {
 				Plugin::warning(
-					'Tile_Layer_Registry: overlay record dropped — key must be a string id and value must be an array.'
+					'Tile_Layer_Registry: overlay-provider record dropped — key must be a string id and value must be an array.'
 				);
 				continue;
 			}
 
 			if ( ! self::is_valid_id( $id ) ) {
 				Plugin::warning(
-					sprintf( 'Tile_Layer_Registry: overlay id "%s" rejected — must match %s.', $id, self::ID_REGEX )
+					sprintf( 'Tile_Layer_Registry: overlay-provider id "%s" rejected — must match %s.', $id, self::ID_REGEX )
 				);
 				continue;
 			}
 
-			$normalised = self::validate_and_normalise_overlay_record( $id, $record );
+			$normalised = self::validate_and_normalise_overlay_provider_record( $id, $record );
 			if ( $normalised === null ) {
 				continue;
 			}
@@ -673,72 +766,208 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Validates and normalises a single overlay record.
+	 * Validates and normalises a single overlay-provider record.
+	 *
+	 * Enforces the provider-level constraints — non-empty `label`, bool
+	 * `requiresKey`, non-empty `layers` map, optional `signupUrl` is
+	 * https, optional `subdomains` is a non-empty list of non-empty
+	 * strings — and then walks the `layers` sub-map, dropping individual
+	 * bad layers with a warning. After per-layer validation, the provider
+	 * is rejected when no layers survive or when any surviving layer uses
+	 * `{s}` but the provider declared no `subdomains`. Returns the
+	 * canonical typed shape on success, `null` on rejection.
+	 *
+	 * Mirrors `validate_and_normalise_provider_record()` for the base
+	 * registry, minus the `default` style requirement (overlays are
+	 * multi-select).
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string                  $id     Overlay id (already shape-validated).
+	 * @param string                  $id     Overlay-provider id (already shape-validated).
 	 * @param array<int|string, mixed> $record Record to validate.
 	 *
-	 * @return OverlayRecord|null
+	 * @return OverlayProviderRecord|null
 	 */
-	private static function validate_and_normalise_overlay_record( string $id, array $record ): ?array {
+	private static function validate_and_normalise_overlay_provider_record( string $id, array $record ): ?array {
+
+		// label, requiresKey, layers are required provider-level fields.
+		$label = $record['label'] ?? null;
+		if ( ! is_string( $label ) || '' === $label ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" rejected — label must be a non-empty string.', $id ) );
+			return null;
+		}
+		$requires_key = $record['requiresKey'] ?? null;
+		if ( ! is_bool( $requires_key ) ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" rejected — requiresKey must be a bool.', $id ) );
+			return null;
+		}
+		$raw_layers = $record['layers'] ?? null;
+		if ( ! is_array( $raw_layers ) || count( $raw_layers ) === 0 ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" rejected — layers must be a non-empty map.', $id ) );
+			return null;
+		}
+
+		// Optional signupUrl, when present, must be an https string.
+		$signup_url = null;
+		if ( array_key_exists( 'signupUrl', $record ) ) {
+			$candidate = $record['signupUrl'];
+			if ( ! is_string( $candidate ) || ! str_starts_with( $candidate, 'https://' ) ) {
+				Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" rejected — signupUrl must be an https:// string when present.', $id ) );
+				return null;
+			}
+			$signup_url = $candidate;
+		}
+
+		// Optional subdomains, when present, must be a non-empty list of non-empty strings.
+		$subdomains = null;
+		if ( array_key_exists( 'subdomains', $record ) ) {
+			$candidate = self::normalise_subdomains( $record['subdomains'] );
+			if ( $candidate === null ) {
+				Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" rejected — subdomains must be a non-empty list of non-empty strings.', $id ) );
+				return null;
+			}
+			$subdomains = $candidate;
+		}
+
+		// Validate each layer with the drop-the-narrowest-unit rule. A
+		// layer that fails its own validator is dropped with a warning;
+		// the provider survives so long as at least one layer remains.
+		$layers = [];
+		foreach ( $raw_layers as $layer_id => $raw_layer ) {
+
+			if ( ! is_string( $layer_id ) || ! is_array( $raw_layer ) ) {
+				Plugin::warning(
+					sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer dropped — layer key must be a string id and value must be an array.', $id )
+				);
+				continue;
+			}
+
+			if ( ! self::is_valid_id( $layer_id ) ) {
+				Plugin::warning(
+					sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer id "%s" rejected — must match %s.', $id, $layer_id, self::ID_REGEX )
+				);
+				continue;
+			}
+
+			$normalised_layer = self::validate_and_normalise_overlay_layer_record( $id, $layer_id, $raw_layer, $requires_key, $subdomains );
+			if ( $normalised_layer === null ) {
+				continue;
+			}
+
+			$layers[ $layer_id ] = $normalised_layer;
+
+		}
+
+		// Reject the provider when no layers survive — there's nothing left to resolve.
+		if ( count( $layers ) === 0 ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" rejected — no layers survived validation.', $id ) );
+			return null;
+		}
+
+		// Compose the canonical typed shape. Optional fields are added only when they passed.
+		$out = [
+			'label'       => $label,
+			'requiresKey' => $requires_key,
+			'layers'      => $layers,
+		];
+		if ( $signup_url !== null ) {
+			$out['signupUrl'] = $signup_url;
+		}
+		if ( $subdomains !== null ) {
+			$out['subdomains'] = $subdomains;
+		}
+
+		return $out;
+
+	}
+
+	/**
+	 * Validates and normalises a single overlay-layer record within a provider.
+	 *
+	 * Per-layer constraints are identical to the base-style validator
+	 * (non-empty `label`, `attribution`, https `url` containing `{z}`,
+	 * `{x}`, `{y}`, `maxZoom` integer in [0, 22], `{KEY}` iff the
+	 * containing provider's `requiresKey === true`, `{s}` requires
+	 * provider-level `subdomains`). Mirrors
+	 * `validate_and_normalise_style_record()` to keep the two halves of
+	 * the registry stylistically consistent.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string                       $provider_id           Containing provider id (for warning context).
+	 * @param string                       $layer_id              Layer id (already shape-validated).
+	 * @param array<int|string, mixed>     $record                Layer record to validate.
+	 * @param bool                         $provider_requires_key Provider-level `requiresKey` flag.
+	 * @param list<string>|null            $provider_subdomains   Provider-level `subdomains`, if declared.
+	 *
+	 * @return OverlayLayerRecord|null
+	 */
+	private static function validate_and_normalise_overlay_layer_record(
+		string $provider_id,
+		string $layer_id,
+		array $record,
+		bool $provider_requires_key,
+		?array $provider_subdomains,
+	): ?array {
 
 		$label = $record['label'] ?? null;
 		if ( ! is_string( $label ) || '' === $label ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — label must be a non-empty string.', $id ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — label must be a non-empty string.', $provider_id, $layer_id ) );
 			return null;
 		}
 		$url = $record['url'] ?? null;
 		if ( ! is_string( $url ) || '' === $url ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — url must be a non-empty string.', $id ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — url must be a non-empty string.', $provider_id, $layer_id ) );
 			return null;
 		}
 		$attribution = $record['attribution'] ?? null;
 		if ( ! is_string( $attribution ) || '' === $attribution ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — attribution must be a non-empty string.', $id ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — attribution must be a non-empty string.', $provider_id, $layer_id ) );
 			return null;
 		}
 
+		// URL scheme must be https; relative or http URLs leak visitor IPs without TLS.
 		if ( ! str_starts_with( $url, 'https://' ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — url must start with https://.', $id ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — url must start with https://.', $provider_id, $layer_id ) );
 			return null;
 		}
 
+		// URL must contain Leaflet's tile-coordinate placeholders verbatim.
 		if ( ! self::url_has_xyz_placeholders( $url ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — url must contain {z}, {x}, and {y} placeholders.', $id ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — url must contain {z}, {x}, and {y} placeholders.', $provider_id, $layer_id ) );
 			return null;
 		}
 
-		// Overlays in v1 do not carry an API key; reject any URL that asks for one.
-		if ( str_contains( $url, '{KEY}' ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — overlays must not contain {KEY} (no per-block API key for overlays in v1).', $id ) );
+		// {KEY} placeholder must match the provider's `requiresKey` flag.
+		$has_key_placeholder = str_contains( $url, '{KEY}' );
+		if ( $provider_requires_key && ! $has_key_placeholder ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — provider requiresKey=true but url has no {KEY} placeholder.', $provider_id, $layer_id ) );
+			return null;
+		}
+		if ( ! $provider_requires_key && $has_key_placeholder ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — provider requiresKey=false but url contains {KEY} placeholder.', $provider_id, $layer_id ) );
 			return null;
 		}
 
+		// A {s}-using layer requires its provider to declare subdomains.
+		if ( str_contains( $url, '{s}' ) && $provider_subdomains === null ) {
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — url contains {s} but provider declares no subdomains.', $provider_id, $layer_id ) );
+			return null;
+		}
+
+		// maxZoom must be an int in [0, MAX_ZOOM_LIMIT].
 		$max_zoom = $record['maxZoom'] ?? null;
 		if ( ! self::is_valid_max_zoom( $max_zoom ) ) {
-			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — maxZoom must be int in [0, %d].', $id, self::MAX_ZOOM_LIMIT ) );
+			Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay-provider "%s" layer "%s" dropped — maxZoom must be int in [0, %d].', $provider_id, $layer_id, self::MAX_ZOOM_LIMIT ) );
 			return null;
 		}
 
-		$out = [
+		return [
 			'label'       => $label,
 			'url'         => $url,
 			'attribution' => $attribution,
 			'maxZoom'     => $max_zoom,
 		];
-
-		if ( array_key_exists( 'subdomains', $record ) ) {
-			$subdomains = self::normalise_subdomains( $record['subdomains'] );
-			if ( $subdomains === null ) {
-				Plugin::warning( sprintf( 'Tile_Layer_Registry: overlay "%s" rejected — subdomains must be a non-empty list of non-empty strings.', $id ) );
-				return null;
-			}
-			$out['subdomains'] = $subdomains;
-		}
-
-		return $out;
 
 	}
 
@@ -1098,44 +1327,124 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Returns the canonical default overlay set shipped with the plugin.
+	 * Returns the canonical default overlay-provider set shipped with the plugin.
+	 *
+	 * Four providers, ordered alphabetically by display label, shipping a
+	 * total of 13 layers: OpenSeaMap (1 layer, key-less), OpenSnowMap
+	 * (1 layer, key-less), OpenWeatherMap (5 layers, key-required), and
+	 * Waymarked Trails (6 layers, key-less). Each provider mirrors the
+	 * shape of the base-provider registry minus the `default` field
+	 * (overlays are multi-select).
 	 *
 	 * @since 1.0.0
 	 *
-	 * @return array<string, OverlayRecord>
+	 * @return array<string, OverlayProviderRecord>
 	 */
 	private static function default_overlays(): array {
 
 		return [
-			'wmt-hiking'   => [
-				'label'       => __( 'Waymarked Trails — Hiking', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
-				'attribution' => '&copy; <a href="https://hiking.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 18,
+			'openseamap'       => [
+				'label'       => __( 'OpenSeaMap', 'kntnt-gpx-blocks' ),
+				'requiresKey' => false,
+				'layers'      => [
+					'seamarks' => [
+						'label'       => __( 'Sea marks', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://www.openseamap.org/">OpenSeaMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+				],
 			],
-			'wmt-cycling'  => [
-				'label'       => __( 'Waymarked Trails — Cycling', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png',
-				'attribution' => '&copy; <a href="https://cycling.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 18,
+			'opensnowmap'      => [
+				'label'       => __( 'OpenSnowMap', 'kntnt-gpx-blocks' ),
+				'requiresKey' => false,
+				'layers'      => [
+					'pistes' => [
+						'label'       => __( 'Pistes', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://www.opensnowmap.org/">OpenSnowMap</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+						'maxZoom'     => 18,
+					],
+				],
 			],
-			'wmt-mtb'      => [
-				'label'       => __( 'Waymarked Trails — MTB', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png',
-				'attribution' => '&copy; <a href="https://mtb.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-				'maxZoom'     => 18,
+			'openweathermap'   => [
+				'label'       => __( 'OpenWeatherMap', 'kntnt-gpx-blocks' ),
+				'requiresKey' => true,
+				'signupUrl'   => 'https://openweathermap.org/',
+				'layers'      => [
+					'clouds'        => [
+						'label'       => __( 'Clouds', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid={KEY}',
+						'attribution' => '&copy; <a href="https://openweathermap.org/">OpenWeatherMap</a>',
+						'maxZoom'     => 19,
+					],
+					'precipitation' => [
+						'label'       => __( 'Precipitation', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid={KEY}',
+						'attribution' => '&copy; <a href="https://openweathermap.org/">OpenWeatherMap</a>',
+						'maxZoom'     => 19,
+					],
+					'pressure'      => [
+						'label'       => __( 'Pressure', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.openweathermap.org/map/pressure_new/{z}/{x}/{y}.png?appid={KEY}',
+						'attribution' => '&copy; <a href="https://openweathermap.org/">OpenWeatherMap</a>',
+						'maxZoom'     => 19,
+					],
+					'temperature'   => [
+						'label'       => __( 'Temperature', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid={KEY}',
+						'attribution' => '&copy; <a href="https://openweathermap.org/">OpenWeatherMap</a>',
+						'maxZoom'     => 19,
+					],
+					'wind-speed'    => [
+						'label'       => __( 'Wind speed', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid={KEY}',
+						'attribution' => '&copy; <a href="https://openweathermap.org/">OpenWeatherMap</a>',
+						'maxZoom'     => 19,
+					],
+				],
 			],
-			'openseamap'   => [
-				'label'       => __( 'OpenSeaMap (sea marks)', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
-				'attribution' => '&copy; <a href="https://www.openseamap.org/">OpenSeaMap</a> contributors',
-				'maxZoom'     => 18,
-			],
-			'opensnowmap'  => [
-				'label'       => __( 'OpenSnowMap (pistes)', 'kntnt-gpx-blocks' ),
-				'url'         => 'https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png',
-				'attribution' => '&copy; <a href="https://www.opensnowmap.org/">OpenSnowMap</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
-				'maxZoom'     => 18,
+			'waymarked-trails' => [
+				'label'       => __( 'Waymarked Trails', 'kntnt-gpx-blocks' ),
+				'requiresKey' => false,
+				'layers'      => [
+					'hiking'  => [
+						'label'       => __( 'Hiking', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://hiking.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+					'cycling' => [
+						'label'       => __( 'Cycling', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://cycling.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+					'mtb'     => [
+						'label'       => __( 'MTB', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://mtb.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+					'riding'  => [
+						'label'       => __( 'Riding', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.waymarkedtrails.org/riding/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://riding.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+					'skating' => [
+						'label'       => __( 'Skating', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.waymarkedtrails.org/skating/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://skating.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+					'winter'  => [
+						'label'       => __( 'Winter', 'kntnt-gpx-blocks' ),
+						'url'         => 'https://tile.waymarkedtrails.org/slopes/{z}/{x}/{y}.png',
+						'attribution' => '&copy; <a href="https://winter.waymarkedtrails.org/">Waymarked Trails</a> | Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+						'maxZoom'     => 18,
+					],
+				],
 			],
 		];
 

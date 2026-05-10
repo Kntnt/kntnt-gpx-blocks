@@ -95,18 +95,45 @@ function tlr_provider_record( array $overrides = [], ?array $styles = null ): ar
 }
 
 /**
- * Builds a minimal valid overlay record with optional overrides.
+ * Builds a minimal valid overlay-layer record with optional overrides.
+ *
+ * The base layer shape passes every overlay-layer validator constraint
+ * and pairs naturally with a key-less overlay provider (no `{KEY}`
+ * placeholder). Tests inject overrides to flip a single field at a time.
  *
  * @param array<string, mixed> $overrides Overrides applied on top of the base.
  *
  * @return array<string, mixed>
  */
-function tlr_overlay_record( array $overrides = [] ): array {
+function tlr_overlay_layer_record( array $overrides = [] ): array {
 	$base = [
-		'label'       => 'Test Overlay',
+		'label'       => 'Test Layer',
 		'url'         => 'https://overlay.example.com/{z}/{x}/{y}.png',
 		'attribution' => '&copy; Overlay',
 		'maxZoom'     => 18,
+	];
+	return array_merge( $base, $overrides );
+}
+
+/**
+ * Builds a minimal valid overlay-provider record with optional overrides
+ * and a default single-layer sub-map.
+ *
+ * @param array<string, mixed>                     $overrides Provider-level overrides.
+ * @param array<string, array<string, mixed>>|null $layers    Optional explicit
+ *                                                            layers map; when
+ *                                                            omitted, a single
+ *                                                            layer id `default`
+ *                                                            is generated.
+ *
+ * @return array<string, mixed>
+ */
+function tlr_overlay_provider_record( array $overrides = [], ?array $layers = null ): array {
+	$layers = $layers ?? [ 'default' => tlr_overlay_layer_record() ];
+	$base   = [
+		'label'       => 'Test Overlay Provider',
+		'requiresKey' => false,
+		'layers'      => $layers,
 	];
 	return array_merge( $base, $overrides );
 }
@@ -722,55 +749,617 @@ test( 'validator rejects non-string subdomains entries', function (): void {
 } );
 
 // ---------------------------------------------------------------------------
-// Overlay-specific constraints (unchanged shape)
+// Overlay defaults — every shipped provider and layer validates
 // ---------------------------------------------------------------------------
 
-test( 'default overlays all survive validation', function (): void {
+test( 'default overlay providers all survive validation', function (): void {
 
 	$registry = new Tile_Layer_Registry();
 	$overlays = $registry->get_overlays();
 
 	expect( $overlays )
-		->toHaveKey( 'wmt-hiking' )
-		->toHaveKey( 'wmt-cycling' )
-		->toHaveKey( 'wmt-mtb' )
 		->toHaveKey( 'openseamap' )
-		->toHaveKey( 'opensnowmap' );
+		->toHaveKey( 'opensnowmap' )
+		->toHaveKey( 'openweathermap' )
+		->toHaveKey( 'waymarked-trails' );
 
-	expect( count( $overlays ) )->toBe( 5 );
-
-} );
-
-test( 'overlay validator rejects URL without {z}/{x}/{y}', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[ 'bad-overlay' => tlr_overlay_record( [ 'url' => 'https://overlay.example.com/no-placeholders.png' ] ) ]
-	);
-
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'bad-overlay' );
+	expect( count( $overlays ) )->toBe( 4 );
 
 } );
 
-test( 'overlay validator rejects http:// URL', function (): void {
+test( 'default overlay providers ship the expected layer counts', function (): void {
 
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[ 'plain-http-overlay' => tlr_overlay_record( [ 'url' => 'http://overlay.example.com/{z}/{x}/{y}.png' ] ) ]
-	);
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
 
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'plain-http-overlay' );
+	expect( count( $overlays['openseamap']['layers'] ) )->toBe( 1 );
+	expect( count( $overlays['opensnowmap']['layers'] ) )->toBe( 1 );
+	expect( count( $overlays['openweathermap']['layers'] ) )->toBe( 5 );
+	expect( count( $overlays['waymarked-trails']['layers'] ) )->toBe( 6 );
 
 } );
 
-test( 'overlay validator rejects URL containing {KEY} (overlays carry no key in v1)', function (): void {
+test( 'openweathermap is key-required and carries signupUrl plus {KEY} on every layer', function (): void {
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays['openweathermap']['requiresKey'] )->toBeTrue();
+	expect( $overlays['openweathermap'] )->toHaveKey( 'signupUrl' );
+	expect( $overlays['openweathermap']['signupUrl'] )->toStartWith( 'https://' );
+
+	foreach ( $overlays['openweathermap']['layers'] as $layer ) {
+		expect( $layer['url'] )->toContain( '{KEY}' );
+		expect( $layer['url'] )->toStartWith( 'https://' );
+		expect( $layer['url'] )->toContain( '{z}' );
+		expect( $layer['url'] )->toContain( '{x}' );
+		expect( $layer['url'] )->toContain( '{y}' );
+	}
+
+} );
+
+test( 'key-less overlay providers have no {KEY} placeholders and no signupUrl', function (): void {
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	foreach ( [ 'openseamap', 'opensnowmap', 'waymarked-trails' ] as $id ) {
+		expect( $overlays[ $id ]['requiresKey'] )->toBeFalse();
+		expect( array_key_exists( 'signupUrl', $overlays[ $id ] ) )->toBeFalse();
+		foreach ( $overlays[ $id ]['layers'] as $layer ) {
+			expect( $layer['url'] )->not->toContain( '{KEY}' );
+		}
+	}
+
+} );
+
+test( 'waymarked-trails ships hiking, cycling, mtb, riding, skating, winter (winter points at slopes/)', function (): void {
+
+	$wmt = ( new Tile_Layer_Registry() )->get_overlays()['waymarked-trails'];
+
+	foreach ( [ 'hiking', 'cycling', 'mtb', 'riding', 'skating', 'winter' ] as $layer_id ) {
+		expect( $wmt['layers'] )->toHaveKey( $layer_id );
+	}
+
+	// The winter layer URL points at the slopes/ endpoint per Waymarked Trails' own
+	// naming for the winter routing.
+	expect( $wmt['layers']['winter']['url'] )->toContain( 'waymarkedtrails.org/slopes/' );
+
+} );
+
+test( 'openweathermap ships clouds, precipitation, pressure, temperature, wind-speed', function (): void {
+
+	$owm = ( new Tile_Layer_Registry() )->get_overlays()['openweathermap'];
+
+	foreach ( [ 'clouds', 'precipitation', 'pressure', 'temperature', 'wind-speed' ] as $layer_id ) {
+		expect( $owm['layers'] )->toHaveKey( $layer_id );
+	}
+
+} );
+
+test( 'openseamap ships the seamarks layer; opensnowmap ships the pistes layer', function (): void {
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays['openseamap']['layers'] )->toHaveKey( 'seamarks' );
+	expect( $overlays['opensnowmap']['layers'] )->toHaveKey( 'pistes' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Overlay resolver — known (provider, layer); drops; {KEY} substitution
+// ---------------------------------------------------------------------------
+
+test( 'resolve_overlays returns the requested (provider, layer) record for known pairs', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ],
+		[]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'waymarkedtrails.org/hiking' );
+	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
+	expect( $resolved[0]['maxZoom'] )->toBe( 18 );
+
+} );
+
+test( 'resolve_overlays preserves editor-configured pair order', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[
+			[ 'provider' => 'waymarked-trails', 'layer' => 'cycling' ],
+			[ 'provider' => 'opensnowmap', 'layer' => 'pistes' ],
+			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+		],
+		[]
+	);
+
+	expect( $resolved )->toHaveCount( 3 );
+	expect( $resolved[0]['url'] )->toContain( 'waymarkedtrails.org/cycling' );
+	expect( $resolved[1]['url'] )->toContain( 'opensnowmap.org/pistes' );
+	expect( $resolved[2]['url'] )->toContain( 'waymarkedtrails.org/hiking' );
+
+} );
+
+test( 'resolve_overlays drops a pair when the provider is unknown', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[
+			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+			[ 'provider' => 'does-not-exist', 'layer' => 'whatever' ],
+		],
+		[]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'waymarkedtrails.org/hiking' );
+
+} );
+
+test( 'resolve_overlays drops a pair when the layer is unknown within a known provider', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[
+			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+			[ 'provider' => 'waymarked-trails', 'layer' => 'no-such-layer' ],
+		],
+		[]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'waymarkedtrails.org/hiking' );
+
+} );
+
+test( 'resolve_overlays substitutes the API key into {KEY} for key-required overlay providers', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
+		[ 'openweathermap' => 'OWM-TOKEN' ]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
+	expect( $resolved[0]['url'] )->toContain( 'appid=OWM-TOKEN' );
+
+} );
+
+test( 'resolve_overlays drops the pair when a key-required overlay provider has no key', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[
+			[ 'provider' => 'openweathermap', 'layer' => 'clouds' ],
+			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+		],
+		[]
+	);
+
+	// The openweathermap pair is silently dropped; waymarked-trails survives so
+	// the rest of the overlay stack still renders.
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'waymarkedtrails.org/hiking' );
+
+} );
+
+test( 'resolve_overlays drops the pair when the key is whitespace-only', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
+		[ 'openweathermap' => "  \t\n  " ]
+	);
+
+	expect( $resolved )->toBe( [] );
+
+} );
+
+test( 'resolve_overlays does not substitute the key for a key-less overlay provider', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'waymarked-trails', 'layer' => 'mtb' ] ],
+		[ 'waymarked-trails' => 'spurious-key' ]
+	);
+
+	expect( $resolved[0]['url'] )->not->toContain( 'spurious-key' );
+
+} );
+
+test( 'resolve_overlays returns slim records (no id, no label, no requiresKey)', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'opensnowmap', 'layer' => 'pistes' ] ],
+		[]
+	);
+
+	expect( $resolved[0] )->toHaveKey( 'url' );
+	expect( $resolved[0] )->toHaveKey( 'attribution' );
+	expect( $resolved[0] )->toHaveKey( 'maxZoom' );
+	expect( $resolved[0] )->not->toHaveKey( 'id' );
+	expect( $resolved[0] )->not->toHaveKey( 'label' );
+	expect( $resolved[0] )->not->toHaveKey( 'requiresKey' );
+	expect( $resolved[0] )->not->toHaveKey( 'layers' );
+	expect( $resolved[0] )->not->toHaveKey( 'signupUrl' );
+
+} );
+
+test( 'resolve_overlays drops malformed pair entries (non-array, missing keys, non-string keys)', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	/** @phpstan-ignore-next-line — deliberate misuse to test defensive coercion. */
+	$resolved = $registry->resolve_overlays(
+		[
+			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+			'not-an-array',
+			[ 'provider' => 'waymarked-trails' ],
+			[ 'layer' => 'hiking' ],
+			[ 'provider' => 12345, 'layer' => 'hiking' ],
+			[ 'provider' => 'waymarked-trails', 'layer' => '' ],
+			null,
+			0,
+		],
+		[]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'waymarkedtrails.org/hiking' );
+
+} );
+
+test( 'resolve_overlays inherits provider-level subdomains into the resolved record', function (): void {
+
+	// Inject a custom overlay provider that declares subdomains so the resolver
+	// has something to forward verbatim. None of the four default overlay
+	// providers carry subdomains.
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $name, mixed $value ): mixed {
+			if ( $name === 'kntnt_gpx_blocks_tile_overlays' ) {
+				return [
+					'with-subs' => [
+						'label'       => 'With Subdomains',
+						'requiresKey' => false,
+						'subdomains'  => [ 'a', 'b' ],
+						'layers'      => [
+							'main' => [
+								'label'       => 'Main',
+								'url'         => 'https://{s}.overlay.example.com/{z}/{x}/{y}.png',
+								'attribution' => '&copy; Example',
+								'maxZoom'     => 18,
+							],
+						],
+					],
+				];
+			}
+			return $value;
+		}
+	);
+
+	$resolved = ( new Tile_Layer_Registry() )->resolve_overlays(
+		[ [ 'provider' => 'with-subs', 'layer' => 'main' ] ],
+		[]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0] )->toHaveKey( 'subdomains' );
+	expect( $resolved[0]['subdomains'] )->toBe( [ 'a', 'b' ] );
+
+} );
+
+test( 'resolve_overlays omits subdomains when the overlay provider has none', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ],
+		[]
+	);
+
+	expect( $resolved[0] )->not->toHaveKey( 'subdomains' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Overlay validator — drop the narrowest unit
+// ---------------------------------------------------------------------------
+
+test( 'overlay validator drops a single bad layer and keeps the rest of the provider', function (): void {
 
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_overlays',
-		[ 'keyed-overlay' => tlr_overlay_record( [ 'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}' ] ) ]
+		[
+			'multi-layer' => tlr_overlay_provider_record(
+				[],
+				[
+					'good' => tlr_overlay_layer_record(),
+					'bad'  => tlr_overlay_layer_record( [ 'url' => 'https://example.com/no-placeholders.png' ] ),
+				]
+			),
+		]
 	);
 
-	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'keyed-overlay' );
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays )->toHaveKey( 'multi-layer' );
+	expect( $overlays['multi-layer']['layers'] )->toHaveKey( 'good' );
+	expect( $overlays['multi-layer']['layers'] )->not->toHaveKey( 'bad' );
+
+} );
+
+test( 'overlay validator drops the whole provider when no layers survive', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'all-bad' => tlr_overlay_provider_record(
+				[],
+				[
+					'a' => tlr_overlay_layer_record( [ 'url' => 'http://insecure.example.com/{z}/{x}/{y}.png' ] ),
+					'b' => tlr_overlay_layer_record( [ 'maxZoom' => 100 ] ),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'all-bad' );
+
+} );
+
+test( 'overlay validator drops the provider when layers map is empty', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[ 'empty-layers' => tlr_overlay_provider_record( [ 'layers' => [] ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'empty-layers' );
+
+} );
+
+test( 'overlay validator drops a {s}-using layer when its provider declares no subdomains', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'no-subs' => tlr_overlay_provider_record(
+				[],
+				[
+					'plain'  => tlr_overlay_layer_record(),
+					'with-s' => tlr_overlay_layer_record( [ 'url' => 'https://{s}.overlay.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays )->toHaveKey( 'no-subs' );
+	expect( $overlays['no-subs']['layers'] )->toHaveKey( 'plain' );
+	expect( $overlays['no-subs']['layers'] )->not->toHaveKey( 'with-s' );
+
+} );
+
+test( 'overlay validator accepts a {s}-using layer when its provider declares subdomains', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'with-subs' => tlr_overlay_provider_record(
+				[ 'subdomains' => [ 'a', 'b' ] ],
+				[
+					'with-s' => tlr_overlay_layer_record( [ 'url' => 'https://{s}.overlay.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays )->toHaveKey( 'with-subs' );
+	expect( $overlays['with-subs']['layers'] )->toHaveKey( 'with-s' );
+
+} );
+
+test( 'overlay validator rejects provider with non-bool requiresKey', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[ 'bad-bool' => tlr_overlay_provider_record( [ 'requiresKey' => 1 ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'bad-bool' );
+
+} );
+
+test( 'overlay validator rejects provider with empty label', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[ 'no-label' => tlr_overlay_provider_record( [ 'label' => '' ] ) ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'no-label' );
+
+} );
+
+test( 'overlay validator drops layer when URL lacks {z}/{x}/{y}', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'good' => tlr_overlay_provider_record(
+				[],
+				[
+					'a' => tlr_overlay_layer_record(),
+					'b' => tlr_overlay_layer_record( [ 'url' => 'https://example.com/no-placeholders.png' ] ),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays()['good']['layers'] )->not->toHaveKey( 'b' );
+
+} );
+
+test( 'overlay validator drops layer with http:// URL scheme', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'good' => tlr_overlay_provider_record(
+				[],
+				[
+					'a' => tlr_overlay_layer_record(),
+					'b' => tlr_overlay_layer_record( [ 'url' => 'http://overlay.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays()['good']['layers'] )->not->toHaveKey( 'b' );
+
+} );
+
+test( 'overlay validator drops layer when requiresKey=true but URL lacks {KEY}', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid' => tlr_overlay_provider_record(
+				[ 'requiresKey' => true ],
+				[
+					'a' => tlr_overlay_layer_record( [ 'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}' ] ),
+					'b' => tlr_overlay_layer_record( [ 'url' => 'https://overlay.example.com/{z}/{x}/{y}.png' ] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+	expect( $overlays['paid']['layers'] )->toHaveKey( 'a' );
+	expect( $overlays['paid']['layers'] )->not->toHaveKey( 'b' );
+
+} );
+
+test( 'overlay validator drops layer when requiresKey=false but URL contains {KEY}', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'free' => tlr_overlay_provider_record(
+				[],
+				[
+					'good' => tlr_overlay_layer_record(),
+					'bad'  => tlr_overlay_layer_record( [ 'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}' ] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+	expect( $overlays['free']['layers'] )->toHaveKey( 'good' );
+	expect( $overlays['free']['layers'] )->not->toHaveKey( 'bad' );
+
+} );
+
+test( 'overlay validator drops layer with maxZoom out of range', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'provider' => tlr_overlay_provider_record(
+				[],
+				[
+					'a' => tlr_overlay_layer_record(),
+					'b' => tlr_overlay_layer_record( [ 'maxZoom' => 100 ] ),
+					'c' => tlr_overlay_layer_record( [ 'maxZoom' => -1 ] ),
+					'd' => tlr_overlay_layer_record( [ 'maxZoom' => 18.5 ] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+	expect( $overlays['provider']['layers'] )->toHaveKey( 'a' );
+	expect( $overlays['provider']['layers'] )->not->toHaveKey( 'b' );
+	expect( $overlays['provider']['layers'] )->not->toHaveKey( 'c' );
+	expect( $overlays['provider']['layers'] )->not->toHaveKey( 'd' );
+
+} );
+
+test( 'overlay validator rejects malformed overlay-provider id (uppercase)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[ 'BadId' => tlr_overlay_provider_record() ]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'BadId' );
+
+} );
+
+test( 'overlay validator drops layer with malformed layer id (uppercase)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'provider' => tlr_overlay_provider_record(
+				[],
+				[
+					'good'  => tlr_overlay_layer_record(),
+					'BadId' => tlr_overlay_layer_record(),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays()['provider']['layers'] )->not->toHaveKey( 'BadId' );
+
+} );
+
+test( 'overlay validator rejects non-https signupUrl', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'signupUrl'   => 'http://example.com/signup',
+				],
+				[
+					'a' => tlr_overlay_layer_record( [ 'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}' ] ),
+				]
+			),
+		]
+	);
+
+	expect( ( new Tile_Layer_Registry() )->get_overlays() )->not->toHaveKey( 'paid' );
+
+} );
+
+test( 'overlay filter can add a new valid overlay provider', function (): void {
+
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $name, mixed $value ): mixed {
+			if ( $name === 'kntnt_gpx_blocks_tile_overlays' ) {
+				return [
+					'custom-overlay' => tlr_overlay_provider_record(
+						[],
+						[ 'main' => tlr_overlay_layer_record( [ 'url' => 'https://custom.example.com/{z}/{x}/{y}.png' ] ) ]
+					),
+				];
+			}
+			return $value;
+		}
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+	expect( $overlays )->toHaveKey( 'custom-overlay' );
+	expect( $overlays['custom-overlay']['layers']['main']['url'] )->toBe( 'https://custom.example.com/{z}/{x}/{y}.png' );
 
 } );
 
@@ -860,43 +1449,6 @@ test( 'resolver returns the orphan-recoverable fallback when the saved provider 
 	);
 
 	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// resolve_overlays — preserves order, drops unknown ids
-// ---------------------------------------------------------------------------
-
-test( 'resolve_overlays preserves editor-configured order', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_overlays( [ 'wmt-cycling', 'wmt-mtb', 'wmt-hiking' ] );
-
-	expect( $resolved )->toHaveCount( 3 );
-	expect( $resolved[0]['id'] )->toBe( 'wmt-cycling' );
-	expect( $resolved[1]['id'] )->toBe( 'wmt-mtb' );
-	expect( $resolved[2]['id'] )->toBe( 'wmt-hiking' );
-
-} );
-
-test( 'resolve_overlays drops unknown ids silently', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_overlays( [ 'wmt-hiking', 'does-not-exist' ] );
-
-	expect( $resolved )->toHaveCount( 1 );
-	expect( $resolved[0]['id'] )->toBe( 'wmt-hiking' );
-
-} );
-
-test( 'resolve_overlays drops non-string entries', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-	/** @phpstan-ignore-next-line — deliberate misuse to test defensive coercion. */
-	$resolved = $registry->resolve_overlays( [ 'wmt-hiking', 0, '', null ] );
-
-	expect( $resolved )->toHaveCount( 1 );
-	expect( $resolved[0]['id'] )->toBe( 'wmt-hiking' );
 
 } );
 
