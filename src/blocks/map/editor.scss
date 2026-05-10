@@ -19,4 +19,33 @@
 		pointer-events: none;
 		cursor: default;
 	}
+
+	// Floating waypoint-info preview — a non-interactive WYSIWYG hint anchored
+	// to the lower-right corner of the map host so editors see live feedback
+	// while they adjust the *Waypoint info* styling controls. The preview
+	// inherits its background, per-line colour, and per-line typography from
+	// the same `--kntnt-gpx-blocks-tooltip-*` custom properties the runtime
+	// tooltip reads (see style.scss); editing the inspector controls
+	// repaints both surfaces in lock-step. The element collapses entirely
+	// when both *Show name* and *Show description* are off — the empty
+	// container then has no children and the `:empty` rule hides it. The
+	// shared `.kntnt-gpx-blocks-tooltip-{name,desc}` rules from style.scss
+	// already cover colour and typography, so this stylesheet only
+	// contributes positioning, the surface background, and the hide rule.
+	.kntnt-gpx-blocks-tooltip-preview {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		max-width: calc(100% - 24px);
+		padding: 6px 8px;
+		background-color: var(--kntnt-gpx-blocks-tooltip-bg);
+		border-radius: 3px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+		pointer-events: none;
+		z-index: 500;
+
+		&:empty {
+			display: none;
+		}
+	}
 }

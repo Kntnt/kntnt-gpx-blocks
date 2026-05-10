@@ -61,7 +61,10 @@ interface ApiError {
  * wrapper element produced by `useBlockProps()` in `edit.tsx` already
  * carries the resulting inline style. Track and waypoint colours, by
  * contrast, must be passed explicitly because Leaflet's canvas-rendered
- * paths take their colour from JS path options rather than CSS.
+ * paths take their colour from JS path options rather than CSS. The two
+ * tooltip-show toggles drive the floating waypoint-info preview; the rest
+ * of the tooltip styling reaches the preview through CSS custom properties
+ * the parent wrapper carries (see `edit.tsx`'s `useBlockProps` style).
  *
  * @since 1.0.0
  */
@@ -69,6 +72,8 @@ interface PreviewAttributes {
 	attachmentId: number;
 	trackColor: string;
 	waypointColor: string;
+	tooltipShowName: boolean;
+	tooltipShowDesc: boolean;
 }
 
 /**
@@ -141,7 +146,13 @@ export const MapEditorPreview = ( {
 	const [ error, setError ] = useState< ApiError | null >( null );
 	const [ loading, setLoading ] = useState< boolean >( true );
 
-	const { attachmentId, trackColor, waypointColor } = attributes;
+	const {
+		attachmentId,
+		trackColor,
+		waypointColor,
+		tooltipShowName,
+		tooltipShowDesc,
+	} = attributes;
 
 	// Fetch the preview payload whenever the attachment changes. Cancellation
 	// guards against late responses overwriting newer state when the editor
@@ -319,7 +330,14 @@ export const MapEditorPreview = ( {
 	// MapEditorPreview's own elements simply fill that wrapper without
 	// asserting their own dimensions, so the editor's chosen aspect-ratio and
 	// min-height stay in effect both for the wrapper itself and for the
-	// Leaflet host inside it.
+	// Leaflet host inside it. `position: relative` anchors the absolutely
+	// positioned waypoint-info preview to this host's content box.
+	const hostStyle: React.CSSProperties = {
+		position: 'relative',
+		width: '100%',
+		height: '100%',
+	};
+
 	const fillParentStyle: React.CSSProperties = {
 		width: '100%',
 		height: '100%',
@@ -347,11 +365,73 @@ export const MapEditorPreview = ( {
 		);
 	}
 
+	// Pick sample text for the floating waypoint-info preview. The first
+	// waypoint's `name` / `desc` is preferred so the editor sees real values
+	// from their own GPX file when available; either field falls back to a
+	// translatable placeholder when missing or before the payload arrives.
+	// Only `Point` features carry waypoint properties — `LineString` features
+	// are the track itself and are skipped.
+	const firstWaypoint = pickFirstWaypoint( payload?.geojson );
+	const sampleName =
+		firstWaypoint?.name?.trim() || __( 'Sample name', 'kntnt-gpx-blocks' );
+	const sampleDesc =
+		firstWaypoint?.desc?.trim() ||
+		__( 'Sample description', 'kntnt-gpx-blocks' );
+
 	return (
-		<div
-			ref={ containerRef }
-			style={ fillParentStyle }
-			aria-busy={ loading ? 'true' : 'false' }
-		/>
+		<div style={ hostStyle }>
+			<div
+				ref={ containerRef }
+				style={ fillParentStyle }
+				aria-busy={ loading ? 'true' : 'false' }
+			/>
+			<div
+				className="kntnt-gpx-blocks-tooltip-preview"
+				aria-hidden="true"
+			>
+				{ tooltipShowName && (
+					<div className="kntnt-gpx-blocks-tooltip-name">
+						{ sampleName }
+					</div>
+				) }
+				{ tooltipShowDesc && (
+					<div className="kntnt-gpx-blocks-tooltip-desc">
+						{ sampleDesc }
+					</div>
+				) }
+			</div>
+		</div>
 	);
 };
+
+/**
+ * Extracts the first waypoint's `name` / `desc` from a GeoJSON payload.
+ *
+ * Waypoints are encoded as `Point` features in the same FeatureCollection
+ * that holds the track `LineString`. The function returns `null` when the
+ * payload is not yet available, has no `Point` features, or the first
+ * `Point` has no usable string properties.
+ *
+ * @since 1.0.0
+ *
+ * @param geojson Cached GeoJSON payload, or `undefined` when not yet loaded.
+ * @return First waypoint's `{ name, desc }` strings, or `null` when absent.
+ */
+function pickFirstWaypoint(
+	geojson: GeoJSON.GeoJsonObject | undefined
+): { name: string; desc: string } | null {
+	if ( ! geojson || geojson.type !== 'FeatureCollection' ) {
+		return null;
+	}
+	const fc = geojson as GeoJSON.FeatureCollection;
+	for ( const feature of fc.features ) {
+		if ( feature.geometry?.type !== 'Point' ) {
+			continue;
+		}
+		const props = feature.properties ?? {};
+		const name = typeof props.name === 'string' ? props.name : '';
+		const desc = typeof props.desc === 'string' ? props.desc : '';
+		return { name, desc };
+	}
+	return null;
+}

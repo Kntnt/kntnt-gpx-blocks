@@ -452,7 +452,10 @@ export const MapEdit = ( {
 	// supports — `useBlockProps()` already merges them into the inline style
 	// it returns. The track and cursor colour custom properties are added
 	// here so canvas-painted Leaflet polylines that read them via CSS
-	// inheritance see the editor's current colour-picker values.
+	// inheritance see the editor's current colour-picker values. The tooltip
+	// custom properties feed the floating waypoint-info preview rendered
+	// inside `MapEditorPreview` so its colours and typography update live
+	// as the editor adjusts the inspector controls.
 	const blockProps = useBlockProps( {
 		className: 'kntnt-gpx-blocks-map',
 		style: {
@@ -461,6 +464,114 @@ export const MapEdit = ( {
 				: {} ),
 			...( trackCursorColor
 				? { '--kntnt-gpx-blocks-track-cursor-color': trackCursorColor }
+				: {} ),
+			...( waypointColor
+				? { '--kntnt-gpx-blocks-waypoint-color': waypointColor }
+				: {} ),
+			...( tooltipBackground
+				? { '--kntnt-gpx-blocks-tooltip-bg': tooltipBackground }
+				: {} ),
+			...( tooltipNameColor
+				? { '--kntnt-gpx-blocks-tooltip-name-color': tooltipNameColor }
+				: {} ),
+			...( tooltipNameFontFamily
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-font-family':
+							tooltipNameFontFamily,
+				  }
+				: {} ),
+			...( tooltipNameFontSize
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-font-size':
+							tooltipNameFontSize,
+				  }
+				: {} ),
+			...( tooltipNameFontWeight
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-font-weight':
+							tooltipNameFontWeight,
+				  }
+				: {} ),
+			...( tooltipNameFontStyle
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-font-style':
+							tooltipNameFontStyle,
+				  }
+				: {} ),
+			...( tooltipNameLineHeight
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-line-height':
+							tooltipNameLineHeight,
+				  }
+				: {} ),
+			...( tooltipNameLetterSpacing
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-letter-spacing':
+							tooltipNameLetterSpacing,
+				  }
+				: {} ),
+			...( tooltipNameTextDecoration
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-text-decoration':
+							tooltipNameTextDecoration,
+				  }
+				: {} ),
+			...( tooltipNameTextTransform
+				? {
+						'--kntnt-gpx-blocks-tooltip-name-text-transform':
+							tooltipNameTextTransform,
+				  }
+				: {} ),
+			...( tooltipDescColor
+				? { '--kntnt-gpx-blocks-tooltip-desc-color': tooltipDescColor }
+				: {} ),
+			...( tooltipDescFontFamily
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-font-family':
+							tooltipDescFontFamily,
+				  }
+				: {} ),
+			...( tooltipDescFontSize
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-font-size':
+							tooltipDescFontSize,
+				  }
+				: {} ),
+			...( tooltipDescFontWeight
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-font-weight':
+							tooltipDescFontWeight,
+				  }
+				: {} ),
+			...( tooltipDescFontStyle
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-font-style':
+							tooltipDescFontStyle,
+				  }
+				: {} ),
+			...( tooltipDescLineHeight
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-line-height':
+							tooltipDescLineHeight,
+				  }
+				: {} ),
+			...( tooltipDescLetterSpacing
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-letter-spacing':
+							tooltipDescLetterSpacing,
+				  }
+				: {} ),
+			...( tooltipDescTextDecoration
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-text-decoration':
+							tooltipDescTextDecoration,
+				  }
+				: {} ),
+			...( tooltipDescTextTransform
+				? {
+						'--kntnt-gpx-blocks-tooltip-desc-text-transform':
+							tooltipDescTextTransform,
+				  }
 				: {} ),
 		} as React.CSSProperties,
 	} );
@@ -773,6 +884,8 @@ export const MapEdit = ( {
 						attachmentId,
 						trackColor,
 						waypointColor,
+						tooltipShowName,
+						tooltipShowDesc,
 					} }
 				/>
 			</div>
