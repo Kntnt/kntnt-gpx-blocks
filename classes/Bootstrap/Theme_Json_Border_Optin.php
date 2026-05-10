@@ -2,28 +2,38 @@
 /**
  * Opts the plugin's two blocks into the editor's Border panel.
  *
- * The Border panel only surfaces in the Design tab when the active theme
- * has declared an opt-in for one of the four border features — either
- * globally via `settings.appearanceTools: true`, or by setting
- * `settings.border.color` / `radius` / `style` / `width` to `true`. Blocks
- * may declare `supports.border = { color, radius, style, width }` in their
- * own `block.json`, but core's editor-side `useHasBorderPanel()` check
- * resolves the per-feature settings via `useSettings()`, which means the
- * theme decides whether the panel is visible. On themes that haven't
- * opted in (most third-party themes today), the GPX Map and GPX Elevation
- * blocks correctly declare full border supports yet the panel is hidden
- * — see issue #87.
+ * Gutenberg gates the Border panel behind two independent flags, and
+ * both must be on for the panel to surface. This class is the second
+ * half of that two-gate model — see `block.json` `supports.__experimentalBorder`
+ * for the first half:
  *
- * To keep the editor experience uniform across themes, the plugin emits
- * its own per-block opt-in by injecting a slice of theme.json into the
- * theme data layer through the `wp_theme_json_data_theme` filter. The
- * slice declares `settings.blocks["kntnt-gpx-blocks/map"].border = {…}`
- * (and likewise for the elevation block), which is the canonical
- * per-block opt-in route described in the theme.json reference. The
- * filter runs before the editor reads `useSettings()` for the block, so
- * the panel surfaces regardless of which theme is active. No global
- * settings are touched — the opt-in is scoped to the two blocks this
- * plugin owns.
+ * 1. **Block-support key** (the block's responsibility). Each block's
+ *    `block.json` must declare `supports.__experimentalBorder`. The
+ *    key is read by `getBlockSupport( blockName, '__experimentalBorder' )`
+ *    in `packages/block-editor/src/hooks/border.js` (constant
+ *    `BORDER_SUPPORT_KEY`); the unprefixed `border` key is silently
+ *    ignored, so the editor never registers the block's
+ *    `style.border` / `borderColor` attributes — issue #107.
+ * 2. **Theme.json opt-in** (this class's responsibility). Even with
+ *    the block-support key correct, the editor-side
+ *    `useHasBorderColorControl()` (and its three siblings for radius,
+ *    style, width) reads `settings?.border?.color` etc. via
+ *    `useSettings()`. On themes that haven't enabled appearance tools
+ *    or per-feature border settings, those reads return `false` and
+ *    the panel disappears — issue #87.
+ *
+ * This class injects a per-block theme.json slice that flips the
+ * second gate for the plugin's own blocks, regardless of which theme
+ * is active. It writes `settings.blocks["kntnt-gpx-blocks/map"].border
+ * = { color, radius, style, width: true }` (and the same for
+ * `kntnt-gpx-blocks/elevation`) via the `wp_theme_json_data_theme`
+ * filter — the canonical per-block opt-in route in the theme.json
+ * reference. The theme.json schema uses the unprefixed `border` key
+ * here (this is the public schema, not the editor's internal
+ * block-support registry — different surface, different key).
+ *
+ * The filter is additive: it touches only the four border flags under
+ * the plugin's two blocks. No global theme settings are modified.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -48,8 +58,9 @@ final class Theme_Json_Border_Optin {
 	/**
 	 * Block names this opt-in applies to.
 	 *
-	 * Both blocks declare the full `supports.border` quadruple in their
-	 * `block.json`, so all four features are enabled here as well.
+	 * Both blocks declare the full `supports.__experimentalBorder`
+	 * quadruple in their `block.json`, so all four features are enabled
+	 * here as well.
 	 *
 	 * @since 1.0.0
 	 * @var string[]

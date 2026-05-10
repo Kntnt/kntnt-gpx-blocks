@@ -16,7 +16,7 @@
 	"supports": {
 		"align": [ "wide", "full" ],
 		"anchor": true,
-		"border": {
+		"__experimentalBorder": {
 			"color": true,
 			"radius": true,
 			"style": true,

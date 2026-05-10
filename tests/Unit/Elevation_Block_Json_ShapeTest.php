@@ -69,3 +69,31 @@ test( 'supports.spacing does not enable blockGap', function (): void {
 		->not->toHaveKey( 'blockGap' );
 
 } );
+
+test( 'border support uses the __experimentalBorder key (issue #107)', function (): void {
+
+	$decoded  = elev_block_json_decoded();
+	$supports = $decoded['supports'] ?? [];
+
+	// Gutenberg reads BORDER_SUPPORT_KEY === '__experimentalBorder' in
+	// packages/block-editor/src/hooks/border.js. The unprefixed 'border'
+	// key is silently ignored, so the editor never registers the
+	// style.border / borderColor attributes and the Border panel never
+	// renders. The legacy key must not coexist either; only the
+	// experimental key is honoured.
+	expect( $supports )
+		->toBeArray()
+		->toHaveKey( '__experimentalBorder' )
+		->not->toHaveKey( 'border' );
+
+	expect( $supports['__experimentalBorder'] )
+		->toBe(
+			[
+				'color'  => true,
+				'radius' => true,
+				'style'  => true,
+				'width'  => true,
+			]
+		);
+
+} );
