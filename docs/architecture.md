@@ -107,6 +107,7 @@ The major classes in `classes/` (PSR-4 namespaced under `Kntnt\Gpx_Blocks`):
 | `Plugin` | Singleton entry point. Wires hooks. Provides `error()/warning()/info()/debug()`. Exposes `get_plugin_data()` and `get_plugin_file()` for the Updater. |
 | `Bootstrap\Block_Registrar` | Registers the two blocks via `register_block_type()` and the `kntnt` block category. |
 | `Bootstrap\Variation_Registrar` | Enqueues `js/statistics-variation.js` (the editor-only script that calls `registerBlockVariation()`) on `enqueue_block_editor_assets`. |
+| `Bootstrap\Theme_Json_Border_Optin` | Hooks `wp_theme_json_data_theme` to inject per-block `settings.border.*` opt-in for the Map and Elevation blocks so the editor's Border panel surfaces regardless of the active theme. Issue #87. |
 | `Bootstrap\Mime_Registrar` | `upload_mimes` and `wp_check_filetype_and_ext` filters for `.gpx`. |
 | `Bootstrap\Conversion_Hooks` | `add_attachment` / `attachment_updated` callbacks that trigger conversion. |
 | `Conversion\Gpx_Parser` | XMLReader-based streaming parser. XXE-safe. |

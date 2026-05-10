@@ -102,3 +102,68 @@ if ( ! class_exists( 'WP_REST_Response' ) ) {
 		}
 	}
 }
+
+if ( ! class_exists( 'WP_Theme_JSON_Data' ) ) {
+	/**
+	 * Minimal stand-in for WordPress's WP_Theme_JSON_Data class.
+	 *
+	 * Carries the surface Bootstrap\Theme_Json_Border_Optin uses:
+	 * `get_data()` returns the underlying array, and `update_with()` performs
+	 * the deep-merge core does, then returns the same instance. The deep
+	 * merge here mirrors core's behaviour closely enough for unit tests to
+	 * assert on the resulting structure.
+	 *
+	 * @since 1.0.0
+	 */
+	class WP_Theme_JSON_Data {
+
+		/**
+		 * Underlying theme.json data array.
+		 *
+		 * @var array<string, mixed>
+		 */
+		private array $data;
+
+		/**
+		 * @param array<string, mixed> $data Initial theme.json data.
+		 * @param string               $origin Unused in the stub.
+		 */
+		public function __construct( array $data = [ 'version' => 2 ], string $origin = 'theme' ) {
+			$this->data = $data;
+		}
+
+		/**
+		 * @return array<string, mixed>
+		 */
+		public function get_data(): array {
+			return $this->data;
+		}
+
+		/**
+		 * @param array<string, mixed> $new_data Slice to deep-merge on top of the current data.
+		 */
+		public function update_with( array $new_data ): self {
+			$this->data = self::deep_merge( $this->data, $new_data );
+			return $this;
+		}
+
+		/**
+		 * Recursively merges $b into $a; arrays with string keys are merged,
+		 * scalars and list-shaped arrays are overwritten.
+		 *
+		 * @param array<int|string, mixed> $a
+		 * @param array<int|string, mixed> $b
+		 * @return array<int|string, mixed>
+		 */
+		private static function deep_merge( array $a, array $b ): array {
+			foreach ( $b as $key => $value ) {
+				if ( is_array( $value ) && isset( $a[ $key ] ) && is_array( $a[ $key ] ) ) {
+					$a[ $key ] = self::deep_merge( $a[ $key ], $value );
+				} else {
+					$a[ $key ] = $value;
+				}
+			}
+			return $a;
+		}
+	}
+}

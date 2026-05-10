@@ -162,6 +162,19 @@ final class Plugin {
 	private ?Bootstrap\Editor_Data_Enqueuer $editor_data_enqueuer = null;
 
 	/**
+	 * The Theme_Json_Border_Optin instance bound to wp_theme_json_data_theme.
+	 *
+	 * Held as a property so the array callable passed to add_filter() keeps a
+	 * strong reference to the object for the lifetime of the request. Issue
+	 * #87: surfaces the Border panel on the Map and Elevation blocks across
+	 * themes that haven't opted in via their own theme.json.
+	 *
+	 * @since 1.0.0
+	 * @var Bootstrap\Theme_Json_Border_Optin|null
+	 */
+	private ?Bootstrap\Theme_Json_Border_Optin $theme_json_border_optin = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -427,6 +440,14 @@ final class Plugin {
 		// this single global.
 		$this->editor_data_enqueuer = new Bootstrap\Editor_Data_Enqueuer();
 		add_action( 'enqueue_block_editor_assets', [ $this->editor_data_enqueuer, 'enqueue' ] );
+
+		// Opt the Map and Elevation blocks into the editor's Border panel via
+		// the theme.json data layer (issue #87). The block.json declarations
+		// alone aren't enough on themes that don't enable appearanceTools or
+		// per-feature border settings; the per-block opt-in here surfaces
+		// the panel regardless of the active theme.
+		$this->theme_json_border_optin = new Bootstrap\Theme_Json_Border_Optin();
+		add_filter( 'wp_theme_json_data_theme', [ $this->theme_json_border_optin, 'filter' ] );
 
 	}
 

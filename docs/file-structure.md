@@ -26,7 +26,7 @@ PHP classes under the `\Kntnt\Gpx_Blocks` namespace, mapped one-to-one to filena
 
 | Folder | Sub-namespace | Concern |
 |---|---|---|
-| `Bootstrap/` | `\Kntnt\Gpx_Blocks\Bootstrap` | `Block_Registrar`, `Conversion_Hooks`, `Mime_Registrar`, `Upload_Guard`. Wires WordPress hooks at startup. |
+| `Bootstrap/` | `\Kntnt\Gpx_Blocks\Bootstrap` | `Block_Registrar`, `Conversion_Hooks`, `Editor_Data_Enqueuer`, `Mime_Registrar`, `Theme_Json_Border_Optin`, `Upload_Guard`, `Variation_Registrar`. Wires WordPress hooks at startup. |
 | `Cache/` | `\Kntnt\Gpx_Blocks\Cache` | `Attachment_Cache`, `Cache_Version`. Reads and writes the post-meta cache; carries the `CURRENT` typed-int constant for cache invalidation. |
 | `Cli/` | `\Kntnt\Gpx_Blocks\Cli` | `Regenerate_Command`. The `wp kntnt-gpx regenerate` WP-CLI command. |
 | `Consent/` | `\Kntnt\Gpx_Blocks\Consent` | `Consent_Stub`. Builds the inline JS stub that publishes the `window.kntnt_gpx_blocks` API. |
