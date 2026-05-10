@@ -40,6 +40,22 @@ type CapturedColorPanel = {
 };
 const capturedColorPanels: CapturedColorPanel[] = [];
 
+/**
+ * Captured `PanelBody` props payload across every render in the current
+ * test. Each entry mirrors the title PanelBody received plus the array of
+ * children it was given so structural assertions can inspect what lives
+ * inside each panel — the issue #85 tests need to confirm that the two
+ * remaining typography panels each contain exactly one `TypographyToolsPanel`
+ * and that no panel titled "Waypoint info — Background" survives.
+ *
+ * @since 1.0.0
+ */
+type CapturedPanelBody = {
+	title: string;
+	children: React.ReactNode;
+};
+const capturedPanelBodies: CapturedPanelBody[] = [];
+
 // Mock @wordpress/block-editor — `PanelColorSettings` is the surface under
 // test, so it records its props rather than rendering anything. The rest
 // of the surface (InspectorControls, BlockControls, useBlockProps, …) is
@@ -91,14 +107,26 @@ jest.mock(
 	'@wordpress/components',
 	() => ( {
 		__esModule: true,
-		PanelBody: ( { children }: { children: React.ReactNode } ) => children,
+		PanelBody: ( props: {
+			title?: string;
+			children?: React.ReactNode;
+		} ) => {
+			capturedPanelBodies.push( {
+				title: props.title ?? '',
+				children: props.children,
+			} );
+			return null;
+		},
 		ToggleControl: () => null,
 		FontSizePicker: () => null,
 		SelectControl: () => null,
 		TextControl: () => null,
 		ExternalLink: () => null,
 		Notice: () => null,
-		__experimentalToolsPanel: () => null,
+		__experimentalToolsPanel: Object.assign(
+			( { children }: { children?: React.ReactNode } ) => children,
+			{ displayName: 'ToolsPanel' }
+		),
 		__experimentalToolsPanelItem: () => null,
 	} ),
 	{ virtual: true }
@@ -256,6 +284,7 @@ function renderAndCapture(
 	attributes: Record< string, unknown >
 ): CapturedColorPanel[] {
 	capturedColorPanels.length = 0;
+	capturedPanelBodies.length = 0;
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
 	flushSync( () => {
@@ -271,6 +300,54 @@ function renderAndCapture(
 	} );
 	root.unmount();
 	return [ ...capturedColorPanels ];
+}
+
+/**
+ * Returns the most recent capture of every `PanelBody` rendered by MapEdit
+ * for the current test. Filled in by the `PanelBody` mock above; cleared
+ * at the start of every `renderAndCapture` call so each test sees only its
+ * own panels.
+ *
+ * @since 1.0.0
+ *
+ * @return Captured PanelBody payloads, one entry per panel rendered.
+ */
+function getCapturedPanelBodies(): CapturedPanelBody[] {
+	return [ ...capturedPanelBodies ];
+}
+
+/**
+ * Walks a captured `PanelBody`'s children and counts the
+ * `TypographyToolsPanel` direct descendants. The component is the only
+ * descendant the two remaining typography panels carry after issue #85,
+ * so this lets the test assert presence without depending on the panel's
+ * internal `__experimentalToolsPanel` mock surface.
+ *
+ * @since 1.0.0
+ *
+ * @param children Children captured from the `PanelBody` mock.
+ *
+ * @return Number of `TypographyToolsPanel` elements found.
+ */
+function countTypographyToolsPanels( children: React.ReactNode ): number {
+	const list = Array.isArray( children ) ? children : [ children ];
+	let count = 0;
+	for ( const child of list ) {
+		if (
+			child &&
+			typeof child === 'object' &&
+			'type' in ( child as { type?: unknown } )
+		) {
+			const type = ( child as { type: unknown } ).type;
+			if (
+				typeof type === 'function' &&
+				( type as { name?: string } ).name === 'TypographyToolsPanel'
+			) {
+				count++;
+			}
+		}
+	}
+	return count;
 }
 
 describe( 'MapEdit consolidated colour panel (issue #84)', () => {
@@ -401,5 +478,34 @@ describe( 'MapEdit consolidated colour panel (issue #84)', () => {
 		root.unmount();
 
 		expect( writes ).toEqual( [ { tooltipBackground: '' } ] );
+	} );
+} );
+
+describe( 'MapEdit typography panel cleanup (issue #85)', () => {
+	it( 'does not render a PanelBody titled "Waypoint info — Background"', () => {
+		renderAndCapture( buildAttributes() );
+
+		const titles = getCapturedPanelBodies().map( ( panel ) => panel.title );
+		expect( titles ).not.toContain( 'Waypoint info — Background' );
+	} );
+
+	it( 'renders a PanelBody titled "Waypoint name" containing exactly one TypographyToolsPanel', () => {
+		renderAndCapture( buildAttributes() );
+
+		const panel = getCapturedPanelBodies().find(
+			( entry ) => entry.title === 'Waypoint name'
+		);
+		expect( panel ).toBeDefined();
+		expect( countTypographyToolsPanels( panel?.children ) ).toBe( 1 );
+	} );
+
+	it( 'renders a PanelBody titled "Waypoint description" containing exactly one TypographyToolsPanel', () => {
+		renderAndCapture( buildAttributes() );
+
+		const panel = getCapturedPanelBodies().find(
+			( entry ) => entry.title === 'Waypoint description'
+		);
+		expect( panel ).toBeDefined();
+		expect( countTypographyToolsPanels( panel?.children ) ).toBe( 1 );
 	} );
 } );

@@ -1136,14 +1136,7 @@ export const MapEdit = ( {
 					] }
 				/>
 				<PanelBody
-					title={ __(
-						'Waypoint info — Background',
-						'kntnt-gpx-blocks'
-					) }
-					initialOpen={ false }
-				></PanelBody>
-				<PanelBody
-					title={ __( 'Waypoint info — Name', 'kntnt-gpx-blocks' ) }
+					title={ __( 'Waypoint name', 'kntnt-gpx-blocks' ) }
 					initialOpen={ false }
 				>
 					<TypographyToolsPanel
@@ -1192,10 +1185,7 @@ export const MapEdit = ( {
 					/>
 				</PanelBody>
 				<PanelBody
-					title={ __(
-						'Waypoint info — Description',
-						'kntnt-gpx-blocks'
-					) }
+					title={ __( 'Waypoint description', 'kntnt-gpx-blocks' ) }
 					initialOpen={ false }
 				>
 					<TypographyToolsPanel
