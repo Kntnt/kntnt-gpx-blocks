@@ -68,8 +68,9 @@ Every piece of derived data is escaped at the point of HTML output:
 | Waypoint `name` | DOM text node | `Element.textContent = name` (no markup parsing) |
 | Waypoint `desc` | DOM text node | `Element.textContent = desc` (no markup parsing) |
 | GPX file URL for download control | URL in `<a href>` | `esc_url()` (and the URL is `wp_get_attachment_url()` which is already validated) |
-| Editor-supplied solid colour values (track / cursor / waypoint dot) | CSS custom property value | `sanitize_hex_color()` then `esc_attr()` |
-| Editor-supplied alpha-aware colour values (`tooltipBackground`, `tooltipNameColor`, `tooltipDescColor`) | CSS custom property value | Local hex-3/4/6/8 regex whitelist (mirrors the eventual shared `Color_Sanitizer` contract; rejects `rgb(...)`, `rgba(...)`, `hsl(...)`, named colours, CSS variable references, and any URL-injection attempt) then `esc_attr()` |
+| Editor-supplied solid colour values (Map track / cursor / waypoint dot) | CSS custom property value | `sanitize_hex_color()` then `esc_attr()` |
+| Editor-supplied alpha-aware colour values on Map (`tooltipBackground`, `tooltipNameColor`, `tooltipDescColor`) | CSS custom property value | Local hex-3/4/6/8 regex whitelist (mirrors the shared `Color_Sanitizer` contract; folded into the shared validator in a follow-up slice) then `esc_attr()` |
+| Editor-supplied colour values on Elevation (all seven attributes) | CSS custom property value | `Rendering\Color_Sanitizer::sanitize()` — alpha-aware hex 3/4/6/8 whitelist; rejects `rgb(...)`, `rgba(...)`, `hsl(...)`, named colours, CSS variable references, and any URL-injection attempt — then `esc_attr()` |
 | Editor-supplied font references | CSS custom property value | Whitelist regex (matches CSS variable references and a handful of keywords); fallback to default if outside the whitelist |
 | Block class names | HTML attribute | `sanitize_html_class()` for any user-derived parts; static classes are concatenated as-is |
 | Statistics values | Element text | `esc_html()` after `number_format_i18n()` |

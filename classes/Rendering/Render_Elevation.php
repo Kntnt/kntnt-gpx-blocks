@@ -139,14 +139,15 @@ final class Render_Elevation {
 		$raw_map_id = $attributes['mapId'] ?? 'auto';
 		$map_id     = is_string( $raw_map_id ) && '' !== $raw_map_id ? $raw_map_id : 'auto';
 
-		// Read and sanitize the seven colour attributes.
-		$background_color  = self::sanitize_color( $attributes['backgroundColor'] ?? '' );
-		$axis_color        = self::sanitize_color( $attributes['axisColor'] ?? '' );
-		$axis_label_color  = self::sanitize_color( $attributes['axisLabelColor'] ?? '' );
-		$line_color        = self::sanitize_color( $attributes['lineColor'] ?? '' );
-		$cursor_color      = self::sanitize_color( $attributes['cursorColor'] ?? '' );
-		$tooltip_bg        = self::sanitize_color( $attributes['tooltipBackground'] ?? '' );
-		$tooltip_color     = self::sanitize_color( $attributes['tooltipColor'] ?? '' );
+		// Read and sanitize the seven colour attributes through the shared
+		// validator — accepts hex 3/4/6/8 (alpha-aware) and rejects anything else.
+		$background_color  = Color_Sanitizer::sanitize( $attributes['backgroundColor'] ?? '' );
+		$axis_color        = Color_Sanitizer::sanitize( $attributes['axisColor'] ?? '' );
+		$axis_label_color  = Color_Sanitizer::sanitize( $attributes['axisLabelColor'] ?? '' );
+		$line_color        = Color_Sanitizer::sanitize( $attributes['lineColor'] ?? '' );
+		$cursor_color      = Color_Sanitizer::sanitize( $attributes['cursorColor'] ?? '' );
+		$tooltip_bg        = Color_Sanitizer::sanitize( $attributes['tooltipBackground'] ?? '' );
+		$tooltip_color     = Color_Sanitizer::sanitize( $attributes['tooltipColor'] ?? '' );
 
 		// Read and sanitize the eight typography attributes (axis and tooltip).
 		$axis_font_family   = self::sanitize_font_family( $attributes['axisFontFamily'] ?? '' );
@@ -858,31 +859,6 @@ final class Render_Elevation {
 	}
 
 	// ─── Attribute sanitizers ────────────────────────────────────────────────
-
-	/**
-	 * Validates and returns a hex colour string, or empty string on invalid input.
-	 *
-	 * Accepts hex colours (#rgb, #rrggbb) via sanitize_hex_color. Returns empty
-	 * string for blank input so the CSS falls back to the hardcoded default in
-	 * style.scss rather than emitting a broken value.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated hex colour or empty string.
-	 */
-	private static function sanitize_color( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// sanitize_hex_color returns null on failure; coerce to empty string.
-		$clean = sanitize_hex_color( $raw );
-		return is_string( $clean ) ? $clean : '';
-
-	}
 
 	/**
 	 * Validates a CSS font-family value against a strict whitelist.
