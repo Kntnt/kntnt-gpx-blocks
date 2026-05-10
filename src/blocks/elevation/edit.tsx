@@ -1,13 +1,13 @@
 /**
  * GPX Elevation edit component.
  *
- * Renders a data-source picker, colour settings, and typography panels in
- * the inspector sidebar, and a live ServerSideRender preview in the block
- * canvas. Sizing is delegated to core's `dimensions` block supports — the
- * standard Dimensions panel surfaces aspect-ratio and min-height controls.
- * Colour and typography changes are injected as inline CSS variables on the
- * wrapper div so the editor preview updates instantly without a round-trip
- * to ServerSideRender.
+ * Renders a data-source picker in the Settings tab and colour + typography
+ * panels in the Design tab (`<InspectorControls group="styles">`), plus a
+ * live ServerSideRender preview in the block canvas. Sizing is delegated
+ * to core's `dimensions` block supports — the standard Dimensions panel
+ * surfaces aspect-ratio and min-height controls. Colour and typography
+ * changes are injected as inline CSS variables on the wrapper div so the
+ * editor preview updates instantly without a round-trip to ServerSideRender.
  *
  * @since 1.0.0
  */
@@ -273,8 +273,9 @@ function TypographyToolsPanel( {
 /**
  * Editor preview for the GPX Elevation block.
  *
- * Shows an InspectorControls sidebar with panels for data source, layout,
- * colours, axis typography, and tooltip typography. Colour and typography
+ * Shows two InspectorControls panels: the Settings tab carries the data
+ * source picker; the Design tab (`group="styles"`) carries the Color panel
+ * plus the axis and tooltip typography panels. Colour and typography
  * changes are applied immediately via inline CSS variables on the wrapper
  * div — no ServerSideRender round-trip for cosmetic edits.
  *
@@ -530,7 +531,8 @@ export const ElevationEdit = ( {
 						/>
 					</PanelBody>
 				) }
-
+			</InspectorControls>
+			<InspectorControls group="styles">
 				{ /* @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor but its typings lag behind. */ }
 				<PanelColorSettings
 					title={ __( 'Color', 'kntnt-gpx-blocks' ) }

@@ -194,12 +194,17 @@ A custom-SVG elevation profile chart with cursor synchronisation to GPX Map.
 
 ### Editor UI
 
-`InspectorControls`:
+`InspectorControls` follow the WordPress Settings/Styles split, mirroring the GPX Map block. The Settings tab carries the data-source picker; the Styles tab carries appearance (colour and typography).
+
+**Settings tab**:
 
 1. **Data source** — `SelectControl` listing every configured GPX Map on the page (label = `"Karta {n}: {filename}"`). The panel is conditional on the configured-map count: with **zero** configured maps the panel is hidden entirely (the SSR layer surfaces a *No GPX Map block on this page* notice instead); with **exactly one** configured map the panel is hidden and an effect writes that map's `mapId` into this block so the binding is explicit even though the user never opened the picker; with **two or more** configured maps the panel is rendered and lists one option per configured map, with no leading "Auto" entry because it cannot resolve deterministically against multiple maps. On insert, a `useRef`-guarded effect (`use-auto-pick-map-id.ts`) walks the editor's top-level block order, finds the closest preceding `kntnt-gpx-blocks/map` block, and pre-sets `mapId` to that map's id; with no preceding Map the attribute keeps its `"auto"` default and resolves through the single-map fallback.
-2. **Colours** — `PanelColorSettings` for the six colours.
-3. **Axis typography** — the unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern used by core Paragraph and Group), exposing three aspects through the per-aspect dropdown menu: **Font** (`FontFamilyControl`, fed by `useSettings('typography.fontFamilies')`), **Size** (`FontSizePicker`, fed by `useSettings('typography.fontSizes')`), and **Appearance** (`FontAppearanceControl`, which writes to `axisFontWeight` and `axisFontStyle` as a single combined control). Each aspect can be enabled or disabled individually; an unset aspect reads as "Standard" and inherits from the theme. "Reset all" clears every aspect at once.
-4. **Tooltip typography** — the same `ToolsPanel` shape, writing into the `tooltipFont*` attribute group instead of the `axisFont*` group.
+
+**Styles tab** (rendered through a second `<InspectorControls group="styles">` slot), in order:
+
+1. **Color** — `PanelColorSettings` for the six colours.
+2. **Axis typography** — the unified Typography `ToolsPanel` (the same `__experimentalToolsPanel` + `__experimentalToolsPanelItem` pattern used by core Paragraph and Group), exposing three aspects through the per-aspect dropdown menu: **Font** (`FontFamilyControl`, fed by `useSettings('typography.fontFamilies')`), **Size** (`FontSizePicker`, fed by `useSettings('typography.fontSizes')`), and **Appearance** (`FontAppearanceControl`, which writes to `axisFontWeight` and `axisFontStyle` as a single combined control). Each aspect can be enabled or disabled individually; an unset aspect reads as "Standard" and inherits from the theme. "Reset all" clears every aspect at once.
+3. **Tooltip typography** — the same `ToolsPanel` shape, writing into the `tooltipFont*` attribute group instead of the `axisFont*` group.
 
 Sizing is delegated to the standard core **Dimensions** panel exactly like GPX Map: `block.json` declares `supports.dimensions: { aspectRatio: true, minHeight: true }`, so the editor surfaces the standard aspect-ratio dropdown and min-height field with no plugin-specific Layout panel, no `aspectRatio` / `minHeight` attributes, and no custom validation regex. The SCSS baseline (`aspect-ratio: 4 / 1; min-height: 120px;`) applies whenever both Dimensions fields are empty.
 
