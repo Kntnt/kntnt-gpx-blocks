@@ -91,7 +91,7 @@ final class Render_Elevation {
 	 * @since 1.0.0
 	 * @var float
 	 */
-	private const KILOMETRE_THRESHOLD = 2000.0;
+	private const KM_AXIS_LABEL_THRESHOLD_METERS = 2000.0;
 
 	/**
 	 * Earth radius in metres for Haversine summation. Matches Statistics_Calculator.
@@ -588,7 +588,7 @@ final class Render_Elevation {
 		);
 
 		// Choose km vs m for the x-axis labels based on the total distance.
-		$use_km   = $x_max >= self::KILOMETRE_THRESHOLD;
+		$use_km   = $x_max >= self::KM_AXIS_LABEL_THRESHOLD_METERS;
 		$x_unit   = $use_km ? __( 'km', 'kntnt-gpx-blocks' ) : __( 'm', 'kntnt-gpx-blocks' );
 		$x_factor = $use_km ? 0.001 : 1.0;
 		$x_decim  = $use_km ? 1 : 0;
