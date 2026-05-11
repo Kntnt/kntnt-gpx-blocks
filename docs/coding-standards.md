@@ -954,7 +954,6 @@ modules above, with no substitutions. Concretely:
 kntnt-gpx-blocks/
 ├── kntnt-gpx-blocks.php        # Main plugin file
 ├── autoloader.php               # Loads vendor/autoload.php
-├── install.php                  # Activation hook (reserved; minimal in v1)
 ├── uninstall.php                # Deletes _kntnt_gpx_blocks_* attachment meta
 ├── composer.json
 ├── package.json

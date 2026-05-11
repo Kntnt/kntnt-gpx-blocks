@@ -129,6 +129,23 @@ final class Douglas_Peucker {
 	}
 
 	/**
+	 * Epsilon for the squared-length degeneracy check in `perpendicular_distance()`.
+	 *
+	 * Compared against `$line_len_sq` (in square metres after the flat-earth
+	 * conversion). 1e-12 m² ≡ 1e-6 m ≡ 1 µm linear separation between A and B
+	 * — well below GPS precision (sub-metre at best). Anything tighter than
+	 * this is either two literally-identical points or floating-point noise
+	 * (e.g. interpolated waypoints that round to within ULPs of each other).
+	 * Strict `=== 0.0` would miss the noise case and divide by a near-zero
+	 * denominator, producing wildly inflated perpendicular distances that
+	 * keep points the algorithm should drop.
+	 *
+	 * @since 1.0.0
+	 * @var float
+	 */
+	private const DEGENERATE_LINE_EPSILON_SQ = 1e-12;
+
+	/**
 	 * Returns the perpendicular distance (in the same unit as the inputs) from
 	 * point P to the line through A and B.
 	 *
@@ -157,8 +174,10 @@ final class Douglas_Peucker {
 		float $line_len_sq,
 	): float {
 
-		// Degenerate case: A and B are the same point.
-		if ( $line_len_sq === 0.0 ) {
+		// Degenerate case: A and B coincide (or are within floating-point
+		// noise of each other). The epsilon guards against a near-zero
+		// denominator below; see DEGENERATE_LINE_EPSILON_SQ for the rationale.
+		if ( $line_len_sq < self::DEGENERATE_LINE_EPSILON_SQ ) {
 			return sqrt( ( $px - $ax ) ** 2 + ( $py - $ay ) ** 2 );
 		}
 

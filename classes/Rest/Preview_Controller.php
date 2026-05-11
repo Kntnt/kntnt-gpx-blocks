@@ -46,25 +46,17 @@ final class Preview_Controller {
 	private const NAMESPACE = 'kntnt-gpx-blocks/v1';
 
 	/**
-	 * Cache layer used to read the parsed GeoJSON.
-	 *
-	 * Injected through the constructor so tests can substitute a mock.
-	 *
-	 * @since 1.0.0
-	 * @var Attachment_Cache
-	 */
-	private Attachment_Cache $cache;
-
-	/**
 	 * Constructs the controller with its cache dependency.
+	 *
+	 * The cache is held as a promoted readonly property so tests can substitute
+	 * a mock at construction time and production code cannot mutate the field
+	 * after the controller is wired.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param Attachment_Cache $cache The shared attachment cache instance.
 	 */
-	public function __construct( Attachment_Cache $cache ) {
-		$this->cache = $cache;
-	}
+	public function __construct( private readonly Attachment_Cache $cache ) {}
 
 	/**
 	 * Registers the `preview/<id>` route on the plugin's REST namespace.

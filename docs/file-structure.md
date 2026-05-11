@@ -8,9 +8,8 @@ The plugin's bootstrap files and project-level configuration live at the repo ro
 
 | File | Purpose |
 |---|---|
-| `kntnt-gpx-blocks.php` | Main plugin file. Carries the WordPress plugin header, the PHP-version guard, the autoloader require, the activation hook registration, and the `Plugin::get_instance()` call. |
+| `kntnt-gpx-blocks.php` | Main plugin file. Carries the WordPress plugin header, the PHP-version guard, the autoloader require, and the `Plugin::get_instance()` call. |
 | `autoloader.php` | Loads `vendor/autoload.php` if present (Composer's PSR-4 autoloader maps `\Kntnt\Gpx_Blocks\` to `classes/`). |
-| `install.php` | Activation-hook handler. Currently a no-op stub reserved for future capability provisioning, cron scheduling, and rewrite-rule flushing. |
 | `uninstall.php` | Runs when the plugin is deleted from the admin area. Deletes every `_kntnt_gpx_blocks_*` post-meta entry across the site. Runs without the autoloader. |
 | `composer.json` | PHP dependencies, PSR-4 autoload mapping, and the `composer test` / `composer phpstan` / `composer phpcs` script aliases. |
 | `package.json` | Block JS/CSS dependencies and the `npm run build` / `npm run start` / `npm run lint:*` scripts that delegate to `@wordpress/scripts`. |

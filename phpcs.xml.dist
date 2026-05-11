@@ -8,7 +8,6 @@
 	<file>tests/</file>
 	<file>kntnt-gpx-blocks.php</file>
 	<file>autoloader.php</file>
-	<file>install.php</file>
 	<file>uninstall.php</file>
 
 	<!--

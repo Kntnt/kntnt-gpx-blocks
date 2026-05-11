@@ -75,8 +75,21 @@ final class Render_Map {
 	public static function render( array $attributes, string $content, object $block ): string {
 
 		// Read the identity attributes and coerce to the expected primitive types.
+		// `attachmentId` is declared `"type": "integer"` in block.json, so the
+		// arriving value is normally an int. `ctype_digit()` documents the
+		// intent — accept the canonical decimal-digit representation only —
+		// and rejects scientific notation (e.g. `'1e3'`) and float strings
+		// (`'4.2'`) that `is_numeric()` would coerce to surprising integer
+		// values. The narrowing predicate keeps PHPStan happy at level max:
+		// an int is accepted whenever it is non-negative (the post-save
+		// shape), and a string is accepted only when it is non-empty and
+		// contains nothing but decimal digits.
 		$raw_id        = $attributes['attachmentId'] ?? 0;
-		$attachment_id = is_numeric( $raw_id ) ? (int) $raw_id : 0;
+		$attachment_id = match ( true ) {
+			is_int( $raw_id ) && $raw_id >= 0                 => $raw_id,
+			is_string( $raw_id ) && ctype_digit( $raw_id )    => (int) $raw_id,
+			default                                            => 0,
+		};
 		$raw_map_id    = $attributes['mapId'] ?? '';
 		$map_id        = is_string( $raw_map_id ) && '' !== $raw_map_id ? $raw_map_id : 'map-default';
 

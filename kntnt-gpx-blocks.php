@@ -73,10 +73,6 @@ if ( ! kntnt_gpx_blocks_php_version_check() ) {
 // Load the PSR-4 autoloader (delegates to vendor/autoload.php).
 require_once __DIR__ . '/autoloader.php';
 
-// Register the activation hook before the singleton wires its own hooks.
-require_once __DIR__ . '/install.php';
-register_activation_hook( __FILE__, 'kntnt_gpx_blocks_activate' );
-
 // Bootstrap the plugin singleton, passing this file's path so it can expose
 // get_plugin_file() and get_plugin_data() to the Updater and other consumers.
 \Kntnt\Gpx_Blocks\Plugin::get_instance( __FILE__ );

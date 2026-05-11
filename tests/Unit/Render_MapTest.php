@@ -541,6 +541,103 @@ test( 'returns empty string when attachmentId is 0', function (): void {
 } );
 
 // ---------------------------------------------------------------------------
+// attachmentId — ctype_digit parsing rejects scientific notation and floats
+// ---------------------------------------------------------------------------
+
+test( 'attachmentId is rejected when supplied as scientific notation', function (): void {
+
+	// `is_numeric('1e3')` is true and `(int) '1e3'` is 1, which would silently
+	// produce a render against attachment 1. `ctype_digit('1e3')` is false, so
+	// the value is coerced to 0 and the early-return path fires — empty string.
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( false );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => '1e3',
+			'mapId'        => 'map-sci',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toBe( '' );
+
+} );
+
+test( 'attachmentId is rejected when supplied as a float string', function (): void {
+
+	// `is_numeric('4.2')` is true and `(int) '4.2'` is 4. The hardened path
+	// rejects non-digit-only strings, so the value coerces to 0 and the
+	// renderer returns an empty string instead of dispatching to attachment 4.
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( false );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => '4.2',
+			'mapId'        => 'map-float',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toBe( '' );
+
+} );
+
+test( 'attachmentId is rejected when supplied as a negative integer string', function (): void {
+
+	// The leading minus sign disqualifies the value from `ctype_digit`, which
+	// only accepts decimal-digit characters. `is_numeric('-7')` is true and
+	// `(int) '-7'` is -7 — the early-return path already filters negative
+	// integers via `<= 0`, but rejecting the string up front documents the
+	// stricter contract more precisely.
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( false );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => '-7',
+			'mapId'        => 'map-neg',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toBe( '' );
+
+} );
+
+test( 'attachmentId still accepts a positive digit-only string', function (): void {
+
+	// Documents the contract: the production path arrives as a proper int
+	// after block.json's `"type": "integer"` validation, but a digit-only
+	// string is still accepted so the editor's REST round-trips and any
+	// upstream renderer that hands the renderer a stringified id keep
+	// working.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 555, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 555, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => '555',
+			'mapId'        => 'map-string-id',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	expect( $html )->toContain( 'data-wp-interactive' );
+
+} );
+
+// ---------------------------------------------------------------------------
 // Waypoint CSS variables — valid waypointColor emits the correct CSS var
 // ---------------------------------------------------------------------------
 

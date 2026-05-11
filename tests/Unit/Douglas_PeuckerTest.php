@@ -235,3 +235,59 @@ test( 'endpoints are always the first and last output points', function (): void
 		->and( $result[ count( $result ) - 1 ] )->toBe( $points[4] );
 
 } );
+
+// ---------------------------------------------------------------------------
+// Degenerate-line epsilon — coincident endpoints in a sub-array
+// ---------------------------------------------------------------------------
+
+test( 'coincident endpoints reduce to Euclidean distance from the interior point', function (): void {
+
+	// First and last points are exactly identical; the interior point is
+	// 100 m north. With A === B, $line_len_sq is exactly 0.0 (under the
+	// strict-equals predicate) *and* well below the 1e-12 epsilon, so both
+	// the legacy and the hardened branch take the degenerate path. The
+	// interior deviation (100 m) exceeds the 5 m tolerance, so DP keeps all
+	// three points — confirming the degenerate branch reports the correct
+	// fallback distance.
+	$lat_base = 59.0;
+	$lat_peak = $lat_base + ( 100.0 / 111320.0 );
+	$points   = [
+		[ $lat_base, 18.0 ],
+		[ $lat_peak, 18.0 ],
+		[ $lat_base, 18.0 ],
+	];
+
+	$result = ( new Douglas_Peucker() )->simplify( $points, 5.0 );
+
+	expect( $result )->toHaveCount( 3 );
+
+} );
+
+test( 'endpoints separated by sub-epsilon noise still trigger the degenerate branch', function (): void {
+
+	// Endpoints differ by ~5e-15 metres after the flat-earth conversion —
+	// well below the 1e-12 m² epsilon ($line_len_sq is ~2.5e-29). A strict
+	// `=== 0.0` test would miss this and divide by a near-zero denominator,
+	// inflating the perpendicular distance and keeping the interior point
+	// even though the line is geometrically degenerate. With the epsilon
+	// guard the degenerate branch fires, the Euclidean distance from the
+	// interior point to the (essentially identical) endpoints is 100 m,
+	// and the algorithm correctly keeps all three points at 5 m tolerance.
+	$lat_base    = 59.0;
+	$lat_jittery = $lat_base + 1e-20;  // ~2 femtometres north — below GPS noise.
+	$lat_peak    = $lat_base + ( 100.0 / 111320.0 );
+	$points      = [
+		[ $lat_base,    18.0 ],
+		[ $lat_peak,    18.0 ],
+		[ $lat_jittery, 18.0 ],
+	];
+
+	$result = ( new Douglas_Peucker() )->simplify( $points, 5.0 );
+
+	// The peak survives because the degenerate-line fallback measures its
+	// distance from A correctly as ~100 m, not from a numerically-unstable
+	// AB line.
+	expect( $result )->toHaveCount( 3 )
+		->and( $result[1] )->toBe( $points[1] );
+
+} );

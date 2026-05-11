@@ -70,7 +70,6 @@ npm run build --silent
 # include/exclude rules but is obviously correct on review.
 cp "$plugin_file"                "$target/"
 cp "${project_root}/autoloader.php" "$target/"
-cp "${project_root}/install.php"    "$target/"
 cp "${project_root}/uninstall.php"  "$target/"
 cp "${project_root}/README.md"      "$target/"
 cp "${project_root}/LICENSE"        "$target/"
