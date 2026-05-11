@@ -34,11 +34,14 @@
  * side. Drifting from the PHP map would let the editor preview render
  * at one size while the frontend renders at another.
  *
+ * Only the Map block carries a default — the Elevation block's
+ * wrapper-as-image layout (issue #135) is sized by `aspect-ratio` alone
+ * from the SCSS baseline and needs no `min-height` baseline.
+ *
  * @since 1.0.0
  */
 const DEFAULTS: Readonly< Record< string, string > > = {
 	'kntnt-gpx-blocks/map': '30vh',
-	'kntnt-gpx-blocks/elevation': '15vh',
 };
 
 /**

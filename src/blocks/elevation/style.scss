@@ -1,48 +1,58 @@
 // Shared styles (editor + frontend) for the GPX Elevation block.
 //
-// Layout (issue #93):
+// Layout — issue #135 (wrapper-as-image):
 //
-// - The wrapper sets the layout box. `aspect-ratio` and `min-height` are
-//   delegated to core's `dimensions` block supports; the SCSS baseline
-//   `aspect-ratio: 4 / 1; min-height: 15vh;` applies whenever the editor
-//   leaves both fields empty. The render path also always emits an inline
-//   `min-height` default matching this baseline so the buggy WordPress
-//   editor state where toggling aspect-ratio away from Original and back
-//   emits an inline `aspect-ratio: unset` does not collapse the wrapper
-//   to zero (issue #115).
-// - The wrapper reserves space for the HTML axis-label overlays outside
-//   the SVG plot area via `padding-left` / `padding-bottom` driven by
-//   font-relative CSS variables. Larger axis font-size grows the reserved
-//   space; the polyline's plot rectangle shrinks to fit. Pure CSS — no
-//   client-side measurement loop.
-// - The SVG is absolutely positioned to the wrapper's content box so it
-//   fills any height (mirrors the Map block's #86 idiom). With
-//   `preserveAspectRatio="xMidYMid meet"` on the SVG and the viewBox sized
-//   to match the editor-set aspect ratio, the polyline scales uniformly
-//   without stretching.
-// - The y/x axis labels are HTML `<span>` children of overlay containers
-//   pinned to the wrapper's left and bottom strips; their inline `top` /
-//   `left` percentages mirror the SVG-tick fractions.
+// - The wrapper is the image: it carries the editor-set `aspect-ratio`
+//   (default `4 / 1` from the SCSS baseline) and the data-driven
+//   typographic padding values that reserve space for the axis-label
+//   overlays. `padding-left == padding-right == calc(<widest-y-label>ch
+//   + 0.5em)` centres the chart visually inside the block;
+//   `padding-top == 0.5lh` makes the topmost y-label tangent the
+//   wrapper's top edge; `padding-bottom == 0.5em + 0.2em` makes the x-
+//   label descenders tangent the wrapper's bottom edge. All three
+//   values arrive through three CSS custom properties emitted on the
+//   wrapper by `Render_Elevation::render()`; the variables fall back
+//   to sensible defaults if the inline emit is missing for any reason.
+// - The SVG fills the wrapper's content box exactly. Pinned with
+//   `position: absolute` and `inset` matching the wrapper's padding
+//   variables; carries `preserveAspectRatio="none"` so the polyline
+//   stretches non-uniformly into the plot rectangle.
+//   `vector-effect="non-scaling-stroke"` (set as an SVG attribute on
+//   the polyline, the two axis frame lines, and the cursor line) keeps
+//   stroke widths visually consistent under that stretch.
+// - The y-axis label overlay container spans the plot rectangle's
+//   vertical extent (between `padding-top` and the wrapper's bottom
+//   minus `padding-bottom`); the x-axis label overlay container spans
+//   the plot rectangle's horizontal extent (between `padding-left` and
+//   the wrapper's right minus `padding-right`). Tick fractions
+//   (0/25/50/75/100 %) within those containers therefore exactly match
+//   the polyline's tick positions.
 
 .kntnt-gpx-blocks-elevation {
 	// ─── Layout baseline ──────────────────────────────────────────────────
-	// Overridden inline by core's `dimensions` block supports when the editor
-	// sets either field, and additionally overridden by the render path's
-	// always-on inline `min-height` default (issue #115).
+	// `aspect-ratio` is overridden inline by core's `dimensions` block
+	// supports when the editor sets it. `min-height` is intentionally
+	// absent under the wrapper-as-image layout (issue #135) — sizing is
+	// driven purely by aspect-ratio plus the typographic padding values.
 	position: relative;
 	box-sizing: border-box;
 	width: 100%;
 	aspect-ratio: 4 / 1;
-	min-height: 15vh;
 
-	// Padding reserves space for the HTML axis-label overlays. The two
-	// dedicated label-size variables are font-relative so increasing the
-	// axis font-size grows the reserved space; the polyline's draw area
-	// shrinks to fit (issue #93 / bug #12). The widths use `em` so they
-	// scale with the resolved axis label font-size declared on the label
-	// elements themselves.
-	padding-left: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
-	padding-bottom: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+	// ─── Wrapper-as-image padding ─────────────────────────────────────────
+	// The three CSS custom properties are emitted inline by the PHP
+	// renderer. The SCSS-side fallbacks here keep the layout sensible
+	// when the variables are missing (older inline style, future render
+	// path that forgets the emit, etc.) — they should not be in load-
+	// bearing day-to-day code paths.
+	--kntnt-gpx-blocks-elev-pad-x: calc(4ch + 0.5em);
+	--kntnt-gpx-blocks-elev-pad-top: 0.5lh;
+	--kntnt-gpx-blocks-elev-pad-bottom: calc(0.5em + 0.2em);
+
+	padding-left: var(--kntnt-gpx-blocks-elev-pad-x);
+	padding-right: var(--kntnt-gpx-blocks-elev-pad-x);
+	padding-top: var(--kntnt-gpx-blocks-elev-pad-top);
+	padding-bottom: var(--kntnt-gpx-blocks-elev-pad-bottom);
 
 	// Clip overflowing content to the block's rounded corners when the
 	// editor sets a border-radius via the core Border panel.
@@ -67,10 +77,11 @@
 	// the cursor-tooltip text inherit those values from the wrapper.
 
 	// ─── SVG container ────────────────────────────────────────────────────
-	// The SVG fills the wrapper's content box (everything inside padding).
-	// Mirrors the Map block's #86 idiom: pin to all four sides so a larger
-	// inline `min-height` grows the chart vertically instead of leaving an
-	// empty strip below (issue #93 / bug #21).
+	// The SVG fills the wrapper's content box exactly under the wrapper-as-
+	// image layout (issue #135): pinned with `position: absolute` and
+	// `inset` matching the wrapper's data-driven padding variables. Sets
+	// the same six CSS variables on the inset edges as the wrapper uses on
+	// its padding declarations so the two strips agree byte-for-byte.
 	//
 	// `touch-action: none` makes the browser hand a touch starting on the
 	// chart to our `pointerdown` listener instead of claiming it for page
@@ -78,10 +89,10 @@
 	// `-webkit-*` properties suppress Safari mobile defaults.
 	.kntnt-gpx-blocks-elevation-svg {
 		position: absolute;
-		top: 0;
-		right: 0;
-		bottom: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
-		left: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
+		top: var(--kntnt-gpx-blocks-elev-pad-top);
+		bottom: var(--kntnt-gpx-blocks-elev-pad-bottom);
+		left: var(--kntnt-gpx-blocks-elev-pad-x);
+		right: var(--kntnt-gpx-blocks-elev-pad-x);
 		display: block;
 		width: auto;
 		height: auto;
@@ -94,31 +105,37 @@
 	}
 
 	// ─── Axis lines ───────────────────────────────────────────────────────
-	// Both the bottom and the left frame lines share this class.
+	// Both the bottom and the left frame lines share this class. The
+	// `vector-effect: non-scaling-stroke` SVG attribute on each line
+	// element keeps the stroke width visually consistent under the
+	// wrapper-as-image layout's non-uniform stretch (issue #135).
 	.kntnt-gpx-blocks-elevation-axis {
 		stroke: var(--kntnt-gpx-blocks-axis-color);
 		stroke-width: 1;
 	}
 
 	// ─── Axis tick labels (HTML overlay) ──────────────────────────────────
-	// Labels live in two `<div>` overlays pinned to the wrapper's left and
-	// bottom strips. They honour real CSS font-size and reserve their own
-	// layout space outside the SVG (issue #93 / bugs #11, #12).
+	// Overlays span the plot rectangle exactly under the wrapper-as-image
+	// layout (issue #135): the y-labels container occupies the left strip
+	// from the plot rectangle's top to its bottom; the x-labels container
+	// occupies the bottom strip from the plot rectangle's left to its
+	// right. Tick fractions (0/25/50/75/100 %) therefore line up exactly
+	// with the polyline's tick positions.
 	.kntnt-gpx-blocks-elevation-y-labels {
 		position: absolute;
-		top: 0;
+		top: var(--kntnt-gpx-blocks-elev-pad-top);
+		bottom: var(--kntnt-gpx-blocks-elev-pad-bottom);
 		left: 0;
-		width: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
-		bottom: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+		width: var(--kntnt-gpx-blocks-elev-pad-x);
 		pointer-events: none;
 	}
 
 	.kntnt-gpx-blocks-elevation-x-labels {
 		position: absolute;
 		bottom: 0;
-		left: var(--kntnt-gpx-blocks-axis-label-y-width, 3.2em);
-		right: 0;
-		height: var(--kntnt-gpx-blocks-axis-label-x-height, 1.6em);
+		left: var(--kntnt-gpx-blocks-elev-pad-x);
+		right: var(--kntnt-gpx-blocks-elev-pad-x);
+		height: var(--kntnt-gpx-blocks-elev-pad-bottom);
 		pointer-events: none;
 	}
 
@@ -139,17 +156,23 @@
 
 	// Y-axis labels: right-aligned to the y-axis line, vertically centred
 	// on each tick position. The inline `top: <percent>%` is emitted by the
-	// renderer; `transform: translateY(-50%)` centres the label.
+	// renderer; `transform: translateY(-50%)` centres the label so its
+	// vertical midpoint sits on the tick. `right: 0.5em` produces the
+	// gap between each label's right edge and the y-axis line.
 	.kntnt-gpx-blocks-elevation-y-labels .kntnt-gpx-blocks-elevation-axis-label {
 		right: 0.5em;
 		transform: translateY(-50%);
 		text-align: right;
 	}
 
-	// X-axis labels: horizontally centred on each tick position, vertically
-	// near the top of the strip just below the SVG.
+	// X-axis labels: horizontally centred on each tick position, sitting at
+	// the top of the bottom strip so the visual gap from the x-axis line to
+	// the label baseline lands close to 0.5em with typical line-height,
+	// and the descender tangents the wrapper's bottom edge thanks to the
+	// `--kntnt-gpx-blocks-elev-pad-bottom` value (0.5em gap + 0.2em
+	// descender approximation).
 	.kntnt-gpx-blocks-elevation-x-labels .kntnt-gpx-blocks-elevation-axis-label {
-		top: 0.25em;
+		top: 0;
 		transform: translateX(-50%);
 		text-align: center;
 	}
@@ -193,8 +216,8 @@
 	&--empty {
 		// Override the layout padding for the empty state — there is no SVG
 		// to make room for, so the message centres in the full wrapper box.
-		padding-left: 0;
-		padding-bottom: 0;
+		// The `padding: 1rem` shorthand replaces the wrapper's data-driven
+		// per-side padding declarations entirely.
 		display: flex;
 		align-items: center;
 		justify-content: center;

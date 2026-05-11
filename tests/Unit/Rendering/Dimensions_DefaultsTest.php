@@ -5,9 +5,17 @@
  * Issue #117 — the plugin-defined default `min-height` is normalised at the
  * attribute source through a `render_block_data` filter, not per-consumer
  * inline injection in the render callbacks. The filter writes
- * `style.dimensions.minHeight = '30vh'` (Map) or `'15vh'` (Elevation) onto
- * the parsed block's `attrs` when both `minHeight` and `aspectRatio` are
- * blank/missing — and leaves the block untouched in every other case.
+ * `style.dimensions.minHeight = '30vh'` onto the parsed block's `attrs` for
+ * the Map block when both `minHeight` and `aspectRatio` are blank/missing,
+ * and strips the `aspectRatio: 'auto'` keyword on both recognised blocks so
+ * core does not emit `min-height: unset` and override the SCSS baseline.
+ *
+ * Issue #135 (wrapper-as-image) — the Elevation block no longer carries a
+ * `min-height` default: its sizing is fully driven by `aspect-ratio` from
+ * the SCSS baseline plus the typographic padding values emitted by
+ * `Render_Elevation::render()`. The filter still recognises Elevation for
+ * the `aspectRatio: 'auto'` strip but the `min-height` injection branch is
+ * gated on a per-block default being present.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -199,10 +207,12 @@ test( 'A5: Map with explicit minHeight and aspectRatio stays unchanged', functio
 } );
 
 // ---------------------------------------------------------------------------
-// A. Elevation block — same matrix with 15vh.
+// A. Elevation block — wrapper-as-image (issue #135) drops the min-height
+// default; the filter still strips `aspectRatio: 'auto'` so the SCSS
+// baseline `aspect-ratio: 4 / 1` takes over.
 // ---------------------------------------------------------------------------
 
-test( 'A6: Elevation with both blank/missing gets minHeight=15vh', function (): void {
+test( 'A6: Elevation with both blank/missing does NOT get a min-height default (issue #135)', function (): void {
 
 	$filter = new Dimensions_Defaults();
 
@@ -216,12 +226,15 @@ test( 'A6: Elevation with both blank/missing gets minHeight=15vh', function (): 
 
 	$result = $filter->filter( $parsed );
 
-	expect( $result['attrs']['style']['dimensions']['minHeight'] ?? null )
-		->toBe( '15vh' );
+	// Wrapper-as-image: sizing is purely aspect-ratio driven, so the
+	// filter intentionally leaves attrs.style.dimensions absent — and
+	// the parsed block passes through byte-identical when nothing else
+	// needs mutating.
+	expect( $result )->toBe( $parsed );
 
 } );
 
-test( "A6b: Elevation with aspectRatio='auto' gets minHeight=15vh and the 'auto' key stripped", function (): void {
+test( "A6b: Elevation with aspectRatio='auto' strips the 'auto' keyword and emits no min-height (issue #135)", function (): void {
 
 	$filter = new Dimensions_Defaults();
 
@@ -241,10 +254,12 @@ test( "A6b: Elevation with aspectRatio='auto' gets minHeight=15vh and the 'auto'
 
 	$result = $filter->filter( $parsed );
 
-	expect( $result['attrs']['style']['dimensions']['minHeight'] ?? null )
-		->toBe( '15vh' );
+	// The 'auto' keyword is stripped so core does not emit `min-height:
+	// unset`. With wrapper-as-image the SCSS `aspect-ratio: 4 / 1` then
+	// takes over without any plugin-injected min-height.
 	expect( $result['attrs']['style']['dimensions'] )
-		->not->toHaveKey( 'aspectRatio' );
+		->not->toHaveKey( 'aspectRatio' )
+		->not->toHaveKey( 'minHeight' );
 
 } );
 

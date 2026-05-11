@@ -47,9 +47,11 @@ final class Render_Elevation {
 
 	/**
 	 * Reference viewBox width in logical units. The viewBox height is derived
-	 * from the editor-set aspect-ratio (or {@see DEFAULT_ASPECT_RATIO}) so that
-	 * `preserveAspectRatio="xMidYMid meet"` scales the polyline uniformly into
-	 * any rendered container size. Issue #93.
+	 * from the editor-set aspect-ratio (or {@see DEFAULT_ASPECT_RATIO}). Under
+	 * the wrapper-as-image layout (issue #135) the SVG carries
+	 * `preserveAspectRatio="none"` and is pinned to the wrapper's content box
+	 * via `position: absolute` + the per-side padding values, so the polyline
+	 * stretches non-uniformly to fill the plot rectangle exactly.
 	 *
 	 * @since 1.0.0
 	 * @var float
@@ -59,7 +61,7 @@ final class Render_Elevation {
 	/**
 	 * Default chart aspect ratio (width / height) when the editor has not set
 	 * an explicit `style.dimensions.aspectRatio`. Matches the SCSS baseline
-	 * `aspect-ratio: 4 / 1`.
+	 * `aspect-ratio: 4 / 1` declared on the wrapper.
 	 *
 	 * @since 1.0.0
 	 * @var float
@@ -67,16 +69,16 @@ final class Render_Elevation {
 	private const DEFAULT_ASPECT_RATIO = 4.0;
 
 	/**
-	 * Internal plot padding inside the SVG, in viewBox units. The actual axis
-	 * tick labels live in HTML overlay containers outside the SVG (issue #93),
-	 * so the SVG itself reserves only a small inset so the polyline never
-	 * sits flush against the SVG's edges. The cursor's tooltip uses these
-	 * bounds too.
+	 * Internal plot padding inside the SVG, in viewBox units. Under the
+	 * wrapper-as-image layout (issue #135) the polyline fills the plot
+	 * rectangle exactly so there is no inset — the chart's outer frame
+	 * sits at the SVG's edges and the polyline spans `0 .. viewBox_w`
+	 * horizontally and `0 .. viewBox_h` vertically.
 	 *
 	 * @since 1.0.0
 	 * @var float
 	 */
-	private const PLOT_INSET = 8.0;
+	private const PLOT_INSET = 0.0;
 
 	/**
 	 * Number of evenly spaced tick labels on each axis.
@@ -93,6 +95,32 @@ final class Render_Elevation {
 	 * @var float
 	 */
 	private const KM_AXIS_LABEL_THRESHOLD_METERS = 2000.0;
+
+	/**
+	 * Padding-top expression (issue #135 — wrapper-as-image layout).
+	 *
+	 * Half the y-label's line-height so the topmost y-label's top edge tangents
+	 * the wrapper's top edge. `0.5lh` resolves against the label's resolved
+	 * line-height directly, avoiding any JS measurement loop.
+	 *
+	 * @since 1.0.0
+	 * @var string
+	 */
+	private const PADDING_TOP_EXPR = '0.5lh';
+
+	/**
+	 * Padding-bottom expression (issue #135 — wrapper-as-image layout).
+	 *
+	 * `0.5em` gap between the x-axis line and the x-label baseline, plus an
+	 * `0.2em` descender-depth approximation for system fonts so the lowest
+	 * descender tangents the wrapper's bottom edge. The 0.2em is a
+	 * font-agnostic compromise; tighter fits for specific fonts are a future
+	 * tuning issue, not this layout's concern.
+	 *
+	 * @since 1.0.0
+	 * @var string
+	 */
+	private const PADDING_BOTTOM_EXPR = 'calc(0.5em + 0.2em)';
 
 	/**
 	 * Returns the rendered HTML for a single GPX Elevation block instance.
@@ -217,10 +245,17 @@ final class Render_Elevation {
 		$is_editor_preview = Request_Context::is_editor_request();
 
 		// Resolve the chart aspect ratio from the editor's `style.dimensions`
-		// slot — it shapes the SVG's viewBox so uniform scaling (issue #20)
-		// matches the wrapper's rendered aspect-ratio. Falls back to 4/1 when
-		// the editor leaves the field empty.
+		// slot — it shapes the SVG's viewBox so non-uniform scaling
+		// (issue #135 wrapper-as-image) matches the wrapper's rendered
+		// aspect-ratio. Falls back to 4/1 when the editor leaves the field
+		// empty.
 		$aspect_ratio = self::resolve_aspect_ratio( $attributes );
+
+		// Pre-compute the formatted y-tick label strings — both `build_chart()`
+		// and the wrapper-padding emit consume them, and the widest one drives
+		// the data-driven padding-left / padding-right (issue #135).
+		$y_tick_labels = self::build_y_tick_labels( $y_min, $y_max );
+		$widest_chars  = self::widest_label_chars( $y_tick_labels );
 
 		// Build the SVG plus its HTML axis-label overlays, wrapped in the
 		// Interactivity-API-annotated container.
@@ -232,6 +267,7 @@ final class Render_Elevation {
 			$y_max,
 			$aspect_ratio,
 			$is_editor_preview,
+			$y_tick_labels,
 		);
 		$context_json = wp_json_encode( [ 'mapId' => $resolved_map_id ] );
 
@@ -246,6 +282,24 @@ final class Render_Elevation {
 		// SVG axis labels and cursor-tooltip text inherit typography from the
 		// block wrapper.
 		$style_parts = [];
+
+		// Emit the data-driven wrapper-padding CSS variables (issue #135 —
+		// wrapper-as-image layout). `--kntnt-gpx-blocks-elev-pad-x` carries
+		// `calc(<widest>ch + 0.5em)` so padding-left == padding-right reserves
+		// exactly the room the widest y-tick label needs plus the gap to the
+		// y-axis line, and the SCSS rule applies that variable to both sides.
+		// `--kntnt-gpx-blocks-elev-pad-top` and `--kntnt-gpx-blocks-elev-pad-bottom`
+		// carry the typographic constants documented on the class constants.
+		// Three variables (rather than direct padding declarations) so the
+		// SCSS file is also the source of truth for fallback values and so
+		// the SVG and the two label overlays can position themselves with the
+		// same expressions.
+		$style_parts[] = sprintf(
+			'--kntnt-gpx-blocks-elev-pad-x: calc(%dch + 0.5em)',
+			$widest_chars,
+		);
+		$style_parts[] = '--kntnt-gpx-blocks-elev-pad-top: ' . self::PADDING_TOP_EXPR;
+		$style_parts[] = '--kntnt-gpx-blocks-elev-pad-bottom: ' . self::PADDING_BOTTOM_EXPR;
 
 		if ( '' !== $axis_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-axis-color: ' . $axis_color;
@@ -273,8 +327,10 @@ final class Render_Elevation {
 		// declaration would otherwise run into this string's last declaration
 		// and the CSS parser would fold it into the preceding value — the
 		// canonical symptom is a square `border-top-left-radius` corner with
-		// per-corner radii (issue #109).
-		$style = count( $style_parts ) > 0 ? implode( '; ', $style_parts ) . ';' : '';
+		// per-corner radii (issue #109). The wrapper-as-image layout
+		// (issue #135) emits three padding variables unconditionally, so
+		// `$style_parts` is guaranteed non-empty at this point.
+		$style = implode( '; ', $style_parts ) . ';';
 
 		// Build the noscript summary — same text as the SVG <desc> so non-JS visitors
 		// and screen readers both get the same description.
@@ -286,11 +342,10 @@ final class Render_Elevation {
 		// supports, third-party render_block_data filters) reach the frontend.
 		// The wp-block-kntnt-gpx-blocks-elevation class is supplied by core
 		// from block.json and need not be repeated here.
-		$wrapper_args = [ 'class' => 'kntnt-gpx-blocks-elevation' ];
-		if ( '' !== $style ) {
-			$wrapper_args['style'] = $style;
-		}
-		$wrapper = get_block_wrapper_attributes( $wrapper_args );
+		$wrapper = get_block_wrapper_attributes( [
+			'class' => 'kntnt-gpx-blocks-elevation',
+			'style' => $style,
+		] );
 
 		return sprintf(
 			'<div %1$s'
@@ -469,18 +524,23 @@ final class Render_Elevation {
 	/**
 	 * Builds the SVG chart together with its HTML axis-label overlays.
 	 *
-	 * The SVG carries the polyline, the bottom + left frame lines, and the
+	 * The SVG carries the polyline, the left + bottom frame lines, and the
 	 * server-rendered cursor group; axis tick labels live in two HTML overlay
 	 * `<div>` siblings of the SVG so they honour real CSS font-size from the
 	 * editor's typography controls and reserve their own layout space outside
-	 * the SVG's plot area (issue #93 / bugs #11, #12).
+	 * the SVG's plot area.
 	 *
-	 * The SVG's viewBox dimensions follow the editor-set aspect ratio
-	 * (`style.dimensions.aspectRatio`) so that `preserveAspectRatio="xMidYMid meet"`
-	 * scales the polyline uniformly into the wrapper (issue #93 / bug #20).
-	 * The wrapper's stylesheet pins the SVG with `position: absolute; inset: …;`
-	 * to the wrapper's plot rectangle (issue #93 / bug #21), mirroring the Map
-	 * block's #86 idiom.
+	 * Issue #135 — wrapper-as-image layout. The SVG's viewBox dimensions
+	 * follow the editor-set aspect ratio (`style.dimensions.aspectRatio`)
+	 * exactly. The SVG carries `preserveAspectRatio="none"` and is pinned to
+	 * the wrapper's content box via `position: absolute` with insets matching
+	 * the wrapper's data-driven padding, so the polyline stretches
+	 * non-uniformly and fills the plot rectangle exactly with no letterboxing.
+	 * `vector-effect="non-scaling-stroke"` on the polyline, the two axis
+	 * frame lines, and the cursor line keeps stroke widths visually
+	 * consistent under that non-uniform stretch. `PLOT_INSET = 0` means the
+	 * polyline spans `0 .. viewBox_w` horizontally and `0 .. viewBox_h`
+	 * vertically.
 	 *
 	 * The `$desc_id` is set on the SVG's `<desc>` child element so the SVG's
 	 * `aria-labelledby` attribute can reference it — preferred over
@@ -510,6 +570,12 @@ final class Render_Elevation {
 	 * @param bool                                  $is_editor_preview Whether to render the
 	 *                                                                 cursor visible at the
 	 *                                                                 midpoint sample.
+	 * @param list<string>                          $y_tick_labels     Pre-computed y-tick label
+	 *                                                                 strings (top-down) shared
+	 *                                                                 with the wrapper's padding
+	 *                                                                 emit so the widest-label
+	 *                                                                 calculation drives the
+	 *                                                                 padding without recomputing.
 	 *
 	 * @return string SVG markup plus its HTML axis-label overlays.
 	 */
@@ -521,6 +587,7 @@ final class Render_Elevation {
 		float $y_max,
 		float $aspect_ratio,
 		bool $is_editor_preview = false,
+		array $y_tick_labels = [],
 	): string {
 
 		// The caller guarantees count($series) >= 2; walk the x-domain directly
@@ -528,13 +595,12 @@ final class Render_Elevation {
 		$x_min = $series[0][0];
 		$x_max = $series[ count( $series ) - 1 ][0];
 
-		// Derive the viewBox from the editor-set aspect ratio so uniform
-		// scaling (preserveAspectRatio="xMidYMid meet") fills the rendered
-		// box without stretching the polyline. The chart area lives outside
-		// the SVG (the wrapper reserves space for HTML axis-label overlays
-		// via padding-left / padding-bottom), so the plot rectangle here
-		// is the full viewBox minus a small inset that keeps the line from
-		// painting flush against the SVG edges.
+		// Derive the viewBox from the editor-set aspect ratio. Under the
+		// wrapper-as-image layout (issue #135) the SVG fills the wrapper's
+		// content box exactly with `preserveAspectRatio="none"` and
+		// `PLOT_INSET = 0`, so the polyline spans the full viewBox in both
+		// dimensions and stretches non-uniformly when the wrapper's rendered
+		// aspect-ratio differs from the viewBox aspect.
 		$viewbox_w   = self::VIEWBOX_WIDTH;
 		$viewbox_h   = $aspect_ratio > 0.0 ? self::VIEWBOX_WIDTH / $aspect_ratio : self::VIEWBOX_WIDTH / self::DEFAULT_ASPECT_RATIO;
 		$plot_left   = self::PLOT_INSET;
@@ -558,8 +624,14 @@ final class Render_Elevation {
 			$sy           = $plot_bottom - ( ( $point[1] - $y_min ) / $y_span_svg ) * $plot_h;
 			$svg_points[] = sprintf( '%.2f,%.2f', $sx, $sy );
 		}
+		// `vector-effect="non-scaling-stroke"` keeps the stroke width visually
+		// consistent under the wrapper-as-image layout's non-uniform stretch
+		// (issue #135). The attribute is required at the SVG-attribute level
+		// — some browsers ignore the equivalent CSS property when set on a
+		// container.
 		$polyline = sprintf(
-			'<polyline class="kntnt-gpx-blocks-elevation-line" fill="none" stroke="currentColor" points="%s" />',
+			'<polyline class="kntnt-gpx-blocks-elevation-line" fill="none" stroke="currentColor"'
+			. ' vector-effect="non-scaling-stroke" points="%s" />',
 			esc_attr( implode( ' ', $svg_points ) ),
 		);
 
@@ -571,8 +643,12 @@ final class Render_Elevation {
 
 		// Build the HTML axis-label overlays. These live outside the SVG so
 		// the labels honour real CSS font-size and reserve their own layout
-		// space (issue #93 / bugs #11, #12).
-		$y_labels = self::build_y_labels( $y_min, $y_max );
+		// space. Under the wrapper-as-image layout (issue #135) the overlay
+		// containers span the plot rectangle's extent exactly — the SCSS
+		// positions them with the same padding variables the wrapper uses —
+		// so the tick fractions (0/25/50/75/100%) line up with the
+		// polyline's tick positions.
+		$y_labels = self::build_y_labels( $y_tick_labels );
 		$x_labels = self::build_x_labels( $x_min, $x_max, $x_factor, $x_decim, $x_unit );
 
 		// Compose the screen-reader summary text and escape the desc id for HTML.
@@ -581,9 +657,12 @@ final class Render_Elevation {
 
 		// Plot-area frame: a faint axis line on the bottom and left edges so
 		// the chart has a clear baseline even when the polyline is short.
+		// `vector-effect="non-scaling-stroke"` keeps the stroke width
+		// consistent under the wrapper-as-image layout's non-uniform stretch
+		// (issue #135).
 		$frame = sprintf(
-			'<line class="kntnt-gpx-blocks-elevation-axis" x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="currentColor" />'
-			. '<line class="kntnt-gpx-blocks-elevation-axis" x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="currentColor" />',
+			'<line class="kntnt-gpx-blocks-elevation-axis" x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="currentColor" vector-effect="non-scaling-stroke" />'
+			. '<line class="kntnt-gpx-blocks-elevation-axis" x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" stroke="currentColor" vector-effect="non-scaling-stroke" />',
 			$plot_left,
 			$plot_bottom,
 			$plot_right,
@@ -630,7 +709,8 @@ final class Render_Elevation {
 		$line_x      = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
 		$cursor_line = sprintf(
 			'<line class="kntnt-gpx-blocks-elevation-cursor-line"'
-			. ' x1="%s" y1="%.2f" x2="%s" y2="%.2f" stroke="currentColor" />',
+			. ' x1="%s" y1="%.2f" x2="%s" y2="%.2f" stroke="currentColor"'
+			. ' vector-effect="non-scaling-stroke" />',
 			$line_x,
 			$plot_top,
 			$line_x,
@@ -725,12 +805,14 @@ final class Render_Elevation {
 
 		// aria-labelledby references the <desc> child element, which is the
 		// recommended pattern when the accessible name is already present in
-		// the DOM. `preserveAspectRatio="xMidYMid meet"` keeps the polyline
-		// uniformly scaled regardless of how the wrapper resolves its size
-		// (issue #93 / bug #20).
+		// the DOM. `preserveAspectRatio="none"` lets the polyline stretch
+		// non-uniformly to fill the plot rectangle exactly under the
+		// wrapper-as-image layout (issue #135); `vector-effect="non-scaling-stroke"`
+		// on the polyline, the two frame lines, and the cursor line keeps
+		// stroke widths visually consistent under that stretch.
 		$svg = sprintf(
 			'<svg class="kntnt-gpx-blocks-elevation-svg" viewBox="0 0 %.2f %.2f" role="img"'
-				. ' aria-labelledby="%s" preserveAspectRatio="xMidYMid meet">'
+				. ' aria-labelledby="%s" preserveAspectRatio="none">'
 				. '<desc id="%s">%s</desc>%s%s%s</svg>',
 			$viewbox_w,
 			$viewbox_h,
@@ -750,35 +832,67 @@ final class Render_Elevation {
 	}
 
 	/**
-	 * Builds the HTML overlay for the y-axis tick labels.
+	 * Builds the formatted y-axis tick label strings, top-down.
 	 *
-	 * Each label is a child `<span>` positioned vertically via inline `top`
-	 * percentage, with the topmost tick carrying the maximum value (SVG y
-	 * grows downwards — the overlay's top corresponds to the chart's top).
-	 * The container's stylesheet pins it next to the SVG along the left
-	 * edge of the wrapper so the labels honour real CSS font-size and
-	 * reserve their own layout space outside the SVG plot area.
+	 * Index 0 is the topmost tick (the max value); index `TICK_COUNT - 1`
+	 * is the bottom tick (the min value). The strings are consumed both by
+	 * the y-axis HTML overlay and by the wrapper's data-driven `padding-x`
+	 * (issue #135), so producing them in one place keeps the two emissions
+	 * byte-identical.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param float $y_min Domain min (metres).
 	 * @param float $y_max Domain max (metres).
 	 *
+	 * @return list<string> Five formatted label strings, top-down.
+	 */
+	private static function build_y_tick_labels( float $y_min, float $y_max ): array {
+
+		$labels = [];
+		$div    = self::TICK_COUNT - 1;
+		$unit   = __( 'm', 'kntnt-gpx-blocks' );
+
+		// Walk every tick top-down — index 0 is the topmost tick (the max
+		// value); index TICK_COUNT-1 is the bottom tick (the min value).
+		for ( $i = 0; $i < self::TICK_COUNT; $i++ ) {
+			$ratio    = $i / $div;
+			$value    = $y_max - ( $y_max - $y_min ) * $ratio;
+			$labels[] = number_format_i18n( $value, 0 ) . ' ' . $unit;
+		}
+
+		return $labels;
+
+	}
+
+	/**
+	 * Builds the HTML overlay for the y-axis tick labels from pre-computed
+	 * label strings.
+	 *
+	 * Each label is a child `<span>` positioned vertically via inline `top`
+	 * percentage, with the topmost tick carrying the maximum value (SVG y
+	 * grows downwards — the overlay's top corresponds to the chart's top).
+	 * Under the wrapper-as-image layout (issue #135) the overlay container
+	 * is positioned by the SCSS to span the plot rectangle's vertical
+	 * extent exactly, so the tick fractions match the polyline's tick
+	 * positions.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param list<string> $labels Five formatted label strings, top-down.
+	 *
 	 * @return string HTML fragment for the y-axis overlay container.
 	 */
-	private static function build_y_labels( float $y_min, float $y_max ): string {
+	private static function build_y_labels( array $labels ): string {
 
 		$out = '';
 		$div = self::TICK_COUNT - 1;
 
-		// Walk every tick top-down — index 0 is the topmost tick (the max
-		// value), placed at top: 0%; index TICK_COUNT-1 is the bottom tick
-		// (the min value) at top: 100%.
+		// Walk every label top-down — index 0 is the topmost tick at
+		// top: 0%; index TICK_COUNT-1 is the bottom tick at top: 100%.
 		for ( $i = 0; $i < self::TICK_COUNT; $i++ ) {
-			$ratio   = $i / $div;
-			$value   = $y_max - ( $y_max - $y_min ) * $ratio;
-			$top_pct = $ratio * 100.0;
-			$label   = number_format_i18n( $value, 0 ) . ' ' . __( 'm', 'kntnt-gpx-blocks' );
+			$top_pct = ( $i / $div ) * 100.0;
+			$label   = $labels[ $i ] ?? '';
 			$out    .= sprintf(
 				'<span class="kntnt-gpx-blocks-elevation-axis-label" style="top:%.2f%%">%s</span>',
 				$top_pct,
@@ -790,6 +904,42 @@ final class Render_Elevation {
 			'<div class="kntnt-gpx-blocks-elevation-y-labels" aria-hidden="true">%s</div>',
 			$out,
 		);
+
+	}
+
+	/**
+	 * Returns the widest character count among a list of formatted labels.
+	 *
+	 * Used by the wrapper-as-image layout (issue #135) to drive the
+	 * `padding-left` / `padding-right` declarations as
+	 * `calc(<chars>ch + 0.5em)`. Counts Unicode characters via
+	 * `mb_strlen` so multi-byte characters in localised number-format
+	 * output count as one each — `1ch` is the width of the "0" glyph in
+	 * the resolved font, which is a reasonable lower bound for the per-
+	 * character advance of typical digits + sign + decimal-separator
+	 * sequences produced by `Value_Formatter`.
+	 *
+	 * Returns `1` for an empty list as a defensive minimum so the emitted
+	 * CSS never collapses to `calc(0ch + 0.5em)` and the y-axis line still
+	 * has breathing room.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param list<string> $labels Formatted label strings.
+	 *
+	 * @return int Widest character count, always >= 1.
+	 */
+	private static function widest_label_chars( array $labels ): int {
+
+		$widest = 1;
+		foreach ( $labels as $label ) {
+			$len = function_exists( 'mb_strlen' ) ? mb_strlen( $label ) : strlen( $label );
+			if ( $len > $widest ) {
+				$widest = $len;
+			}
+		}
+
+		return $widest;
 
 	}
 

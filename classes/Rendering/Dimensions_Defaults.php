@@ -1,16 +1,18 @@
 <?php
 /**
- * Normalises the plugin-defined `min-height` default on the two plugin
- * blocks at the attribute source.
+ * Normalises the plugin-defined `min-height` default and strips the
+ * blank-equivalent `aspectRatio: 'auto'` keyword on the two plugin blocks
+ * at the attribute source.
  *
  * Issue #117 — earlier releases injected the default inline in each
  * consumer (PHP `Render_Map::render()`, PHP `Render_Elevation::render()`,
  * editor `MapEdit` / `ElevationEdit`). That left the default as a
  * per-consumer special case that drifted out of sync with the standard
- * block-supports pipeline. This filter writes
- * `style.dimensions.minHeight = '30vh'` (Map) or `'15vh'` (Elevation)
- * onto the parsed block's `attrs` before WordPress renders the block, so
- * every downstream consumer — `get_block_wrapper_attributes()`, the SCSS
+ * block-supports pipeline. This filter writes the per-block default
+ * `min-height` (currently only Map's `30vh`; the GPX Elevation block no
+ * longer carries one — see *Wrapper-as-image layout* below) onto the
+ * parsed block's `attrs` before WordPress renders the block, so every
+ * downstream consumer — `get_block_wrapper_attributes()`, the SCSS
  * baseline, the editor `useBlockProps()` style merge — sees a concrete
  * value through the same path that an explicit user value would take.
  *
@@ -19,6 +21,15 @@
  * has picked a non-Original aspect-ratio, the container has a definite
  * height from that, and adding a min-height would fight the aspect-ratio
  * constraint.
+ *
+ * Wrapper-as-image layout (issue #135). The Elevation block's wrapper
+ * sizing is fully driven by `aspect-ratio` (default `4 / 1` from the
+ * SCSS baseline) plus the typographic padding values emitted by
+ * `Render_Elevation::render()`, so it no longer needs a `min-height`
+ * default. The filter still recognises Elevation blocks for the
+ * `aspectRatio: 'auto'` strip — without that strip core would emit
+ * `min-height: unset` and the wrapper would have no height — but the
+ * `min-height` injection is gated on a per-block default being present.
  *
  * Wired to `render_block_data` from `Plugin` next to the other rendering
  * filters; this is the standard place WordPress lets a plugin mutate
@@ -50,16 +61,33 @@ final class Dimensions_Defaults {
 	 * Per-block default `min-height` value applied when both
 	 * `minHeight` and `aspectRatio` are blank/missing.
 	 *
-	 * Keyed by block name. The two values are deliberately different —
-	 * the Map block deserves twice the chart's baseline because a map
-	 * is the larger object on the page.
+	 * Keyed by block name. Only the Map block carries a default — the
+	 * Elevation block's wrapper-as-image layout (issue #135) is sized
+	 * by `aspect-ratio` alone and needs no `min-height` baseline.
 	 *
 	 * @since 1.0.0
 	 * @var array<string,string>
 	 */
 	private const DEFAULTS = [
-		'kntnt-gpx-blocks/map'       => '30vh',
-		'kntnt-gpx-blocks/elevation' => '15vh',
+		'kntnt-gpx-blocks/map' => '30vh',
+	];
+
+	/**
+	 * Set of block names this filter recognises for the `aspectRatio: 'auto'`
+	 * strip, regardless of whether the block carries a `min-height` default.
+	 *
+	 * Both plugin blocks need the strip because core's
+	 * `wp_render_dimensions_support()` emits `min-height: unset` whenever
+	 * `aspectRatio` is non-empty, which would override the SCSS baseline.
+	 * The Map block additionally appears in {@see DEFAULTS}; the Elevation
+	 * block (issue #135) does not.
+	 *
+	 * @since 1.0.0
+	 * @var array<int,string>
+	 */
+	private const RECOGNISED_BLOCKS = [
+		'kntnt-gpx-blocks/map',
+		'kntnt-gpx-blocks/elevation',
 	];
 
 	/**
@@ -88,7 +116,7 @@ final class Dimensions_Defaults {
 
 		// Only normalise blocks we own — every other block is untouched.
 		$block_name = $parsed_block['blockName'] ?? null;
-		if ( ! is_string( $block_name ) || ! array_key_exists( $block_name, self::DEFAULTS ) ) {
+		if ( ! is_string( $block_name ) || ! in_array( $block_name, self::RECOGNISED_BLOCKS, true ) ) {
 			return $parsed_block;
 		}
 
@@ -124,10 +152,15 @@ final class Dimensions_Defaults {
 		}
 
 		// Inject the per-block `min-height` default when both fields end
-		// up blank. With `aspectRatio` stripped above, the wrapper has no
-		// height constraint of its own — the default keeps it from
-		// collapsing to zero pixels.
-		$inject_default = $min_height_blank && $aspect_ratio_blank;
+		// up blank, but only for blocks that carry one. With `aspectRatio`
+		// stripped above, the Map block's wrapper has no height
+		// constraint of its own — the default keeps it from collapsing
+		// to zero pixels. The Elevation block (issue #135) is sized by
+		// `aspect-ratio` alone from the SCSS baseline and is intentionally
+		// absent from {@see DEFAULTS}, so no `min-height` injection runs
+		// on its branch.
+		$has_default    = array_key_exists( $block_name, self::DEFAULTS );
+		$inject_default = $has_default && $min_height_blank && $aspect_ratio_blank;
 		if ( $inject_default ) {
 			$dimensions['minHeight'] = self::DEFAULTS[ $block_name ];
 		}

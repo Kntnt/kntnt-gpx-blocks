@@ -1530,11 +1530,12 @@ test( 'editor preview positions the cursor line at the midpoint sample\'s x', fu
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 202 ) );
 
-	// The chart plot rectangle is [56, 1184] horizontally; fraction=0.5 lands
-	// at the geometric midpoint (56 + 1184) / 2 = 620 — but the synthetic
-	// series's distance distribution along the LTTB-downsampled samples may
-	// not be perfectly linear, so allow a wide tolerance and assert the
-	// x-position lies inside the plot interior (well away from either edge).
+	// Issue #135 (wrapper-as-image): the plot rectangle is [0, 1200]
+	// horizontally now that PLOT_INSET = 0, so fraction=0.5 lands near the
+	// geometric midpoint 600. The synthetic series's distance distribution
+	// along the LTTB-downsampled samples is not perfectly linear, so the
+	// assertion stays a wide-band check that the x-position lies in the
+	// plot interior.
 	$matched = preg_match(
 		'#<line class="kntnt-gpx-blocks-elevation-cursor-line"[^>]*x1="([0-9.]+)"#',
 		$html,
@@ -1544,7 +1545,7 @@ test( 'editor preview positions the cursor line at the midpoint sample\'s x', fu
 
 	$x1 = (float) $line_match[1];
 	expect( $x1 )->toBeGreaterThan( 400.0 );
-	expect( $x1 )->toBeLessThan( 840.0 );
+	expect( $x1 )->toBeLessThan( 800.0 );
 
 } );
 
@@ -1667,7 +1668,7 @@ test( 'editor preview is disabled for non-editor users even with REST_REQUEST se
 // Each bug below has a regression test asserting the post-fix behaviour.
 // ---------------------------------------------------------------------------
 
-test( 'svg drops the non-uniform preserveAspectRatio (issue #20)', function (): void {
+test( 'svg carries preserveAspectRatio="none" under the wrapper-as-image layout (issue #135)', function (): void {
 
 	elev_setup_normal_path( 400, 300, 'map-aspect' );
 
@@ -1677,11 +1678,12 @@ test( 'svg drops the non-uniform preserveAspectRatio (issue #20)', function (): 
 	expect( $matched )->toBe( 1 );
 	$svg_open = $svg_match[0];
 
-	// The pre-fix renderer hardcoded `preserveAspectRatio="none"`, which makes
-	// the polyline stretch non-uniformly when the editor sets a non-default
-	// aspect ratio. The fix either uses `xMidYMid meet` or omits the
-	// attribute altogether (SVG defaults to `xMidYMid meet` when absent).
-	expect( $svg_open )->not->toContain( 'preserveAspectRatio="none"' );
+	// Issue #135 (wrapper-as-image): the SVG carries `preserveAspectRatio="none"`
+	// so the polyline stretches non-uniformly to fill the wrapper's plot
+	// rectangle exactly. `vector-effect="non-scaling-stroke"` on the
+	// polyline and axis lines keeps the stroke widths visually consistent
+	// under that stretch — covered in its own assertion below.
+	expect( $svg_open )->toContain( 'preserveAspectRatio="none"' );
 
 } );
 
@@ -1760,25 +1762,22 @@ test( 'plot label overlays carry the axis-label class for CSS sizing (issue #12)
 
 } );
 
-test( 'svg drops the non-uniform preserveAspectRatio for wrapper-fill (issue #21)', function (): void {
+test( 'svg uses preserveAspectRatio="none" so it fills the wrapper without letterboxing (issue #135)', function (): void {
 
 	elev_setup_normal_path( 404, 304, 'map-fill' );
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 304 ) );
 
-	// Pre-fix: the SVG kept its intrinsic viewBox aspect-ratio and refused
-	// to grow vertically beyond it even with `height: 100%`, so an
-	// editor-set `min-height` larger than `width / aspect-ratio` left empty
-	// space below the chart. Post-fix mirrors the Map block's #86 idiom:
-	// the wrapper is positioned (`position: relative`) and the SVG is
-	// pinned to its bounds via `position: absolute`. The stylesheet
-	// declares the positioning; the renderer's contract is that the SVG
-	// no longer carries `preserveAspectRatio="none"` (the non-uniform
-	// override that pre-fix relied on) so uniform scaling can take over.
+	// Under the wrapper-as-image layout (issue #135) the SVG fills the
+	// wrapper's plot rectangle exactly via `position: absolute` + the
+	// per-side padding values, with `preserveAspectRatio="none"` letting
+	// the polyline stretch non-uniformly into whatever rendered aspect
+	// ratio the wrapper resolves to. No more letterboxing on tall
+	// wrappers.
 	$matched = preg_match( '#<svg\b[^>]*>#', $html, $svg_match );
 	expect( $matched )->toBe( 1 );
 
-	expect( $svg_match[0] )->not->toContain( 'preserveAspectRatio="none"' );
+	expect( $svg_match[0] )->toContain( 'preserveAspectRatio="none"' );
 
 } );
 
@@ -1908,7 +1907,7 @@ function elev_simulate_dimensions_core_style( array $attrs ): void {
 		: '';
 }
 
-test( 'B1 (Elevation): render emits min-height:15vh via filter-normalised attrs when both fields are blank', function (): void {
+test( 'B1 (Elevation): wrapper-as-image — filter does not inject any min-height when both fields are blank (issue #135)', function (): void {
 
 	elev_setup_normal_path( 700, 600, 'map-default-min-height' );
 
@@ -1928,19 +1927,22 @@ test( 'B1 (Elevation): render emits min-height:15vh via filter-normalised attrs 
 
 	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
 	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height:15vh' );
+
+	// Wrapper-as-image (issue #135): the wrapper carries no `min-height`
+	// when both Dimensions fields are blank — sizing is fully driven by
+	// `aspect-ratio` from the SCSS baseline plus the data-driven
+	// typographic padding values.
+	expect( $style_match[1] )->not->toContain( 'min-height' );
 
 } );
 
-test( 'B2 (Elevation): Render_Elevation no longer concatenates min-height into its own style_parts', function (): void {
+test( 'B2 (Elevation): Render_Elevation does not concatenate min-height into its own style_parts (issue #135)', function (): void {
 
-	// When the parsed block carries neither minHeight nor aspectRatio
-	// AND the filter has NOT run, Render_Elevation must not emit any
-	// min-height of its own — the responsibility moved to
-	// Dimensions_Defaults. The harness's core-style global stays empty
-	// here, so any min-height appearing in the wrapper would have to
-	// come from plugin-side concatenation, which is what we want to
-	// see has gone away.
+	// Under wrapper-as-image (issue #135) Render_Elevation must not emit
+	// any min-height of its own — and there is no per-block default left
+	// in `Dimensions_Defaults::DEFAULTS` for Elevation, so the filter
+	// does not inject one either. The wrapper inline style should not
+	// carry a `min-height` declaration in any branch.
 	elev_setup_normal_path( 710, 610, 'map-plain' );
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 610 ) );
@@ -2003,5 +2005,200 @@ test( 'B-explicit (Elevation): user-set min-height passes through unchanged and 
 	expect( $matched )->toBe( 1 );
 	expect( $style_match[1] )->toContain( 'min-height:500px' );
 	expect( $style_match[1] )->not->toContain( '15vh' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Issue #135 — wrapper-as-image layout.
+//
+// The wrapper carries three data-driven CSS custom properties that the
+// SCSS uses to position both the SVG plot rectangle and the two HTML
+// axis-label overlay containers. `padding-x` derives from the widest
+// formatted y-tick label; `padding-top` is `0.5lh` (half the y-label's
+// resolved line-height); `padding-bottom` is `calc(0.5em + 0.2em)`
+// (gap + descender approximation). The SVG fills the wrapper's content
+// box via `preserveAspectRatio="none"` and `vector-effect="non-scaling-stroke"`
+// on the polyline + axis lines + cursor line keeps stroke widths
+// consistent under the non-uniform stretch.
+// ---------------------------------------------------------------------------
+
+test( 'wrapper emits the three data-driven padding CSS variables (issue #135)', function (): void {
+
+	elev_setup_normal_path( 800, 700, 'map-pad-vars' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 700 ) );
+
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	$style_attr = $style_match[1];
+
+	// padding-left / padding-right share one variable (--elev-pad-x) so the
+	// chart centres visually inside the wrapper; padding-top is `0.5lh` so
+	// the topmost y-label tangents the wrapper's top edge; padding-bottom
+	// is `calc(0.5em + 0.2em)` so the x-label descenders tangent the
+	// wrapper's bottom edge.
+	expect( $style_attr )->toContain( '--kntnt-gpx-blocks-elev-pad-x:' );
+	expect( $style_attr )->toContain( 'ch + 0.5em' );
+	expect( $style_attr )->toContain( '--kntnt-gpx-blocks-elev-pad-top: 0.5lh' );
+	expect( $style_attr )->toContain( '--kntnt-gpx-blocks-elev-pad-bottom: calc(0.5em + 0.2em)' );
+
+} );
+
+test( 'padding-x width matches the widest formatted y-tick label (issue #135)', function (): void {
+
+	// Synthetic elevations 100..200 m with the test's pass-through
+	// `number_format_i18n` produce y-tick labels like "208 m", "182 m",
+	// "156 m", "131 m", "105 m" — widest is 5 characters. The widest count
+	// drives `calc(<chars>ch + 0.5em)`.
+	elev_setup_normal_path( 810, 710, 'map-pad-width' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 710 ) );
+
+	$matched = preg_match(
+		'#--kntnt-gpx-blocks-elev-pad-x:\s*calc\((\d+)ch\s*\+\s*0\.5em\)#',
+		$html,
+		$pad_match,
+	);
+	expect( $matched )->toBe( 1 );
+
+	// The widest label "208 m" is 5 chars. Be lenient by one in case
+	// rounding/padding shifts the labels — the assertion's purpose is to
+	// confirm the value is data-driven (not a constant 1 or some fallback)
+	// and falls in the right ballpark.
+	$widest = (int) $pad_match[1];
+	expect( $widest )->toBeGreaterThanOrEqual( 5 );
+	expect( $widest )->toBeLessThanOrEqual( 7 );
+
+} );
+
+test( 'widest-y-label calculation handles negative-to-large span (issue #135)', function (): void {
+
+	// A track whose elevation spans negative numbers to large positive
+	// numbers — exercises the widest-label measurement under the
+	// `Value_Formatter`-style output that the production code uses.
+	// padded_y_bounds rounds outward with floor/ceil, so the rendered
+	// labels are integers like "-13" through "1000". Widest label is
+	// "1000 m" (6 chars), which sets the lower bound for the assertion.
+	$coords = [];
+	$ele_min = -12.3;
+	$ele_max = 999.5;
+	for ( $i = 0; $i < 100; $i++ ) {
+		$ratio = $i / 99.0;
+		$lon   = 18.0 + 0.05 * $ratio;
+		$lat   = 59.0 + 0.05 * $ratio;
+		$ele   = $ele_min + ( $ele_max - $ele_min ) * $ratio;
+		$coords[] = [ $lon, $lat, $ele ];
+	}
+	$stats = [
+		'distance'      => 5500.0,
+		'min_elevation' => $ele_min,
+		'max_elevation' => $ele_max,
+		'ascent'        => 1011.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 820, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 720 );
+	elev_stub_parse_blocks( [ elev_map_block( 820, 'map-widest' ) ] );
+	elev_stub_attached_file( 820, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 720 );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 720 ) );
+
+	$matched = preg_match(
+		'#--kntnt-gpx-blocks-elev-pad-x:\s*calc\((\d+)ch\s*\+\s*0\.5em\)#',
+		$html,
+		$pad_match,
+	);
+	expect( $matched )->toBe( 1 );
+
+	// "1000 m" → 6 chars; padded_y_bounds may snap slightly outward, so
+	// allow a small upper range. Lower bound stays at 6 to confirm the
+	// 4-digit label is being measured correctly.
+	$widest = (int) $pad_match[1];
+	expect( $widest )->toBeGreaterThanOrEqual( 6 );
+	expect( $widest )->toBeLessThanOrEqual( 8 );
+
+} );
+
+test( 'polyline carries vector-effect="non-scaling-stroke" (issue #135)', function (): void {
+
+	elev_setup_normal_path( 830, 730, 'map-vec-effect-poly' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 730 ) );
+
+	// Stroke widths must stay visually consistent under the wrapper-as-
+	// image layout's non-uniform stretch — the attribute on the polyline
+	// is the guarantee.
+	expect( $html )->toMatch( '#<polyline[^>]*vector-effect="non-scaling-stroke"#' );
+
+} );
+
+test( 'axis frame lines carry vector-effect="non-scaling-stroke" (issue #135)', function (): void {
+
+	elev_setup_normal_path( 831, 731, 'map-vec-effect-axis' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 731 ) );
+
+	// Both axis frame lines (bottom + left) must carry the attribute.
+	$matched = preg_match_all(
+		'#<line class="kntnt-gpx-blocks-elevation-axis"[^>]*vector-effect="non-scaling-stroke"#',
+		$html,
+	);
+	expect( $matched )->toBe( 2 );
+
+} );
+
+test( 'cursor line carries vector-effect="non-scaling-stroke" (issue #135)', function (): void {
+
+	elev_setup_normal_path( 832, 732, 'map-vec-effect-cursor' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 732 ) );
+
+	expect( $html )->toMatch( '#<line class="kntnt-gpx-blocks-elevation-cursor-line"[^>]*vector-effect="non-scaling-stroke"#' );
+
+} );
+
+test( 'plot rectangle spans the full viewBox under wrapper-as-image (issue #135)', function (): void {
+
+	elev_setup_normal_path( 840, 740, 'map-plot-spans' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 740 ) );
+
+	// PLOT_INSET = 0 → plot rectangle = [0, viewbox_w] × [0, viewbox_h].
+	// data-plot-left == 0 and data-plot-top == 0; data-plot-right and
+	// data-plot-bottom match the viewBox dimensions byte-for-byte.
+	$matched = preg_match( '#<svg\b[^>]*viewBox="0 0 ([0-9.]+) ([0-9.]+)"#', $html, $vb_match );
+	expect( $matched )->toBe( 1 );
+	$vb_w = (float) $vb_match[1];
+	$vb_h = (float) $vb_match[2];
+
+	$matched = preg_match(
+		'#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*data-plot-left="([0-9.]+)"[^>]*data-plot-right="([0-9.]+)"[^>]*data-plot-top="([0-9.]+)"[^>]*data-plot-bottom="([0-9.]+)"#',
+		$html,
+		$plot_match,
+	);
+	expect( $matched )->toBe( 1 );
+
+	expect( (float) $plot_match[1] )->toBe( 0.0 );
+	expect( (float) $plot_match[2] )->toBe( $vb_w );
+	expect( (float) $plot_match[3] )->toBe( 0.0 );
+	expect( (float) $plot_match[4] )->toBe( $vb_h );
+
+} );
+
+test( 'wrapper does not carry the obsolete axis-label CSS variables (issue #135)', function (): void {
+
+	elev_setup_normal_path( 850, 750, 'map-no-old-vars' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 750 ) );
+
+	// The pre-fix variables that controlled the layout via the SVG's
+	// pinning insets have been removed in favour of the three
+	// `--kntnt-gpx-blocks-elev-pad-*` variables.
+	expect( $html )
+		->not->toContain( '--kntnt-gpx-blocks-axis-label-y-width' )
+		->not->toContain( '--kntnt-gpx-blocks-axis-label-x-height' );
 
 } );

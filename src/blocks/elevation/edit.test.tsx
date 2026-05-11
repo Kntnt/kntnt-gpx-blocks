@@ -214,13 +214,18 @@ describe( 'ElevationEdit ServerSideRender attributes', () => {
 	} );
 } );
 
-describe( 'ElevationEdit wrapper min-height default (issue #117)', () => {
+describe( 'ElevationEdit wrapper sizing (issue #135 — wrapper-as-image)', () => {
 	beforeEach( () => {
 		capturedAttributes.length = 0;
 		capturedBlockPropsStyles.length = 0;
 	} );
 
-	it( 'injects minHeight 15vh when style.dimensions.minHeight is missing', () => {
+	it( 'never injects a minHeight default — wrapper sizing is driven by aspect-ratio alone', () => {
+		// Wrapper-as-image (issue #135) replaces the `min-height: 15vh`
+		// baseline with `aspect-ratio: 4 / 1` from the SCSS plus the
+		// data-driven typographic padding values emitted by the PHP
+		// renderer. The editor preview must agree with the frontend: no
+		// inline minHeight from the JS-side `getDefaultMinHeight` helper.
 		const container = document.createElement( 'div' );
 		const root = createRoot( container );
 		flushSync( () => {
@@ -237,36 +242,15 @@ describe( 'ElevationEdit wrapper min-height default (issue #117)', () => {
 		root.unmount();
 
 		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
-		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
+		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
+			'minHeight'
+		);
 	} );
 
-	it( 'injects minHeight 15vh when style.dimensions.minHeight is blank', () => {
-		const container = document.createElement( 'div' );
-		const root = createRoot( container );
-		flushSync( () => {
-			root.render(
-				createElement( ElevationEdit, {
-					attributes: buildAttributes( {
-						style: { dimensions: { minHeight: '' } },
-					} ),
-					setAttributes: () => {},
-					clientId: 'test',
-					isSelected: false,
-					name: 'kntnt-gpx-blocks/elevation',
-				} as never )
-			);
-		} );
-		root.unmount();
-
-		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
-		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
-	} );
-
-	it( 'injects minHeight 15vh in the Original-after-toggle case (aspectRatio cleared, minHeight blank)', () => {
-		// Reproduces the editor sequence from the issue: user picked a
-		// non-Original aspect-ratio (which cleared minHeight), then toggled
-		// it back to Original (which cleared aspectRatio). Both attributes
-		// land empty under style.dimensions.
+	it( 'never injects a minHeight default in the Original-after-toggle case', () => {
+		// Same scenario as before — both fields end up blank under
+		// style.dimensions — but under wrapper-as-image (issue #135) the
+		// editor must not inject any min-height, matching the PHP side.
 		const container = document.createElement( 'div' );
 		const root = createRoot( container );
 		flushSync( () => {
@@ -287,10 +271,15 @@ describe( 'ElevationEdit wrapper min-height default (issue #117)', () => {
 		root.unmount();
 
 		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
-		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
+		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
+			'minHeight'
+		);
 	} );
 
-	it( 'C3: omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
+	it( 'still omits any default when style.dimensions.minHeight is explicitly set', () => {
+		// An explicit minHeight reaches the wrapper through core's
+		// `useBlockProps()` / block-supports pipeline — the JS-side
+		// helper must not also inject one.
 		const container = document.createElement( 'div' );
 		const root = createRoot( container );
 		flushSync( () => {
@@ -314,7 +303,7 @@ describe( 'ElevationEdit wrapper min-height default (issue #117)', () => {
 		);
 	} );
 
-	it( 'C4: omits the default when style.dimensions.aspectRatio is set, even if minHeight is blank', () => {
+	it( 'still omits any default when style.dimensions.aspectRatio is set', () => {
 		const container = document.createElement( 'div' );
 		const root = createRoot( container );
 		flushSync( () => {
@@ -343,9 +332,10 @@ describe( 'ElevationEdit wrapper min-height default (issue #117)', () => {
 		);
 	} );
 
-	it( 'C6: does not call setAttributes while computing the default', () => {
-		// Mirrors the MapEdit C6 assertion — the default is invisible
-		// and must not be written back into saved post content.
+	it( 'does not call setAttributes while preparing the wrapper style', () => {
+		// Mirrors the MapEdit C6 assertion — the wrapper-as-image padding
+		// is purely cosmetic and must not be written back into saved
+		// post content.
 		const writes: Array< Record< string, unknown > > = [];
 		const container = document.createElement( 'div' );
 		const root = createRoot( container );
