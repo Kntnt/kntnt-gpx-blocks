@@ -1862,3 +1862,376 @@ test( 'attribute-bypass: PHP path engagement makes the attribute-path key irrele
 	expect( $a['url'] )->toContain( 'key=PHP-VALUE' );
 
 } );
+
+// ---------------------------------------------------------------------------
+// PHP-supplied API key — overlay providers (issue #114)
+//
+// Mirrors the base-provider tests above for the overlay half of the
+// registry. The `apiKey` field on an overlay-provider record engages
+// the PHP-supplied key path: presence (not value) is the engagement
+// signal; the attribute-path `$api_keys[ providerId ]` parameter is
+// ignored entirely; non-string values are dropped silently as if the
+// field were absent; whitespace is trimmed. The fail-closed outcome is
+// asymmetric: where a base provider's empty key leaves `{KEY}` intact
+// and produces polyline-only state, an overlay provider's empty key
+// drops the affected layer from the resolved overlay stack with a
+// `Plugin::warning()` log naming the (provider, layer) ids — the base
+// map and any other overlays continue to render.
+// ---------------------------------------------------------------------------
+
+test( 'overlay validator accepts apiKey as an optional string and trims whitespace', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => '  TRIMMED-OVERLAY-KEY  ',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays )->toHaveKey( 'paid-overlay' );
+	expect( $overlays['paid-overlay'] )->toHaveKey( 'apiKey' );
+	expect( $overlays['paid-overlay']['apiKey'] )->toBe( 'TRIMMED-OVERLAY-KEY' );
+
+} );
+
+test( 'overlay validator preserves an empty apiKey (presence engages PHP path; value fails closed)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => '   ',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays['paid-overlay'] )->toHaveKey( 'apiKey' );
+	expect( $overlays['paid-overlay']['apiKey'] )->toBe( '' );
+
+} );
+
+test( 'overlay validator drops non-string apiKey silently (treated as absent)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => 42,
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$overlays = ( new Tile_Layer_Registry() )->get_overlays();
+
+	expect( $overlays['paid-overlay'] )->not->toHaveKey( 'apiKey' );
+
+} );
+
+test( 'php_supplied_overlay_api_key returns null when the overlay provider has no apiKey field', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+
+	expect( $registry->php_supplied_overlay_api_key( 'openweathermap' ) )->toBeNull();
+	expect( $registry->php_supplied_overlay_api_key( 'openseamap' ) )->toBeNull();
+	expect( $registry->php_supplied_overlay_api_key( 'does-not-exist' ) )->toBeNull();
+
+} );
+
+test( 'php_supplied_overlay_api_key returns the validated string when the PHP path is engaged', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => 'PHP-SUPPLIED-OVERLAY-VALUE',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$registry = new Tile_Layer_Registry();
+
+	expect( $registry->php_supplied_overlay_api_key( 'paid-overlay' ) )->toBe( 'PHP-SUPPLIED-OVERLAY-VALUE' );
+
+} );
+
+test( 'resolve_overlays uses the PHP-supplied apiKey and ignores the attribute-path map when engaged', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => 'PHP-OVERLAY-WINS',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+		[ 'paid-overlay' => 'ATTRIBUTE-OVERLAY-KEY-IGNORED' ]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'key=PHP-OVERLAY-WINS' );
+	expect( $resolved[0]['url'] )->not->toContain( 'ATTRIBUTE-OVERLAY-KEY-IGNORED' );
+	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
+
+} );
+
+test( 'resolve_overlays falls through to the attribute-path map when the PHP path is not engaged', function (): void {
+
+	// Default registry — no PHP path engagement on the shipped
+	// OpenWeatherMap overlay provider. The attribute-path key
+	// substitutes into `{KEY}` as before.
+	$registry = ( new Tile_Layer_Registry() );
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
+		[ 'openweathermap' => 'ATTRIBUTE-OWM' ]
+	);
+
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'appid=ATTRIBUTE-OWM' );
+	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
+
+} );
+
+test( 'resolve_overlays drops the layer when the PHP-supplied apiKey is empty (fail-closed, asymmetric)', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay'        => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => '',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+			'free-overlay-survives' => tlr_overlay_provider_record(
+				[ 'requiresKey' => false ],
+				[
+					'free' => tlr_overlay_layer_record( [
+						'url' => 'https://other.example.com/{z}/{x}/{y}.png',
+					] ),
+				]
+			),
+		]
+	);
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[
+			[ 'provider' => 'paid-overlay', 'layer' => 'main' ],
+			[ 'provider' => 'free-overlay-survives', 'layer' => 'free' ],
+		],
+		[ 'paid-overlay' => 'IGNORED-ATTRIBUTE-KEY' ]
+	);
+
+	// The paid-overlay layer is dropped (empty PHP key, asymmetric
+	// fail-closed). The free overlay survives — the contract is that
+	// the base map and any other overlays continue to render.
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->toContain( 'other.example.com' );
+
+} );
+
+test( 'resolve_overlays logs a warning naming the (provider, layer) ids on empty PHP apiKey', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => '   ',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$logged = tlr_capture_warning_log( static function (): void {
+		$registry = new Tile_Layer_Registry();
+		$registry->resolve_overlays(
+			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+			[]
+		);
+	} );
+
+	// The warning names both the provider and the layer so the
+	// integrator can locate the misconfiguration; the key value never
+	// appears in the log.
+	expect( $logged )->toContain( 'paid-overlay' );
+	expect( $logged )->toContain( 'main' );
+
+} );
+
+test( 'no PHP-supplied overlay apiKey value ever appears in the warning log (no-leak invariant)', function (): void {
+
+	$sentinel = 'S3CR3T-OVERLAY-DO-NOT-LEAK';
+	// Whitespace-padded value the validator trims to a non-empty
+	// string; the resolver's success branch substitutes it silently
+	// without logging. Combine with an attribute-path sentinel to also
+	// assert that the attribute-path value never leaks into the log.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => '   ' . $sentinel . '   ',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$logged = tlr_capture_warning_log( static function (): void {
+		$registry = new Tile_Layer_Registry();
+		$registry->resolve_overlays(
+			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+			[ 'paid-overlay' => 'ATTRIBUTE-SENTINEL' ]
+		);
+	} );
+
+	expect( $logged )->not->toContain( $sentinel );
+	expect( $logged )->not->toContain( 'ATTRIBUTE-SENTINEL' );
+
+} );
+
+test( 'overlay fail-closed warning log never contains the attempted PHP-supplied key (whitespace-only input)', function (): void {
+
+	$attribute_sentinel = 'OVERLAY-ATTR-SENTINEL-DO-NOT-LEAK';
+	// Whitespace-only input — the validator trims to '' and the
+	// resolver fires the fail-closed log branch. The log line carries
+	// the provider and layer ids only; the raw input never leaks.
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => "  \t\n",
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$logged = tlr_capture_warning_log( static function () use ( $attribute_sentinel ): void {
+		$registry = new Tile_Layer_Registry();
+		$registry->resolve_overlays(
+			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+			[ 'paid-overlay' => $attribute_sentinel ]
+		);
+	} );
+
+	expect( $logged )->not->toContain( $attribute_sentinel );
+	expect( $logged )->not->toContain( "\t" );
+	expect( $logged )->toContain( 'paid-overlay' );
+	expect( $logged )->toContain( 'main' );
+
+} );
+
+test( 'overlay attribute-bypass: PHP path engagement makes the attribute-path map irrelevant', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_overlays',
+		[
+			'paid-overlay' => tlr_overlay_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => 'PHP-OVERLAY-VALUE',
+				],
+				[
+					'main' => tlr_overlay_layer_record( [
+						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$registry = new Tile_Layer_Registry();
+
+	// Three different attribute-path values, identical resolved URL.
+	$a = $registry->resolve_overlays(
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+		[]
+	);
+	$b = $registry->resolve_overlays(
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+		[ 'paid-overlay' => 'something-else' ]
+	);
+	$c = $registry->resolve_overlays(
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
+		[ 'paid-overlay' => 'yet-another' ]
+	);
+
+	expect( $a[0]['url'] )->toBe( $b[0]['url'] );
+	expect( $b[0]['url'] )->toBe( $c[0]['url'] );
+	expect( $a[0]['url'] )->toContain( 'key=PHP-OVERLAY-VALUE' );
+
+} );

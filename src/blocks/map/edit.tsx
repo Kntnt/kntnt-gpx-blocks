@@ -97,6 +97,24 @@ interface EditorRegistryOverlayLayer {
  * maxZoom let `MapEditorPreview` mount each enabled layer directly via
  * `L.tileLayer()`.
  *
+ * The `apiKeyManagedExternally` boolean signals whether the PHP path is
+ * engaged for this overlay provider:
+ *
+ * - `false` (or absent) → attribute-path key. Per-layer URLs still carry
+ *   the literal `{KEY}` placeholder for paid providers; substitution
+ *   against `attributes.tileOverlayApiKeys[ providerId ]` happens
+ *   client-side in `resolveOverlaysForPreview()` before the resolved
+ *   record is handed to the preview.
+ * - `true` → PHP path engaged via the `kntnt_gpx_blocks_tile_overlays`
+ *   filter's optional `apiKey` field. The editor's per-provider
+ *   API-key TextControl is hidden, the
+ *   `attributes.tileOverlayApiKeys[ providerId ]` entry is ignored, and
+ *   per-layer URLs have already been substituted server-side by
+ *   `Editor_Data_Enqueuer`. A still-unsubstituted `{KEY}` in a layer URL
+ *   under this branch means the PHP-supplied key was empty (fail-closed)
+ *   — the preview drops just that layer; the base map and other overlays
+ *   continue to mount.
+ *
  * @since 1.0.0
  */
 interface EditorRegistryOverlayProvider {
@@ -105,6 +123,7 @@ interface EditorRegistryOverlayProvider {
 	readonly layers: Readonly< Record< string, EditorRegistryOverlayLayer > >;
 	readonly signupUrl?: string;
 	readonly subdomains?: readonly string[];
+	readonly apiKeyManagedExternally?: boolean;
 }
 
 /**
@@ -654,40 +673,44 @@ function OverlaysPanel( {
 								/>
 							);
 						} ) }
-						{ provider.requiresKey && (
-							<TextControl
-								__next40pxDefaultSize
-								__nextHasNoMarginBottom
-								label={ __( 'API key', 'kntnt-gpx-blocks' ) }
-								value={ overlayApiKeys[ providerId ] ?? '' }
-								onChange={ ( next: string ) =>
-									onApiKeyChange( providerId, next )
-								}
-								help={
-									provider.signupUrl ? (
-										<>
-											{ __(
-												'This provider requires an API key.',
-												'kntnt-gpx-blocks'
-											) }{ ' ' }
-											<ExternalLink
-												href={ provider.signupUrl }
-											>
+						{ provider.requiresKey &&
+							provider.apiKeyManagedExternally !== true && (
+								<TextControl
+									__next40pxDefaultSize
+									__nextHasNoMarginBottom
+									label={ __(
+										'API key',
+										'kntnt-gpx-blocks'
+									) }
+									value={ overlayApiKeys[ providerId ] ?? '' }
+									onChange={ ( next: string ) =>
+										onApiKeyChange( providerId, next )
+									}
+									help={
+										provider.signupUrl ? (
+											<>
 												{ __(
-													'Get one',
+													'This provider requires an API key.',
 													'kntnt-gpx-blocks'
-												) }
-											</ExternalLink>
-										</>
-									) : (
-										__(
-											"This provider requires an API key. See the provider's documentation.",
-											'kntnt-gpx-blocks'
+												) }{ ' ' }
+												<ExternalLink
+													href={ provider.signupUrl }
+												>
+													{ __(
+														'Get one',
+														'kntnt-gpx-blocks'
+													) }
+												</ExternalLink>
+											</>
+										) : (
+											__(
+												"This provider requires an API key. See the provider's documentation.",
+												'kntnt-gpx-blocks'
+											)
 										)
-									)
-								}
-							/>
-						) }
+									}
+								/>
+							) }
 					</PanelBody>
 				);
 			} ) }
@@ -741,6 +764,17 @@ function OverlaysPanel( {
  * handled silently — the editor preview surfaces the resulting overlay
  * stack without diagnostics here (PHP logs them on the rendered page).
  *
+ * PHP-supplied key path. When the overlay provider's record carries
+ * `apiKeyManagedExternally === true`, the server-side enqueuer has
+ * already substituted `{KEY}` in the per-layer URL (with the
+ * PHP-supplied value), so the URL is mounted directly and the
+ * attribute-path `overlayKeys` entry is ignored entirely. A residual
+ * `{KEY}` in such a URL means the PHP-supplied key was empty
+ * (fail-closed) — the affected layer is dropped from the resolved
+ * overlay stack; the base map and other overlays continue to render,
+ * mirroring the frontend's asymmetric fail-closed contract for
+ * overlays (no polyline-only equivalent).
+ *
  * The `id` field on `EditorOverlayRecord` is set to `${provider}/${layer}`
  * for telemetry parity with the previous flat shape; the preview does
  * not actually need it to mount the layer.
@@ -749,9 +783,11 @@ function OverlaysPanel( {
  *
  * @param pairs       - Overlay pairs from `attributes.tileOverlays`.
  * @param overlayKeys - Per-overlay-provider API-key map from
- *                    `attributes.tileOverlayApiKeys`.
+ *                    `attributes.tileOverlayApiKeys`. Ignored entirely
+ *                    for providers whose record carries
+ *                    `apiKeyManagedExternally === true`.
  * @return Resolved records in the input order, with unknown / missing-key
- *         pairs removed.
+ *         pairs (and PHP-supplied empty-key layers) removed.
  */
 function resolveOverlaysForPreview(
 	pairs: readonly OverlayPair[],
@@ -768,6 +804,29 @@ function resolveOverlaysForPreview(
 		if ( ! layer ) {
 			continue;
 		}
+
+		// PHP-supplied key path. The server pre-substituted `{KEY}` in
+		// the layer URL with the PHP value (when non-empty). A residual
+		// `{KEY}` is the fail-closed signal — drop just that layer.
+		// The attribute-path `overlayKeys` entry is never consulted in
+		// this branch: PHP path engagement is binary.
+		if ( provider.apiKeyManagedExternally === true ) {
+			if ( layer.url.includes( '{KEY}' ) ) {
+				continue;
+			}
+			const entry: EditorOverlayRecord = {
+				id: `${ pair.provider }/${ pair.layer }`,
+				url: layer.url,
+				attribution: layer.attribution,
+				maxZoom: layer.maxZoom,
+			};
+			if ( provider.subdomains && provider.subdomains.length > 0 ) {
+				entry.subdomains = [ ...provider.subdomains ];
+			}
+			out.push( entry );
+			continue;
+		}
+
 		if ( provider.requiresKey ) {
 			const apiKey = overlayKeys[ pair.provider ] ?? '';
 			if ( apiKey.trim() === '' ) {

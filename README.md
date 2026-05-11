@@ -199,6 +199,23 @@ add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $provider
 
 Presence of the `apiKey` field (not its value) engages the PHP path. For any provider where PHP supplies the key, the block's Inspector hides the API-key field, the per-block `tileApiKeys` attribute is ignored, and the plugin substitutes the PHP-supplied value into the tile URL on both the frontend and the editor preview. An empty or whitespace-only PHP value fails closed — the map renders polyline-only and the misconfiguration is logged via `Plugin::warning()` — without leaking the value into the log.
 
+The same mechanism is available for **overlay providers** (OpenWeatherMap is the only paid overlay shipped by default) via the parallel `kntnt_gpx_blocks_tile_overlays` filter:
+
+```php
+// wp-config.php
+define( 'OWM_KEY', 'paste-your-key-here' );
+
+// wp-content/mu-plugins/kntnt-gpx-blocks-keys.php
+add_filter( 'kntnt_gpx_blocks_tile_overlays', static function ( array $overlays ): array {
+    if ( defined( 'OWM_KEY' ) ) {
+        $overlays['openweathermap']['apiKey'] = OWM_KEY;
+    }
+    return $overlays;
+} );
+```
+
+Engagement, precedence, and validator hygiene match the base-provider side verbatim. The one asymmetry is the fail-closed behaviour: an empty or whitespace-only PHP-supplied overlay key drops the affected layer from the rendered overlay stack (with a `Plugin::warning()` log naming the provider and layer ids) — the base map and any other overlays continue to render. There is no polyline-only equivalent for an overlay because an overlay *is* the tile load; the overlay's toggle stays visible in the editor's Overlays panel and the misconfiguration surfaces in the log, not in the editor UI.
+
 This protects the key from other editors. It does **not** protect the key from public-site visitors: browser-rendered tiles always leak the key in network requests, regardless of how it reaches the URL. The real defense against visitor-side scraping is to lock the key to your domain at the provider's dashboard via **Referer/Origin whitelisting**. Every paid provider listed above supports this; consult their documentation for the exact setting name.
 
 ### Developer Hooks

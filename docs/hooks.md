@@ -133,10 +133,34 @@ $overlays = apply_filters( 'kntnt_gpx_blocks_tile_overlays', $defaults );
 //     subdomains?: string[], // Optional Leaflet {s} substitution list,
 //                            // inherited by every layer of this provider
 //                            // whose URL contains {s}.
+//     apiKey?: string,       // Optional PHP-supplied API key. Presence
+//                            // (not value) engages the PHP path — see
+//                            // the "PHP-supplied API key (overlay
+//                            // providers)" subsection below for the
+//                            // full contract.
 // }>
 ```
 
 Unlike base providers, overlay providers carry **no `default` layer** — overlays are multi-select. The editor's "Overlays" panel renders one sub-section per provider with the provider label as a sub-header, the conditional API-key TextControl + signup ExternalLink for key-required providers, and one ToggleControl per layer. The single per-provider key is shared across every layer of that provider that the editor enables.
+
+#### PHP-supplied API key (overlay providers)
+
+The optional `apiKey` field on an overlay-provider record mirrors the base-provider mechanism: a site builder supplies a paid overlay provider's API key from PHP — typically from a `wp-config.php` constant — and bypasses the per-block `attributes.tileOverlayApiKeys` path entirely. The motivation is the same as for base providers: protect the key from any user with `edit_posts` capability who would otherwise be able to read it from `post_content`, the REST API, or the editor's Inspector field.
+
+```php
+add_filter( 'kntnt_gpx_blocks_tile_overlays', static function ( array $overlays ): array {
+    if ( defined( 'OWM_KEY' ) ) {
+        $overlays['openweathermap']['apiKey'] = OWM_KEY;
+    }
+    return $overlays;
+} );
+```
+
+- **Engagement rule.** `isset( $record['apiKey'] )` — presence, not value — engages the PHP path. The site builder controls where the value comes from (hard-coded string, `wp-config.php` constant via `defined()` guard, environment variable, secrets manager, etc.); plugin code only reads the resolved `apiKey` field.
+- **Precedence.** Binary. When the PHP path is engaged for an overlay provider, `attributes.tileOverlayApiKeys[ providerId ]` is never read, the editor's API-key TextControl for that provider is hidden with no notice (the provider behaves identically to a free provider in the UI), and both editor preview and frontend use the PHP-supplied key.
+- **Fail-closed asymmetry — drops the layer, not the map.** Where base providers degrade to polyline-only when their key is empty, an overlay layer *is* the tile load — there is no equivalent degraded state. `apiKey === ''` (or whitespace-only) under PHP engagement therefore drops every affected layer from the resolved overlay stack with a `Plugin::warning()` log naming the (provider, layer) ids. The base map and any other overlays continue to render. The overlay-provider's toggles stay visible in the editor's Overlays panel — they just don't render when toggled on, and the misconfiguration surfaces in the log rather than the editor UI.
+- **Validator hygiene.** Non-string `apiKey` values are dropped silently (treated as absent). Whitespace is trimmed before storage. The validator's warning log mentions the overlay-provider id only; the key value (or the unsanitised input) **never** appears in any log line.
+- **Threat-model scope.** Same scope as the base side: this protects against `edit_posts`-level users. It does NOT protect against public-site visitors — browser-rendered tiles always leak the key in network requests. Lock your key to your domain via Referer/Origin whitelisting at the tile provider for the public-visitor case.
 
 ### Validation rules
 
@@ -158,10 +182,10 @@ Every record is validated at filter-application time. The validator follows a **
 The rules mirror the base side minus the `default` requirement (overlays are multi-select):
 
 - Overlay-provider id and layer id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
-- Provider-level: `label`, `requiresKey` (bool), and `layers` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present.
+- Provider-level: `label`, `requiresKey` (bool), and `layers` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present. Optional `apiKey` is a string when present (whitespace is trimmed; non-string values are dropped silently); presence engages the PHP path — see the [PHP-supplied API key (overlay providers)](#php-supplied-api-key-overlay-providers) subsection.
 - Per-layer: `label`, `url`, `attribution`, `maxZoom` are required.
 - `url` must start with `https://` and contain the literals `{z}`, `{x}`, `{y}`.
-- The per-layer URL contains `{KEY}` iff `provider.requiresKey === true`. For key-required overlay providers, the renderer substitutes `tileOverlayApiKeys[ providerId ]` server-side; an enabled overlay pair whose provider requires a key but whose `tileOverlayApiKeys` entry is empty is dropped at render time with a `Plugin::warning()` log (the toggle state still saves; the base map and other overlays still render).
+- The per-layer URL contains `{KEY}` iff `provider.requiresKey === true`. For key-required overlay providers, the renderer substitutes `tileOverlayApiKeys[ providerId ]` server-side; an enabled overlay pair whose provider requires a key but whose `tileOverlayApiKeys` entry is empty is dropped at render time with a `Plugin::warning()` log (the toggle state still saves; the base map and other overlays still render). When the PHP path is engaged for the overlay provider (presence of `apiKey` on the validated record), the attribute-path entry is ignored entirely and an empty PHP-supplied key drops every layer of that provider with the same fail-closed semantics.
 - **`subdomains` inheritance:** identical to the base side. A `{s}`-using layer on a provider without `subdomains` is dropped.
 - `maxZoom` is an integer in `[0, 22]`. Floats and numeric strings are rejected.
 - Overlay provider survives only when at least one layer survives validation.

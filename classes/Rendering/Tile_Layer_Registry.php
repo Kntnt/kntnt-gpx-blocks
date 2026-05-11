@@ -33,6 +33,18 @@
  * and emits a `Plugin::warning()` log that names the provider id but
  * never the key value. See `docs/hooks.md` for the formal contract.
  *
+ * Overlay providers carry the same optional `apiKey` field via the
+ * `kntnt_gpx_blocks_tile_overlays` filter, with the same engagement
+ * rule (presence, not value) and the same precedence (binary; PHP wins,
+ * attribute ignored). The one asymmetry is the fail-closed behaviour:
+ * where a base provider degrades to polyline-only when its key is
+ * empty, an overlay layer is the tile load — there is no equivalent
+ * degraded state. An empty PHP-supplied overlay key therefore drops
+ * the affected layer with a `Plugin::warning()` log (naming the
+ * provider + layer ids, never the key value); the base map and any
+ * other overlays continue to render. See `docs/hooks.md` for the
+ * formal contract.
+ *
  * Validation is deterministic and follows a drop-the-narrowest-unit rule.
  * A bad single style or layer drops just that entry; provider-level
  * failures (missing required field, `default` resolves to a dropped
@@ -89,6 +101,7 @@ use Kntnt\Gpx_Blocks\Plugin;
  *     layers: array<string, OverlayLayerRecord>,
  *     signupUrl?: string,
  *     subdomains?: list<string>,
+ *     apiKey?: string,
  * }
  * @phpstan-type ResolvedProvider array{
  *     url: string,
@@ -410,12 +423,24 @@ final class Tile_Layer_Registry {
 	 * whose layer is missing within a known provider, or whose
 	 * malformed-mixed shape fails the per-entry coercion are dropped
 	 * silently with a `Plugin::warning()` log naming the failing pair.
-	 * Pairs whose provider requires a key but whose `$api_keys[ provider ]`
-	 * entry is empty are also dropped (with a warning) — there is no
-	 * polyline-only concept for overlays; the base map and other overlays
-	 * still render. The returned list preserves the input order so the JS
-	 * view module can stack overlays in the same order the editor
-	 * configured them.
+	 * Pairs whose provider requires a key but whose effective key is empty
+	 * are also dropped (with a warning) — there is no polyline-only concept
+	 * for overlays; the base map and other overlays still render. The
+	 * returned list preserves the input order so the JS view module can
+	 * stack overlays in the same order the editor configured them.
+	 *
+	 * Key resolution mirrors `resolve_provider()`'s binary contract with
+	 * the one asymmetric outcome documented at the class level:
+	 *
+	 * - **PHP-supplied key** (`isset( $record['apiKey'] )` on the resolved
+	 *   overlay-provider record): the PHP-supplied value is used and the
+	 *   attribute-path `$api_keys[ providerId ]` entry is ignored. An
+	 *   empty or whitespace-only PHP value drops the affected layer with
+	 *   one `Plugin::warning()` log naming the provider + layer ids (never
+	 *   the key value). Other overlays and the base map continue to render.
+	 * - **Attribute path** (otherwise): the `$api_keys[ providerId ]` entry
+	 *   is substituted into `{KEY}` as before; missing or empty entries
+	 *   drop the layer with the existing warning.
 	 *
 	 * The resolved record carries only the four Leaflet-facing fields
 	 * (`url`, `attribution`, `maxZoom`, optional `subdomains`) — slim and
@@ -433,10 +458,16 @@ final class Tile_Layer_Registry {
 	 *                                             malformed entries are
 	 *                                             coerced and dropped.
 	 * @param array<string, string|mixed> $api_keys Per-overlay-provider API
-	 *                                              keys, keyed by provider
+	 *                                              keys from the attribute
+	 *                                              path, keyed by provider
 	 *                                              id. Entries for providers
 	 *                                              that do not require a key
-	 *                                              are ignored.
+	 *                                              are ignored. Entries for
+	 *                                              providers whose resolved
+	 *                                              record carries an
+	 *                                              `apiKey` field are
+	 *                                              ignored too — see the
+	 *                                              method docblock.
 	 *
 	 * @return list<ResolvedOverlay>
 	 */
@@ -490,22 +521,44 @@ final class Tile_Layer_Registry {
 			// key and the key is missing or empty, drop the pair with a
 			// warning — overlays have no polyline-only concept, so a
 			// missing-key overlay simply does not render. Other overlays
-			// continue to render on top of the base layer.
+			// continue to render on top of the base layer. The
+			// PHP-supplied key path (provider record carries `apiKey`)
+			// supersedes the attribute-path `$api_keys[ providerId ]`
+			// entry: when engaged with a non-empty key, the PHP value
+			// substitutes into `{KEY}`; when engaged with an empty or
+			// whitespace-only key, the layer is dropped with a warning
+			// (the asymmetric fail-closed outcome documented on the
+			// class — no polyline-only equivalent exists for overlays).
 			$url = $layer['url'];
 			if ( $provider['requiresKey'] ) {
-				$raw_key = $api_keys[ $provider_id ] ?? '';
-				$api_key = is_string( $raw_key ) ? $raw_key : '';
-				if ( '' === trim( $api_key ) ) {
-					Plugin::warning(
-						sprintf(
-							'Tile_Layer_Registry: tile-overlay layer "%s" within provider "%s" requires an API key but none is configured; dropping.',
-							$layer_id,
-							$provider_id
-						)
-					);
-					continue;
+				if ( isset( $provider['apiKey'] ) ) {
+					$php_key = $provider['apiKey'];
+					if ( '' === $php_key ) {
+						Plugin::warning(
+							sprintf(
+								'Tile_Layer_Registry: PHP-supplied apiKey for tile-overlay provider "%s" (layer "%s") is empty; dropping the layer (base map and other overlays still render).',
+								$provider_id,
+								$layer_id
+							)
+						);
+						continue;
+					}
+					$url = str_replace( '{KEY}', $php_key, $url );
+				} else {
+					$raw_key = $api_keys[ $provider_id ] ?? '';
+					$api_key = is_string( $raw_key ) ? $raw_key : '';
+					if ( '' === trim( $api_key ) ) {
+						Plugin::warning(
+							sprintf(
+								'Tile_Layer_Registry: tile-overlay layer "%s" within provider "%s" requires an API key but none is configured; dropping.',
+								$layer_id,
+								$provider_id
+							)
+						);
+						continue;
+					}
+					$url = str_replace( '{KEY}', $api_key, $url );
 				}
-				$url = str_replace( '{KEY}', $api_key, $url );
 			}
 
 			// Compose the runtime record. `subdomains` is inherited from
@@ -526,6 +579,42 @@ final class Tile_Layer_Registry {
 		}
 
 		return $out;
+
+	}
+
+	/**
+	 * Returns the PHP-supplied API key for an overlay provider, or `null`
+	 * when the PHP path is not engaged for that provider.
+	 *
+	 * Presence of the `apiKey` field on the validated overlay-provider
+	 * record engages the PHP path (per the `kntnt_gpx_blocks_tile_overlays`
+	 * contract — see `docs/hooks.md`). The returned string carries the
+	 * normalised (trimmed) value; an empty string means the site builder
+	 * engaged the path but supplied no usable key, which the caller
+	 * treats as fail-closed (the affected layer is dropped from the
+	 * resolved overlay stack — the base map and other overlays still
+	 * render). An unknown overlay-provider id returns `null`.
+	 *
+	 * Mirrors `php_supplied_api_key()` for the base side; the two stay
+	 * in lock-step so callers can branch identically on either half of
+	 * the registry.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $provider_id Overlay-provider id (typically from a
+	 *                            `tileOverlays[i].provider` attribute).
+	 *
+	 * @return string|null The normalised PHP-supplied key when engaged,
+	 *                     `null` when the overlay provider does not carry one.
+	 */
+	public function php_supplied_overlay_api_key( string $provider_id ): ?string {
+
+		$provider = $this->get_overlays()[ $provider_id ] ?? null;
+		if ( $provider === null ) {
+			return null;
+		}
+
+		return $provider['apiKey'] ?? null;
 
 	}
 
@@ -932,6 +1021,23 @@ final class Tile_Layer_Registry {
 			$subdomains = $candidate;
 		}
 
+		// Optional apiKey, when present, engages the PHP-supplied key path.
+		// Mirrors the base-provider validator: presence (not value) is the
+		// engagement signal, non-string values are ignored silently (treated
+		// as absent), whitespace is trimmed, the empty-after-trim case is
+		// preserved as an empty string and surfaced as fail-closed
+		// (drop-the-layer) at resolve time. The validator never logs the
+		// key value or the unsanitised input.
+		$has_api_key        = false;
+		$normalised_api_key = '';
+		if ( array_key_exists( 'apiKey', $record ) ) {
+			$candidate = $record['apiKey'];
+			if ( is_string( $candidate ) ) {
+				$has_api_key        = true;
+				$normalised_api_key = trim( $candidate );
+			}
+		}
+
 		// Validate each layer with the drop-the-narrowest-unit rule. A
 		// layer that fails its own validator is dropped with a warning;
 		// the provider survives so long as at least one layer remains.
@@ -978,6 +1084,9 @@ final class Tile_Layer_Registry {
 		}
 		if ( $subdomains !== null ) {
 			$out['subdomains'] = $subdomains;
+		}
+		if ( $has_api_key ) {
+			$out['apiKey'] = $normalised_api_key;
 		}
 
 		return $out;

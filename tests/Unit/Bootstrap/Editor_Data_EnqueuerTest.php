@@ -615,3 +615,198 @@ test( 'empty PHP-supplied apiKey log entry never carries the apiKey value (even 
 	expect( $logged )->not->toContain( "\t" );
 
 } );
+
+// ---------------------------------------------------------------------------
+// PHP-supplied API key — overlay providers (issue #114)
+//
+// Mirrors the base-provider tests above for the overlay half of the
+// editor payload. The shaper emits an `apiKeyManagedExternally` boolean
+// per overlay provider, pre-substitutes `{KEY}` in every layer URL
+// when engaged with a non-empty key, and leaves `{KEY}` intact (plus a
+// warning log) when engaged with an empty key — the editor preview's
+// fail-closed detector (unsubstituted `{KEY}`) drops just that layer.
+// The `apiKey` value itself never reaches the editor payload.
+// ---------------------------------------------------------------------------
+
+/**
+ * Stubs apply_filters so `kntnt_gpx_blocks_tile_overlays` returns a
+ * single paid overlay-provider record with the supplied apiKey overlay
+ * applied. The provider id is `'paid-overlay'`; one layer id `'main'`
+ * with a single `{KEY}` placeholder so substitution effects are
+ * unambiguous.
+ *
+ * @param array<string, mixed> $overlay Provider-level overlay (e.g.
+ *                                      `[ 'apiKey' => 'X' ]` to engage
+ *                                      the PHP path; omit to leave it
+ *                                      unengaged).
+ */
+function ede_install_paid_overlay( array $overlay = [] ): void {
+
+	$record = array_merge(
+		[
+			'label'       => 'Paid Overlay Provider',
+			'requiresKey' => true,
+			'layers'      => [
+				'main' => [
+					'label'       => 'Main',
+					'url'         => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
+					'attribution' => '&copy; Overlay',
+					'maxZoom'     => 19,
+				],
+			],
+		],
+		$overlay
+	);
+
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $filter, mixed $value ) use ( $record ): mixed {
+			if ( $filter === 'kntnt_gpx_blocks_tile_overlays' ) {
+				return [ 'paid-overlay' => $record ];
+			}
+			if ( $filter === 'kntnt_gpx_blocks_tile_providers' ) {
+				return $value;
+			}
+			return $value;
+		}
+	);
+
+}
+
+test( 'overlay apiKeyManagedExternally is false for every overlay provider without a PHP-supplied apiKey', function (): void {
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$decoded = ede_decode_payload( (string) $captured_inline );
+
+	foreach ( $decoded['overlays'] as $id => $record ) {
+		expect( $record )->toHaveKey( 'apiKeyManagedExternally' );
+		expect( $record['apiKeyManagedExternally'] )->toBeFalse();
+	}
+
+} );
+
+test( 'overlay apiKeyManagedExternally is true when the PHP path is engaged, and {KEY} is pre-substituted server-side', function (): void {
+
+	ede_install_paid_overlay( [ 'apiKey' => 'PHP-OVERLAY-VALUE' ] );
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$decoded = ede_decode_payload( (string) $captured_inline );
+
+	expect( $decoded['overlays'] )->toHaveKey( 'paid-overlay' );
+	expect( $decoded['overlays']['paid-overlay']['apiKeyManagedExternally'] )->toBeTrue();
+	$url = $decoded['overlays']['paid-overlay']['layers']['main']['url'];
+	expect( $url )->toContain( 'key=PHP-OVERLAY-VALUE' );
+	expect( $url )->not->toContain( '{KEY}' );
+
+} );
+
+test( 'an empty PHP-supplied overlay apiKey leaves {KEY} intact and logs a warning naming only the overlay-provider id', function (): void {
+
+	ede_install_paid_overlay( [ 'apiKey' => '   ' ] );
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	$logged = ede_capture_warning_log( static function (): void {
+		( new Editor_Data_Enqueuer() )->enqueue();
+	} );
+
+	$decoded = ede_decode_payload( (string) $captured_inline );
+
+	// Fail-closed: `{KEY}` placeholder survives. The editor preview
+	// detects this and drops just that layer (asymmetric outcome —
+	// the base map and other overlays still mount).
+	$url = $decoded['overlays']['paid-overlay']['layers']['main']['url'];
+	expect( $url )->toContain( '{KEY}' );
+
+	// The flag is still `true` — engagement is presence-based, not
+	// value-based — so the editor hides the API-key TextControl.
+	expect( $decoded['overlays']['paid-overlay']['apiKeyManagedExternally'] )->toBeTrue();
+
+	// Warning log names the overlay-provider id, never the key value.
+	expect( $logged )->toContain( 'paid-overlay' );
+
+} );
+
+test( 'the literal overlay apiKey value never appears anywhere in the editor payload (no-leak invariant)', function (): void {
+
+	$sentinel = 'S3CR3T-OVERLAY-DO-NOT-LEAK';
+	ede_install_paid_overlay( [ 'apiKey' => $sentinel ] );
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	// The sentinel appears in the substituted URL (intended); assert
+	// that the raw `"apiKey":` JSON field never appears in the payload
+	// (the flag is `apiKeyManagedExternally`, not `apiKey`).
+	expect( (string) $captured_inline )->not->toContain( '"apiKey":' );
+
+} );
+
+test( 'no PHP-supplied overlay apiKey value (sentinel) ever appears in the warning log', function (): void {
+
+	$sentinel = 'S3CR3T-OVERLAY-DO-NOT-LEAK';
+	// Padded with whitespace so the validator trims to a non-empty
+	// stored value. The success branch substitutes silently and does
+	// not log, so the no-leak assertion holds vacuously here — but the
+	// invariant we lock down is that the enqueuer never logs the value
+	// even when something *did* surface.
+	ede_install_paid_overlay( [ 'apiKey' => '  ' . $sentinel . '  ' ] );
+
+	Functions\when( 'wp_add_inline_script' )->justReturn( true );
+
+	$logged = ede_capture_warning_log( static function (): void {
+		( new Editor_Data_Enqueuer() )->enqueue();
+	} );
+
+	expect( $logged )->not->toContain( $sentinel );
+
+} );
+
+test( 'empty PHP-supplied overlay apiKey log entry never carries the apiKey value (even whitespace-only input)', function (): void {
+
+	// Whitespace-only input — the validator trims to '' and the
+	// shaper fires the fail-closed warning. The log line carries
+	// the overlay-provider id only; the raw whitespace input never
+	// leaks into the log.
+	ede_install_paid_overlay( [ 'apiKey' => "  \t\n" ] );
+
+	Functions\when( 'wp_add_inline_script' )->justReturn( true );
+
+	$logged = ede_capture_warning_log( static function (): void {
+		( new Editor_Data_Enqueuer() )->enqueue();
+	} );
+
+	expect( $logged )->toContain( 'paid-overlay' );
+	expect( $logged )->not->toContain( "\t" );
+
+} );

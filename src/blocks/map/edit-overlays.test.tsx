@@ -186,11 +186,20 @@ jest.mock(
 	{ virtual: true }
 );
 
+// Capture every props payload `MapEditorPreview` receives so the PHP-supplied
+// overlay-apiKey tests can assert against the resolved `overlays` array
+// (in particular: the empty-PHP-key branch must drop the layer entirely,
+// so the resolved array must not contain a record for that layer).
+const capturedPreviewProps: Array< Record< string, unknown > > = [];
+
 jest.mock(
 	'./editor-preview',
 	() => ( {
 		__esModule: true,
-		MapEditorPreview: () => null,
+		MapEditorPreview: ( props: Record< string, unknown > ) => {
+			capturedPreviewProps.push( props );
+			return null;
+		},
 	} ),
 	{ virtual: true }
 );
@@ -362,10 +371,12 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 	texts: CapturedTextControl[];
 	panels: CapturedPanel[];
 	writes: Array< Record< string, unknown > >;
+	previewProps: Array< Record< string, unknown > >;
 } {
 	capturedToggles.length = 0;
 	capturedTextControls.length = 0;
 	capturedPanels.length = 0;
+	capturedPreviewProps.length = 0;
 	const writes: Array< Record< string, unknown > > = [];
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
@@ -388,6 +399,7 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 		texts: [ ...capturedTextControls ],
 		panels: [ ...capturedPanels ],
 		writes,
+		previewProps: [ ...capturedPreviewProps ],
 	};
 }
 
@@ -851,5 +863,234 @@ describe( 'MapEdit Overlays panel — per-provider PanelBody (issue #112)', () =
 		expect( overlayPanels[ overlayPanels.length - 1 ].initialOpen ).toBe(
 			false
 		);
+	} );
+} );
+
+// PHP-supplied overlay API key (issue #114). When the editor-data
+// registry marks an overlay provider with `apiKeyManagedExternally:
+// true`, the per-provider API-key TextControl is hidden — the site
+// builder owns the key in PHP and the editor must not surface it. The
+// flag is presence-based (engagement is driven by the existence of
+// the `apiKey` field on the `kntnt_gpx_blocks_tile_overlays` filter
+// callback's record, not its value), so the editor never sees the key
+// value itself: only the URL the server pre-substituted, and the
+// boolean flag. The fail-closed asymmetry: an empty PHP key leaves
+// `{KEY}` intact in the URL, and the preview drops *only* that
+// layer from the resolved overlay stack (base map + other overlays
+// still render).
+describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
+	const originalRegistry = (
+		globalThis as {
+			kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+		}
+	 ).kntntGpxBlocks;
+
+	beforeAll( () => {
+		// Add two overlay providers to the editor-data registry,
+		// mirroring what `Editor_Data_Enqueuer::shape_overlays()` would
+		// emit when the PHP path is engaged: `apiKeyManagedExternally:
+		// true`, with `{KEY}` either already substituted server-side
+		// (the resolved key was non-empty) or still present (the
+		// resolved key was empty, signalling fail-closed / drop-the-
+		// layer).
+		(
+			globalThis as {
+				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+			}
+		 ).kntntGpxBlocks = {
+			providers: ( originalRegistry as { providers: object } ).providers,
+			overlays: {
+				...( originalRegistry as { overlays: object } ).overlays,
+				owmExternal: {
+					label: 'OpenWeatherMap (PHP key)',
+					requiresKey: true,
+					apiKeyManagedExternally: true,
+					signupUrl: 'https://openweathermap.org/',
+					layers: {
+						clouds: {
+							label: 'Clouds',
+							url: 'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=PHP-OWM-SUBSTITUTED',
+							attribution: 'OWM',
+							maxZoom: 19,
+						},
+						precipitation: {
+							label: 'Precipitation',
+							url: 'https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=PHP-OWM-SUBSTITUTED',
+							attribution: 'OWM',
+							maxZoom: 19,
+						},
+					},
+				},
+				owmExternalEmpty: {
+					label: 'OpenWeatherMap (PHP key, empty)',
+					requiresKey: true,
+					apiKeyManagedExternally: true,
+					signupUrl: 'https://openweathermap.org/',
+					layers: {
+						clouds: {
+							label: 'Clouds (PHP empty)',
+							url: 'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid={KEY}',
+							attribution: 'OWM',
+							maxZoom: 19,
+						},
+					},
+				},
+			},
+		};
+	} );
+
+	afterAll( () => {
+		(
+			globalThis as {
+				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+			}
+		 ).kntntGpxBlocks = originalRegistry;
+	} );
+
+	it( 'hides the API-key TextControl for an overlay provider whose apiKey is managed externally', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const owmExternalPanel = panels.find(
+			( p ) => p.title === 'OpenWeatherMap (PHP key)'
+		);
+		expect( owmExternalPanel ).toBeDefined();
+
+		const { texts } = captureSinglePanel(
+			owmExternalPanel as CapturedPanel
+		);
+		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
+		expect( apiKeyField ).toBeUndefined();
+	} );
+
+	it( 'still hides the API-key TextControl when the PHP-supplied key is empty (the drop-the-layer branch)', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const owmEmptyPanel = panels.find(
+			( p ) => p.title === 'OpenWeatherMap (PHP key, empty)'
+		);
+		expect( owmEmptyPanel ).toBeDefined();
+
+		// The `apiKeyManagedExternally` flag remains `true` regardless
+		// of whether the resolved PHP key was empty — engagement is
+		// presence-based. The user must not see a TextControl that
+		// would tempt them into supplying an attribute-path key the
+		// renderer would never read.
+		const { texts } = captureSinglePanel( owmEmptyPanel as CapturedPanel );
+		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
+		expect( apiKeyField ).toBeUndefined();
+	} );
+
+	it( 'still renders the API-key TextControl for paid overlay providers whose apiKey is not managed externally (attribute-path unchanged)', () => {
+		const { panels } = mountAndCapture(
+			buildAttributes( {
+				tileOverlayApiKeys: { openweathermap: 'ATTR_OWM' },
+			} )
+		);
+
+		const owmPanel = panels.find( ( p ) => p.title === 'OpenWeatherMap' );
+		expect( owmPanel ).toBeDefined();
+
+		const { texts } = captureSinglePanel( owmPanel as CapturedPanel );
+		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
+		expect( apiKeyField ).toBeDefined();
+		expect( apiKeyField?.value ).toBe( 'ATTR_OWM' );
+	} );
+
+	it( 'forwards the pre-substituted URL to MapEditorPreview when the PHP key is non-empty (no client substitution)', () => {
+		// Engaged-with-non-empty-key path: the server-side URL has
+		// already had `{KEY}` replaced, so the preview receives that
+		// URL verbatim — no `{KEY}` placeholder and no attribute-path
+		// substitution.
+		const { previewProps } = mountAndCapture(
+			buildAttributes( {
+				tileOverlays: [ { provider: 'owmExternal', layer: 'clouds' } ],
+				tileOverlayApiKeys: {
+					owmExternal: 'this-attribute-overlay-key-is-ignored',
+				},
+			} )
+		);
+
+		const lastProps = previewProps[ previewProps.length - 1 ];
+		const attributes = lastProps?.attributes as {
+			overlays: ReadonlyArray< {
+				url: string;
+				attribution: string;
+				maxZoom: number;
+			} >;
+		};
+		expect( attributes.overlays ).toHaveLength( 1 );
+		expect( attributes.overlays[ 0 ].url ).toBe(
+			'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=PHP-OWM-SUBSTITUTED'
+		);
+		expect( attributes.overlays[ 0 ].url ).not.toContain( '{KEY}' );
+		// Attribute-path key never reaches the URL — PHP path engagement
+		// is binary.
+		expect( attributes.overlays[ 0 ].url ).not.toContain(
+			'this-attribute-overlay-key-is-ignored'
+		);
+	} );
+
+	it( 'drops just the affected layer when the PHP key is empty and the URL still contains {KEY}; base map and other overlays still mount', () => {
+		// Two overlays selected: one with PHP path engaged and an
+		// empty PHP key (drops), one free (survives). The resolved
+		// overlay array must contain exactly the free one.
+		const { previewProps } = mountAndCapture(
+			buildAttributes( {
+				tileOverlays: [
+					{ provider: 'owmExternalEmpty', layer: 'clouds' },
+					{ provider: 'openseamap', layer: 'seamarks' },
+				],
+				tileOverlayApiKeys: {},
+			} )
+		);
+
+		const lastProps = previewProps[ previewProps.length - 1 ];
+		const attributes = lastProps?.attributes as {
+			overlays: ReadonlyArray< {
+				id: string;
+				url: string;
+				attribution: string;
+				maxZoom: number;
+			} >;
+		};
+
+		// Exactly one overlay survives — the free seamarks layer.
+		// The PHP-empty owmExternalEmpty/clouds layer is dropped from
+		// the resolved stack; the base map (mounted independently in
+		// the preview) is unaffected.
+		expect( attributes.overlays ).toHaveLength( 1 );
+		expect( attributes.overlays[ 0 ].id ).toBe( 'openseamap/seamarks' );
+		expect( attributes.overlays[ 0 ].url ).not.toContain( '{KEY}' );
+	} );
+
+	it( 'the saved (provider, layer) pair survives even when its PHP key is empty — only the runtime mount is suppressed', () => {
+		// The toggle state (and the saved attribute) is independent
+		// of the runtime drop. Saving the pair into `tileOverlays`
+		// must not be blocked by the drop-the-layer branch.
+		const { panels } = mountAndCapture(
+			buildAttributes( {
+				tileOverlays: [
+					{ provider: 'owmExternalEmpty', layer: 'clouds' },
+				],
+			} )
+		);
+
+		const owmEmptyPanel = panels.find(
+			( p ) => p.title === 'OpenWeatherMap (PHP key, empty)'
+		);
+		expect( owmEmptyPanel ).toBeDefined();
+
+		const { toggles } = captureSinglePanel(
+			owmEmptyPanel as CapturedPanel
+		);
+		const cloudsToggle = toggles.find(
+			( t ) => t.label === 'Clouds (PHP empty)'
+		);
+		// The toggle is rendered, enabled, and reflects the saved
+		// checked state — the editor surface mirrors persisted state
+		// rather than silently rewriting it.
+		expect( cloudsToggle ).toBeDefined();
+		expect( cloudsToggle?.checked ).toBe( true );
+		expect( cloudsToggle?.disabled ).not.toBe( true );
 	} );
 } );

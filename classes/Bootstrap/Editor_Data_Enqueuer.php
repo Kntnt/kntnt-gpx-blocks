@@ -12,12 +12,14 @@
  * the GPX Map block's editor handle, so it lands in the editor document
  * before the block's React entry runs and reads the global. API keys are
  * deliberately excluded from the payload: attribute-path keys are per-block
- * (`attributes.tileApiKeys`, a provider-keyed object) and never leave PHP
- * except as the substituted `{KEY}` value in the rendered tile URL, and
- * PHP-supplied keys (engaged via the optional `apiKey` field on a
- * `kntnt_gpx_blocks_tile_providers` callback) are substituted server-side
- * before the URL reaches the editor — the editor receives a boolean
- * `apiKeyManagedExternally` flag per provider but never the key itself.
+ * (`attributes.tileApiKeys` and `attributes.tileOverlayApiKeys`, both
+ * provider-keyed objects) and never leave PHP except as the substituted
+ * `{KEY}` value in the rendered tile URL, and PHP-supplied keys (engaged
+ * via the optional `apiKey` field on a `kntnt_gpx_blocks_tile_providers`
+ * or `kntnt_gpx_blocks_tile_overlays` callback) are substituted
+ * server-side before the URL reaches the editor — the editor receives a
+ * boolean `apiKeyManagedExternally` flag per provider but never the key
+ * itself.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -269,17 +271,39 @@ final class Editor_Data_Enqueuer {
 	 * providers, and one ToggleControl per layer — and so
 	 * `MapEditorPreview` can mount each enabled layer's tile layer via
 	 * `L.tileLayer()`. Provider-level fields surfaced: `label`,
-	 * `requiresKey`, optional `signupUrl`, optional `subdomains`. Per-layer
-	 * fields surfaced under `layers[ id ]`: `label`, `url` (with `{KEY}`
-	 * left intact for paid providers), `attribution`, `maxZoom`. The shape
-	 * is deliberately explicit so a future change to the registry's
+	 * `requiresKey`, optional `signupUrl`, optional `subdomains`, and
+	 * `apiKeyManagedExternally` (the boolean flag the editor reads to
+	 * decide whether to render the per-provider API-key TextControl).
+	 * Per-layer fields surfaced under `layers[ id ]`: `label`, `url`
+	 * (with `{KEY}` left intact for the attribute path; pre-substituted
+	 * server-side when the PHP path is engaged and the resolved key is
+	 * non-empty — see below), `attribution`, `maxZoom`.
+	 *
+	 * **PHP-supplied key path.** When an overlay-provider record carries
+	 * the optional `apiKey` field (engaged via the
+	 * `kntnt_gpx_blocks_tile_overlays` filter), the per-block
+	 * `attributes.tileOverlayApiKeys[ providerId ]` value is ignored
+	 * entirely and the editor must not render an API-key TextControl
+	 * for that provider. This shaper:
+	 *
+	 * - emits `apiKeyManagedExternally: true` per overlay provider so
+	 *   the editor knows to hide the TextControl;
+	 * - pre-substitutes `{KEY}` in every layer URL when the resolved key
+	 *   is non-empty, so the preview can mount the URL directly without
+	 *   invoking the client-side `substituteTileApiKey()` helper;
+	 * - leaves `{KEY}` intact and logs a `Plugin::warning()` naming only
+	 *   the overlay-provider id (never the key value) when the resolved
+	 *   key is empty or whitespace-only — the editor preview's
+	 *   `resolveOverlaysForPreview()` then detects the unsubstituted
+	 *   `{KEY}` and drops just that layer, mirroring the frontend's
+	 *   asymmetric fail-closed contract for overlays (no polyline-only
+	 *   equivalent; the base map and other overlays still render).
+	 *
+	 * The `apiKey` itself is **never** part of the editor payload — only
+	 * the boolean flag and the resolved URL ever reach the browser. The
+	 * shape is deliberately explicit so a future change to the registry's
 	 * internal record type does not silently leak through the editor
-	 * data; only the fields listed below ever reach the browser. The
-	 * per-block API keys are *never* part of this payload — they live in
-	 * `attributes.tileOverlayApiKeys` (a provider-keyed object) and the
-	 * entry for each enabled overlay layer's provider is substituted into
-	 * `{KEY}` client-side by `edit.tsx` before forwarding each layer's
-	 * URL to the preview.
+	 * data; only the fields listed below ever reach the browser.
 	 *
 	 * @since 1.0.0
 	 *
@@ -294,11 +318,13 @@ final class Editor_Data_Enqueuer {
 	 *     }>,
 	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
+	 *     apiKey?: string,
 	 * }> $overlays Validated overlay-provider records keyed by id.
 	 *
 	 * @return array<string, array{
 	 *     label: string,
 	 *     requiresKey: bool,
+	 *     apiKeyManagedExternally: bool,
 	 *     layers: array<string, array{
 	 *         label: string,
 	 *         url: string,
@@ -315,23 +341,53 @@ final class Editor_Data_Enqueuer {
 
 		foreach ( $overlays as $id => $record ) {
 
+			// Detect PHP-supplied key engagement. Presence of `apiKey` on
+			// the validated record (not its value) is the engagement
+			// signal. An empty PHP key fails closed at resolve time (the
+			// affected layer is dropped from the overlay stack) — the
+			// editor preview detects this by spotting `{KEY}` still
+			// present in the URL and skips mounting that layer; the
+			// warning here surfaces the misconfiguration in the log.
+			$php_path_engaged = array_key_exists( 'apiKey', $record );
+			$php_key          = $php_path_engaged ? $record['apiKey'] : '';
+			$php_key_empty    = $php_path_engaged && '' === $php_key;
+			if ( $php_key_empty ) {
+				Plugin::warning(
+					sprintf(
+						'Editor_Data_Enqueuer: PHP-supplied apiKey for tile-overlay provider "%s" is empty; editor preview will drop its layers (base map and other overlays still render).',
+						$id
+					)
+				);
+			}
+
 			// Compose the per-layer sub-map. The shape mirrors the
 			// validator's typed layer record verbatim; the validator has
 			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
+			// When the PHP path is engaged with a non-empty key, the
+			// `{KEY}` placeholder is substituted server-side so the
+			// editor preview never sees the raw key in its props graph;
+			// when the PHP key is empty, `{KEY}` is left intact so the
+			// preview's fail-closed detector (unsubstituted `{KEY}`)
+			// drops just the affected layer.
 			$layers = [];
 			foreach ( $record['layers'] as $layer_id => $layer ) {
+				$url = $layer['url'];
+				if ( $php_path_engaged && ! $php_key_empty ) {
+					$url = str_replace( '{KEY}', $php_key, $url );
+				}
 				$layers[ $layer_id ] = [
 					'label'       => $layer['label'],
-					'url'         => $layer['url'],
+					'url'         => $url,
 					'attribution' => $layer['attribution'],
 					'maxZoom'     => $layer['maxZoom'],
 				];
 			}
 
 			$entry = [
-				'label'       => $record['label'],
-				'requiresKey' => $record['requiresKey'],
-				'layers'      => $layers,
+				'label'                   => $record['label'],
+				'requiresKey'             => $record['requiresKey'],
+				'apiKeyManagedExternally' => $php_path_engaged,
+				'layers'                  => $layers,
 			];
 			if ( isset( $record['signupUrl'] ) ) {
 				$entry['signupUrl'] = $record['signupUrl'];
