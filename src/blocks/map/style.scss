@@ -67,6 +67,26 @@
 	--kntnt-gpx-blocks-tooltip-desc-text-decoration: none;
 	--kntnt-gpx-blocks-tooltip-desc-text-transform: none;
 
+	// Neutralise Leaflet 1.9's `mix-blend-mode: plus-lighter` on tile images.
+	// Leaflet adds the rule to `.leaflet-container img.leaflet-tile` to mask
+	// sub-pixel seams between adjacent tiles in Chromium (PR Leaflet/Leaflet
+	// #8891). The side effect — confirmed by Leaflet/Leaflet#9821 and reproduced
+	// against the OpenWeatherMap overlay in this repo's issue #111 — is that
+	// the `plus-lighter` rule applies *across* tile layers within the shared
+	// `.leaflet-tile-pane` stacking context, additively blending overlay tiles
+	// (OpenWeatherMap clouds / precipitation / pressure / temperature / wind)
+	// with the base tiles underneath. Over a bright base like OpenStreetMap
+	// the additive blend saturates to white and the overlay becomes invisible.
+	// Forcing the blend mode back to `normal` on the plugin's map containers
+	// restores standard alpha compositing so overlay tiles render correctly.
+	// The selector is scoped to `.kntnt-gpx-blocks-map` so any other Leaflet
+	// map on the same page is unaffected; it is just specific enough to win
+	// against Leaflet's `.leaflet-container img.leaflet-tile` selector without
+	// resorting to `!important`.
+	.leaflet-container img.leaflet-tile {
+		mix-blend-mode: normal;
+	}
+
 	// Hit-zone overlay sitting above the visible 4 px stroke as a transparent
 	// SVG `<path>`. `pointer-events: stroke` makes the path receive events on
 	// the stroke band even though stroke-opacity is 0; without it, the SVG
