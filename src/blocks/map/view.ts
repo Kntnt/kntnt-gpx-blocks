@@ -42,6 +42,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
+import { paddedBoundsFromBox } from './bounds';
 import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
 import {
 	addTiles,
@@ -627,12 +628,19 @@ function bootMount(
 			// wheel handler below) and boxZoom (removed entirely — see
 			// docs/architecture.md). The default zoomControl is also off
 			// because the settings-driven path adds it conditionally.
+			// `maxBoundsViscosity: 1.0` makes the eventual `setMaxBounds`
+			// call (further down, once the polyline gives us the track
+			// bbox) a rigid constraint — viscosity 1.0 means a drag past
+			// the computed corners snaps back instantly. The option has
+			// no effect until `maxBounds` is actually set, so it is safe
+			// to include unconditionally here.
 			const map = L.map( blockEl, {
 				renderer: L.canvas(),
 				zoomControl: false,
 				attributionControl: true,
 				scrollWheelZoom: false,
 				boxZoom: false,
+				maxBoundsViscosity: 1.0,
 			} );
 
 			// Tile layers are NOT added here — `initMap` calls `addTiles`
@@ -693,6 +701,25 @@ function bootMount(
 			const bounds = layer.getBounds();
 			if ( bounds.isValid() ) {
 				map.fitBounds( bounds, { padding: [ 16, 16 ] } );
+
+				// Constrain panning so at least part of the track stays in
+				// view (issue #110). The padded bbox plus the rigid
+				// `maxBoundsViscosity: 1.0` set on the map options above keep
+				// the viewport centre inside a comfortable margin around the
+				// track without stopping the user from zooming out to the
+				// configured minimum zoom. `paddedBoundsFromBox` handles
+				// degenerate single-point tracks by inflating the bbox to a
+				// minimum span before padding; structurally invalid input
+				// returns `null` and is skipped.
+				const sw = bounds.getSouthWest();
+				const ne = bounds.getNorthEast();
+				const padded = paddedBoundsFromBox( {
+					southWest: [ sw.lat, sw.lng ],
+					northEast: [ ne.lat, ne.lng ],
+				} );
+				if ( padded ) {
+					map.setMaxBounds( [ padded.southWest, padded.northEast ] );
+				}
 			}
 
 			// Force Leaflet to re-measure the container. Necessary in two
