@@ -11,6 +11,7 @@
 import {
 	DEFAULT_PADDING_FRACTION,
 	MIN_SPAN_DEGREES,
+	isCenterUsableForMaxBounds,
 	paddedBoundsFromBox,
 	type BoundingBox,
 } from './bounds';
@@ -159,5 +160,53 @@ describe( 'paddedBoundsFromBox', () => {
 		expect( west ).toBeLessThan( bbox.southWest[ 1 ] );
 		expect( north ).toBeGreaterThan( bbox.northEast[ 0 ] );
 		expect( east ).toBeGreaterThan( bbox.northEast[ 1 ] );
+	} );
+} );
+
+describe( 'isCenterUsableForMaxBounds (issue #116)', () => {
+	it( 'accepts a finite ordinary center', () => {
+		expect( isCenterUsableForMaxBounds( { lat: 59.33, lng: 18.07 } ) ).toBe(
+			true
+		);
+	} );
+
+	it( 'accepts the origin', () => {
+		expect( isCenterUsableForMaxBounds( { lat: 0, lng: 0 } ) ).toBe( true );
+	} );
+
+	it( 'rejects a center with NaN lat (post-fitBounds against 0-size container)', () => {
+		expect(
+			isCenterUsableForMaxBounds( { lat: Number.NaN, lng: 18.07 } )
+		).toBe( false );
+	} );
+
+	it( 'rejects a center with NaN lng', () => {
+		expect(
+			isCenterUsableForMaxBounds( { lat: 59.33, lng: Number.NaN } )
+		).toBe( false );
+	} );
+
+	it( 'rejects a center with both components NaN (the reported issue #116 state)', () => {
+		expect(
+			isCenterUsableForMaxBounds( {
+				lat: Number.NaN,
+				lng: Number.NaN,
+			} )
+		).toBe( false );
+	} );
+
+	it( 'rejects infinite components', () => {
+		expect(
+			isCenterUsableForMaxBounds( {
+				lat: Number.POSITIVE_INFINITY,
+				lng: 0,
+			} )
+		).toBe( false );
+		expect(
+			isCenterUsableForMaxBounds( {
+				lat: 0,
+				lng: Number.NEGATIVE_INFINITY,
+			} )
+		).toBe( false );
 	} );
 } );

@@ -42,7 +42,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
-import { paddedBoundsFromBox } from './bounds';
+import { isCenterUsableForMaxBounds, paddedBoundsFromBox } from './bounds';
 import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
 import {
 	addTiles,
@@ -585,9 +585,10 @@ function attachWheelHandler(
  * up tiles immediately based on consent and on whether the resolved
  * provider has a usable URL.
  *
- * After fitBounds, calls `map.invalidateSize()` once to force Leaflet to
+ * Before fitBounds, calls `map.invalidateSize()` once to force Leaflet to
  * re-measure the container — necessary when the element became visible just
- * before mount (e.g. a consent transition from denying to granting).
+ * before mount (e.g. a consent transition from denying to granting) or when
+ * a flex/grid parent had not yet assigned the wrapper its definite width.
  *
  * @since 1.0.0
  *
@@ -696,6 +697,16 @@ function bootMount(
 			} );
 			hitLayer.addTo( map );
 
+			// Force Leaflet to re-measure the container before fitting the
+			// view. The block became visible just before mount (a consent
+			// transition from denying to granting, an editor SSR re-render
+			// mid-iframe-layout, or any parent layout — flex/grid — that
+			// hadn't assigned the wrapper its definite width yet). Running
+			// `invalidateSize` first makes `fitBounds` see real dimensions,
+			// which is what prevents the `(NaN, NaN)` center that crashed
+			// `setMaxBounds` in issue #116.
+			map.invalidateSize( false );
+
 			// Fit the viewport to the track bounds with small padding so
 			// the polyline never touches the container edge.
 			const bounds = layer.getBounds();
@@ -711,23 +722,33 @@ function bootMount(
 				// degenerate single-point tracks by inflating the bbox to a
 				// minimum span before padding; structurally invalid input
 				// returns `null` and is skipped.
-				const sw = bounds.getSouthWest();
-				const ne = bounds.getNorthEast();
-				const padded = paddedBoundsFromBox( {
-					southWest: [ sw.lat, sw.lng ],
-					northEast: [ ne.lat, ne.lng ],
-				} );
-				if ( padded ) {
-					map.setMaxBounds( [ padded.southWest, padded.northEast ] );
+				//
+				// The post-`fitBounds` center is also guarded: if the
+				// container still has zero width at this point (some flex
+				// or grid parents hold off width assignment past the
+				// IntersectionObserver callback), Leaflet's fitBounds math
+				// goes to `scale = -Infinity` and produces a NaN center.
+				// Calling `setMaxBounds` with a finite bbox while the center
+				// is NaN trips Leaflet's internal `_panInsideMaxBounds`,
+				// which unprojects the NaN center and throws (issue #116).
+				// Skipping the constraint in that branch keeps the polyline
+				// visible — the worst case is unconstrained panning, which
+				// is the pre-#110 behaviour.
+				if ( isCenterUsableForMaxBounds( map.getCenter() ) ) {
+					const sw = bounds.getSouthWest();
+					const ne = bounds.getNorthEast();
+					const padded = paddedBoundsFromBox( {
+						southWest: [ sw.lat, sw.lng ],
+						northEast: [ ne.lat, ne.lng ],
+					} );
+					if ( padded ) {
+						map.setMaxBounds( [
+							padded.southWest,
+							padded.northEast,
+						] );
+					}
 				}
 			}
-
-			// Force Leaflet to re-measure the container. Necessary in two
-			// situations: the block became visible just before mount (a
-			// denying-to-granting consent transition), or the editor's
-			// ServerSideRender re-rendered the block while its iframe was
-			// still settling layout.
-			map.invalidateSize( false );
 
 			// Add the configured control overlays based on the hydrated settings.
 			const settings = mapState.settings;

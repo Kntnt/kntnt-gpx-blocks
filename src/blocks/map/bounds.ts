@@ -161,3 +161,37 @@ export function paddedBoundsFromBox(
 		northEast: [ north, east ],
 	};
 }
+
+/**
+ * Decides whether the map's post-`fitBounds` center is usable as input to
+ * `setMaxBounds`.
+ *
+ * Leaflet's `setMaxBounds` internally calls `_panInsideMaxBounds`, which
+ * unprojects the current center and projects it back inside the constraint
+ * box. When `fitBounds` runs against a 0-width or 0-height container (some
+ * flex/grid parents defer the wrapper's definite width past the
+ * `IntersectionObserver` callback that triggers mount), the scale math goes
+ * to `-Infinity` and the resulting center is `(NaN, NaN)`. Passing a
+ * `setMaxBounds` call through with that center trips an unproject step
+ * that throws "Invalid LatLng object: (NaN, NaN)" (issue #116).
+ *
+ * The check is intentionally narrow: it accepts any finite latitude and
+ * longitude, including out-of-range values that the caller has not yet
+ * normalised, because the caller's only use of the result is "should I
+ * skip the constraint?". A latitude of 95° is geometrically wrong but
+ * doesn't crash Leaflet; only NaN/Infinity does.
+ *
+ * @since 1.0.0
+ *
+ * @param center     - Map center as `{ lat, lng }` (Leaflet's `getCenter()`
+ *                   shape).
+ * @param center.lat - Latitude in WGS84 decimal degrees.
+ * @param center.lng - Longitude in WGS84 decimal degrees.
+ * @return `true` when both components are finite numbers.
+ */
+export function isCenterUsableForMaxBounds( center: {
+	readonly lat: number;
+	readonly lng: number;
+} ): boolean {
+	return Number.isFinite( center.lat ) && Number.isFinite( center.lng );
+}
