@@ -24,6 +24,11 @@ import { createElement, createRoot, flushSync } from '@wordpress/element';
 // can inspect the final shape after the Edit component composes it.
 const capturedAttributes: Array< Record< string, unknown > > = [];
 
+// Capture every `style` prop the Edit component hands to useBlockProps so
+// the min-height default tests (issue #115) can inspect what landed on the
+// wrapper before core's dimensions block-supports were merged on top.
+const capturedBlockPropsStyles: Array< Record< string, unknown > > = [];
+
 // Mock @wordpress/server-side-render so the test can capture the prop
 // payload without the real component performing a REST round-trip.
 jest.mock(
@@ -49,10 +54,15 @@ jest.mock(
 		__esModule: true,
 		InspectorControls: () => null,
 		PanelColorSettings: () => null,
-		useBlockProps: ( props: Record< string, unknown > = {} ) => ( {
-			...props,
-			className: ( props.className as string ) ?? '',
-		} ),
+		useBlockProps: ( props: Record< string, unknown > = {} ) => {
+			capturedBlockPropsStyles.push(
+				( props.style as Record< string, unknown > ) ?? {}
+			);
+			return {
+				...props,
+				className: ( props.className as string ) ?? '',
+			};
+		},
 	} ),
 	{ virtual: true }
 );
@@ -139,6 +149,7 @@ function buildAttributes(
 describe( 'ElevationEdit ServerSideRender attributes', () => {
 	beforeEach( () => {
 		capturedAttributes.length = 0;
+		capturedBlockPropsStyles.length = 0;
 	} );
 
 	it( 'does not forward the block-supports `style` attribute to ServerSideRender (issue #97)', () => {
@@ -200,5 +211,106 @@ describe( 'ElevationEdit ServerSideRender attributes', () => {
 		expect( captured?.axisColor ).toBe( '#abcdef' );
 		expect( captured?.lineColor ).toBe( '#123456' );
 		expect( captured?.mapId ).toBe( 'auto' );
+	} );
+} );
+
+describe( 'ElevationEdit wrapper min-height default (issue #115)', () => {
+	beforeEach( () => {
+		capturedAttributes.length = 0;
+		capturedBlockPropsStyles.length = 0;
+	} );
+
+	it( 'injects minHeight 15vh when style.dimensions.minHeight is missing', () => {
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( ElevationEdit, {
+					attributes: buildAttributes(),
+					setAttributes: () => {},
+					clientId: 'test',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/elevation',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
+	} );
+
+	it( 'injects minHeight 15vh when style.dimensions.minHeight is blank', () => {
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( ElevationEdit, {
+					attributes: buildAttributes( {
+						style: { dimensions: { minHeight: '' } },
+					} ),
+					setAttributes: () => {},
+					clientId: 'test',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/elevation',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
+	} );
+
+	it( 'injects minHeight 15vh in the Original-after-toggle case (aspectRatio cleared, minHeight blank)', () => {
+		// Reproduces the editor sequence from the issue: user picked a
+		// non-Original aspect-ratio (which cleared minHeight), then toggled
+		// it back to Original (which cleared aspectRatio). Both attributes
+		// land empty under style.dimensions.
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( ElevationEdit, {
+					attributes: buildAttributes( {
+						style: {
+							dimensions: { minHeight: '', aspectRatio: '' },
+						},
+					} ),
+					setAttributes: () => {},
+					clientId: 'test',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/elevation',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
+	} );
+
+	it( 'omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( ElevationEdit, {
+					attributes: buildAttributes( {
+						style: { dimensions: { minHeight: '420px' } },
+					} ),
+					setAttributes: () => {},
+					clientId: 'test',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/elevation',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
+			'minHeight'
+		);
 	} );
 } );

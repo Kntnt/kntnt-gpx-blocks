@@ -1214,21 +1214,38 @@ export const MapEdit = ( {
 		flattenPresets< FontFamilyPreset >( themeFontFamilies );
 	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
 
+	// Apply the plugin-defined default `min-height` when the editor has not
+	// set one (issue #115). Without this, toggling the Dimensions panel's
+	// aspect-ratio away from Original and back leaves min-height blank and
+	// core emits `aspect-ratio: unset` inline, defeating the SCSS baseline
+	// and collapsing the wrapper to zero height. useBlockProps merges core's
+	// dimensions block-supports on top of the style passed in, so a user-set
+	// `style.dimensions.minHeight` still wins.
+	const userMinHeight = (
+		attributes as { style?: { dimensions?: { minHeight?: unknown } } }
+	 ).style?.dimensions?.minHeight;
+	const minHeightDefault: React.CSSProperties =
+		typeof userMinHeight === 'string' && userMinHeight !== ''
+			? {}
+			: { minHeight: '30vh' };
+
 	// Inject the project class so the shared style.scss rules (layout
 	// baseline, focus styles, hit-band styling, tooltip styling, …) apply to
 	// the editor wrapper exactly as they do to the frontend wrapper that
 	// `Render_Map` produces via `get_block_wrapper_attributes()`. Dimensions
-	// (`aspect-ratio`, `min-height`) come from core's `dimensions` block
-	// supports — `useBlockProps()` already merges them into the inline style
-	// it returns. The track and cursor colour custom properties are added
-	// here so canvas-painted Leaflet polylines that read them via CSS
-	// inheritance see the editor's current colour-picker values. The tooltip
-	// custom properties feed the floating waypoint-info preview rendered
-	// inside `MapEditorPreview` so its colours and typography update live
-	// as the editor adjusts the inspector controls.
+	// (`aspect-ratio`, user-set `min-height`) come from core's `dimensions`
+	// block supports — `useBlockProps()` already merges them into the inline
+	// style it returns; the plugin-defined `min-height` default above covers
+	// the blank-min-height state. The track and cursor colour custom
+	// properties are added here so canvas-painted Leaflet polylines that
+	// read them via CSS inheritance see the editor's current colour-picker
+	// values. The tooltip custom properties feed the floating waypoint-info
+	// preview rendered inside `MapEditorPreview` so its colours and
+	// typography update live as the editor adjusts the inspector controls.
 	const blockProps = useBlockProps( {
 		className: 'kntnt-gpx-blocks-map',
 		style: {
+			...minHeightDefault,
 			...( trackColor
 				? { '--kntnt-gpx-blocks-track-color': trackColor }
 				: {} ),

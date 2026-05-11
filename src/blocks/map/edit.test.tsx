@@ -56,6 +56,16 @@ type CapturedPanelBody = {
 };
 const capturedPanelBodies: CapturedPanelBody[] = [];
 
+/**
+ * Captured `style` prop payload across every `useBlockProps()` call in the
+ * current test. The min-height default tests (issue #115) inspect what the
+ * Edit component passed in before core's dimensions block-supports were
+ * merged on top.
+ *
+ * @since 1.0.0
+ */
+const capturedBlockPropsStyles: Array< Record< string, unknown > > = [];
+
 // Mock @wordpress/block-editor — `PanelColorSettings` is the surface under
 // test, so it records its props rather than rendering anything. The rest
 // of the surface (InspectorControls, BlockControls, useBlockProps, …) is
@@ -65,10 +75,15 @@ jest.mock(
 	() => ( {
 		__esModule: true,
 		useBlockProps: Object.assign(
-			( props: Record< string, unknown > = {} ) => ( {
-				...props,
-				className: ( props.className as string ) ?? '',
-			} ),
+			( props: Record< string, unknown > = {} ) => {
+				capturedBlockPropsStyles.push(
+					( props.style as Record< string, unknown > ) ?? {}
+				);
+				return {
+					...props,
+					className: ( props.className as string ) ?? '',
+				};
+			},
 			{
 				save: ( props: Record< string, unknown > = {} ) => props,
 			}
@@ -293,6 +308,7 @@ function renderAndCapture(
 ): CapturedColorPanel[] {
 	capturedColorPanels.length = 0;
 	capturedPanelBodies.length = 0;
+	capturedBlockPropsStyles.length = 0;
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
 	flushSync( () => {
@@ -515,5 +531,51 @@ describe( 'MapEdit typography panel cleanup (issue #85)', () => {
 		);
 		expect( panel ).toBeDefined();
 		expect( countTypographyToolsPanels( panel?.children ) ).toBe( 1 );
+	} );
+} );
+
+describe( 'MapEdit wrapper min-height default (issue #115)', () => {
+	it( 'injects minHeight 30vh when style.dimensions.minHeight is missing', () => {
+		renderAndCapture( buildAttributes() );
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
+	} );
+
+	it( 'injects minHeight 30vh when style.dimensions.minHeight is blank', () => {
+		renderAndCapture(
+			buildAttributes( { style: { dimensions: { minHeight: '' } } } )
+		);
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
+	} );
+
+	it( 'injects minHeight 30vh in the Original-after-toggle case (aspectRatio cleared, minHeight blank)', () => {
+		// Reproduces the editor sequence from the issue: user picked a
+		// non-Original aspect-ratio (which cleared minHeight), then toggled
+		// it back to Original (which cleared aspectRatio). Both attributes
+		// land empty under style.dimensions.
+		renderAndCapture(
+			buildAttributes( {
+				style: { dimensions: { minHeight: '', aspectRatio: '' } },
+			} )
+		);
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
+	} );
+
+	it( 'omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
+		renderAndCapture(
+			buildAttributes( {
+				style: { dimensions: { minHeight: '500px' } },
+			} )
+		);
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
+			'minHeight'
+		);
 	} );
 } );

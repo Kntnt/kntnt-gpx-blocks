@@ -152,6 +152,20 @@ export const ElevationEdit = ( {
 		inlineStyle[ '--kntnt-gpx-blocks-tooltip-color' ] = tooltipColor;
 	}
 
+	// Apply the plugin-defined default `min-height` when the editor has not
+	// set one (issue #115). Without this, toggling the Dimensions panel's
+	// aspect-ratio away from Original and back leaves min-height blank and
+	// core emits `aspect-ratio: unset` inline, defeating the SCSS baseline
+	// and collapsing the wrapper to zero height. useBlockProps merges core's
+	// dimensions block-supports on top of the style passed in, so a user-set
+	// `style.dimensions.minHeight` still wins.
+	const userMinHeight = (
+		attributes as { style?: { dimensions?: { minHeight?: unknown } } }
+	 ).style?.dimensions?.minHeight;
+	if ( typeof userMinHeight !== 'string' || userMinHeight === '' ) {
+		inlineStyle.minHeight = '15vh';
+	}
+
 	const blockProps = useBlockProps( {
 		className: 'kntnt-gpx-blocks-elevation',
 		style: inlineStyle as React.CSSProperties,
