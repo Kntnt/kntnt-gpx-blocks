@@ -134,11 +134,11 @@ final class Render_Elevation {
 	 *
 	 * @param array<string,mixed> $attributes Block attributes from post_content.
 	 * @param string              $content    Inner block HTML (always empty).
-	 * @param object              $block      Block instance carrying block.json metadata.
+	 * @param \WP_Block           $block      Block instance carrying block.json metadata.
 	 *
 	 * @return string Escaped HTML ready for output.
 	 */
-	public static function render( array $attributes, string $content, object $block ): string {
+	public static function render( array $attributes, string $content, \WP_Block $block ): string {
 
 		// Read the mapId attribute (defaults to 'auto').
 		$raw_map_id = $attributes['mapId'] ?? 'auto';
@@ -154,7 +154,7 @@ final class Render_Elevation {
 		$tooltip_color     = Color_Sanitizer::sanitize( $attributes['tooltipColor'] ?? '' );
 
 		// Determine the host post ID for block-tree discovery.
-		$context     = property_exists( $block, 'context' ) && is_array( $block->context ) ? $block->context : [];
+		$context     = $block->context;
 		$raw_post_id = $context['postId'] ?? null;
 		$post_id     = is_numeric( $raw_post_id ) ? (int) $raw_post_id : (int) get_the_ID();
 

@@ -265,16 +265,14 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 
 			// Snapshot the elevation data array at mount time. Reads once from state
 			// so the watch callback can use the stored reference without re-reading.
-			const points = ( mapState.elevation ?? [] ) as Array<
-				[ number, number ]
-			>;
+			const points = mapState.elevation;
 
 			// Snapshot the padded y-bounds and total distance from state. yMin
-			// and yMax must come from PHP (they were used to render the
-			// polyline); falling back to the LTTB raw min/max would put the
-			// cursor off the curve. totalDistance falls back to the LTTB
-			// series's last x — same physical end-point because LTTB
-			// preserves track endpoints.
+			// and yMax come from PHP (they were used to render the polyline);
+			// re-deriving them from the LTTB raw min/max would put the cursor
+			// off the curve. totalDistance is optional on the state slice and
+			// falls back to the LTTB series's last x — same physical end-point
+			// because LTTB preserves track endpoints.
 			const lastPoint = points[ points.length - 1 ];
 			const fallbackTotal = lastPoint !== undefined ? lastPoint[ 0 ] : 0;
 			const totalDistance =
@@ -282,8 +280,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				mapState.totalDistance > 0
 					? mapState.totalDistance
 					: fallbackTotal;
-			const yMin = typeof mapState.yMin === 'number' ? mapState.yMin : 0;
-			const yMax = typeof mapState.yMax === 'number' ? mapState.yMax : 1;
+			const { yMin, yMax } = mapState;
 
 			// Record the mount entry immediately so onElevationCursorChange can
 			// update the cursor as soon as fraction changes — even before the

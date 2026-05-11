@@ -865,15 +865,8 @@ function bootMount(
 			// distance PHP put on state. Both are consumed by
 			// onMapCursorChange and the scrub handlers below; keeping them
 			// on the MapEntry avoids re-reading state during every
-			// pointermove. Defensive defaults handle a stale frontend
-			// running against pre-0.2.0 state.
-			const trackCumDist = Array.isArray( mapState.trackCumDist )
-				? ( mapState.trackCumDist as number[] )
-				: [];
-			const totalDistance =
-				typeof mapState.totalDistance === 'number'
-					? mapState.totalDistance
-					: 0;
+			// pointermove.
+			const { trackCumDist, totalDistance } = mapState;
 
 			// Read the remaining colour CSS variables once at mount time.
 			const trackCursorColor = getCssVar(

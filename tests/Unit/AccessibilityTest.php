@@ -50,17 +50,10 @@ function a11y_map_fake_block(): object {
  *
  * @param int $post_id The post ID to expose.
  *
- * @return object
+ * @return WP_Block
  */
-function a11y_elev_fake_block( int $post_id ): object {
-	return new class( $post_id ) {
-
-		/**
-		 * Block context values, keyed by context name.
-		 *
-		 * @var array<string, mixed>
-		 */
-		public array $context;
+function a11y_elev_fake_block( int $post_id ): WP_Block {
+	return new class( $post_id ) extends WP_Block {
 
 		/**
 		 * Initialises the context with the supplied post ID.

@@ -34,21 +34,14 @@ use Kntnt\Gpx_Blocks\Rendering\Render_Elevation;
  *
  * WP_Block cannot be instantiated in unit tests (its constructor requires
  * a full block-type registry). Render_Elevation only reads $block->context,
- * so an anonymous class with a public $context property is enough.
+ * so an anonymous subclass of the test WP_Block stub is enough.
  *
  * @param int $post_id The post ID to expose via context['postId'].
  *
- * @return object
+ * @return WP_Block
  */
-function elev_fake_block( int $post_id ): object {
-	return new class( $post_id ) {
-
-		/**
-		 * Block context values, keyed by context name.
-		 *
-		 * @var array<string, mixed>
-		 */
-		public array $context;
+function elev_fake_block( int $post_id ): WP_Block {
+	return new class( $post_id ) extends WP_Block {
 
 		/**
 		 * Initialises the context with the supplied post ID.

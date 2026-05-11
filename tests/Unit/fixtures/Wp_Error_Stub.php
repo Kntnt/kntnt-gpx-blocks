@@ -103,6 +103,27 @@ if ( ! class_exists( 'WP_REST_Response' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Block' ) ) {
+	/**
+	 * Minimal stand-in for WordPress's WP_Block class.
+	 *
+	 * Real WP_Block construction requires a full block-type registry which is
+	 * not available in unit tests. The stub exposes the public `$context`
+	 * property the renderers read, with the same default value as core.
+	 *
+	 * @since 1.0.0
+	 */
+	class WP_Block {
+
+		/**
+		 * Block context values, keyed by context name.
+		 *
+		 * @var array<string, mixed>
+		 */
+		public array $context = [];
+	}
+}
+
 if ( ! class_exists( 'WP_Theme_JSON_Data' ) ) {
 	/**
 	 * Minimal stand-in for WordPress's WP_Theme_JSON_Data class.

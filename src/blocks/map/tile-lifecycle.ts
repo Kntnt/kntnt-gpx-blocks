@@ -99,7 +99,7 @@ export function createEmptyTileRefs(): TileLayerRefs {
 export function hasUsableUrl(
 	record: TileLayerRecord | null | undefined
 ): boolean {
-	return !! record && typeof record.url === 'string' && record.url !== '';
+	return !! record?.url;
 }
 
 /**
