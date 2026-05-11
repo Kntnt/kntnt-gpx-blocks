@@ -164,6 +164,20 @@ final class Plugin {
 	private ?Bootstrap\Theme_Json_Border_Optin $theme_json_border_optin = null;
 
 	/**
+	 * The Theme_Json_Aspect_Ratios instance bound to wp_theme_json_data_theme.
+	 *
+	 * Held as a property so the array callable passed to add_filter() keeps a
+	 * strong reference to the object for the lifetime of the request. Issue
+	 * #108: extends the editor's aspect-ratio dropdown for Map and Elevation
+	 * with six panorama-friendly presets, while leaving every other block on
+	 * the site untouched.
+	 *
+	 * @since 1.0.0
+	 * @var Bootstrap\Theme_Json_Aspect_Ratios|null
+	 */
+	private ?Bootstrap\Theme_Json_Aspect_Ratios $theme_json_aspect_ratios = null;
+
+	/**
 	 * The Border_Radius_Normalizer instance bound to render_block_data.
 	 *
 	 * Held as a property so the array callable passed to add_filter() keeps a
@@ -447,6 +461,14 @@ final class Plugin {
 		// the panel regardless of the active theme.
 		$this->theme_json_border_optin = new Bootstrap\Theme_Json_Border_Optin();
 		add_filter( 'wp_theme_json_data_theme', [ $this->theme_json_border_optin, 'filter' ] );
+
+		// Extend the editor's Dimensions → Aspect ratio dropdown for the Map
+		// and Elevation blocks with six panorama-friendly presets (issue #108).
+		// Core's WP_Theme_JSON::merge_lists() deduplicates by slug, so the
+		// kntnt-prefixed entries append to whatever the active theme exposes.
+		// Other blocks see the dropdown unchanged.
+		$this->theme_json_aspect_ratios = new Bootstrap\Theme_Json_Aspect_Ratios();
+		add_filter( 'wp_theme_json_data_theme', [ $this->theme_json_aspect_ratios, 'filter' ] );
 
 		// Normalise the per-corner `style.border.radius` shape on the two
 		// blocks before the wrapper is rendered (issue #109). Gutenberg
