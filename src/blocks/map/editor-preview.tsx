@@ -287,23 +287,6 @@ export const MapEditorPreview = ( {
 		overlays,
 	} = attributes;
 
-	// Stable cache key for the base-tile provider. Stringify because the
-	// resolveProviderForPreview() call upstream returns a fresh object on every
-	// parent render even when the underlying values are unchanged; comparing
-	// the serialised tuple keeps the swap-in-place effect from re-firing on
-	// every keystroke in unrelated controls. `null` serialises to the literal
-	// "null" so the empty-registry path also has a stable key.
-	const providerKey = JSON.stringify(
-		provider
-			? {
-					url: provider.url,
-					attribution: provider.attribution,
-					maxZoom: provider.maxZoom,
-					subdomains: provider.subdomains ?? null,
-			  }
-			: null
-	);
-
 	// Fetch the preview payload whenever the attachment changes. Cancellation
 	// guards against late responses overwriting newer state when the editor
 	// rapidly switches attachments.
@@ -527,17 +510,15 @@ export const MapEditorPreview = ( {
 		const layer = L.tileLayer( provider.url, options ).addTo( map );
 		layer.bringToBack();
 		baseTileLayerRef.current = layer;
-		// `provider` is a fresh object on every parent render, so listing it
-		// as a dep would re-fire this effect on every keystroke in unrelated
-		// controls. `providerKey` is the stable serialised tuple of the
-		// fields this effect reads, so it is the correct dep for caching.
-		// `payload` is listed too because the mount effect creates the
-		// `L.Map` only after the REST fetch resolves; without re-firing on
-		// first payload arrival, the base tile layer is never attached when
-		// `providerKey` is unchanged between the initial render and the
-		// post-fetch render (issue #100).
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ providerKey, payload ] );
+		// `provider` is memoized by the caller (`edit.tsx`'s `useMemo` keyed
+		// on tileProvider / tileStyle / tileApiKeys), so referential equality
+		// here is the same as field equality and the effect stays quiet on
+		// unrelated parent re-renders. `payload` is listed too because the
+		// mount effect creates the `L.Map` only after the REST fetch resolves;
+		// without re-firing on first payload arrival, the base tile layer is
+		// never attached when `provider` is unchanged between the initial
+		// render and the post-fetch render (issue #100).
+	}, [ provider, payload ] );
 
 	// Synchronise the overlay tile layers with the current `overlays` prop
 	// without rebuilding the whole map. The mount effect above seeds
@@ -545,11 +526,12 @@ export const MapEditorPreview = ( {
 	// effect handles every subsequent toggle change. The simplest correct
 	// strategy is to wipe and re-add — Leaflet adds tile layers cheaply, the
 	// overlay count is small, and rebuilding preserves the desired stacking
-	// order without per-id reconciliation. Note: a fresh remount triggered
-	// by the payload effect above will also fire this effect (the array
-	// identity changes on every parent render because resolveOverlaysForPreview
-	// returns a new array), but the wipe-and-readd is idempotent against the
-	// just-seeded state.
+	// order without per-id reconciliation. The `overlays` array is memoized
+	// upstream in `edit.tsx` (keyed on the saved overlay pairs and the per-
+	// provider key map), so unrelated parent re-renders keep the same array
+	// reference and this effect stays quiet; a fresh remount triggered by the
+	// payload effect above still re-fires it, and the wipe-and-readd is
+	// idempotent against the just-seeded state.
 	useEffect( () => {
 		const map = mapRef.current;
 		if ( ! map ) {

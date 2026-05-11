@@ -47,6 +47,7 @@ import {
 	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
 	__experimentalToolsPanelItem as ToolsPanelItem,
 } from '@wordpress/components';
+import { useMemo } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
 import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
@@ -1231,6 +1232,35 @@ export const MapEdit = ( {
 		? { minHeight: defaultMinHeight }
 		: {};
 
+	// Memoize the resolved provider record so the preview's effects can use
+	// reference equality as their dependency comparison. Without memoization
+	// `resolveProviderForPreview()` returns a fresh object on every parent
+	// render, which would re-fire the preview's base-tile useEffect on every
+	// keystroke in an unrelated control. The dep array tracks the inputs the
+	// resolver actually reads — saved provider/style ids plus the per-provider
+	// API key — so a colour-picker drag or a typography change keeps the
+	// previous reference and the effect stays quiet.
+	const providerForPreview = useMemo(
+		() =>
+			resolveProviderForPreview(
+				tileProvider,
+				tileStyle,
+				tileApiKeys?.[ tileProvider ] ?? ''
+			),
+		[ tileProvider, tileStyle, tileApiKeys ]
+	);
+
+	// Same pattern for the resolved overlay records. The overlay effect wipes
+	// and re-adds every layer on each fire, so a fresh array on every parent
+	// render would rebuild the whole overlay stack on every keystroke. Keying
+	// the memo on the saved pairs + the per-provider key map keeps the
+	// reference stable as long as overlays and their keys are unchanged.
+	const overlaysForPreview = useMemo(
+		() =>
+			resolveOverlaysForPreview( tileOverlays, tileOverlayApiKeys ?? {} ),
+		[ tileOverlays, tileOverlayApiKeys ]
+	);
+
 	// Inject the project class so the shared style.scss rules (layout
 	// baseline, focus styles, hit-band styling, tooltip styling, …) apply to
 	// the editor wrapper exactly as they do to the frontend wrapper that
@@ -1692,15 +1722,8 @@ export const MapEdit = ( {
 						waypointColor,
 						tooltipShowName,
 						tooltipShowDesc,
-						provider: resolveProviderForPreview(
-							tileProvider,
-							tileStyle,
-							tileApiKeys?.[ tileProvider ] ?? ''
-						),
-						overlays: resolveOverlaysForPreview(
-							tileOverlays,
-							tileOverlayApiKeys ?? {}
-						),
+						provider: providerForPreview,
+						overlays: overlaysForPreview,
 					} }
 					{ ...detectPreviewNotices(
 						tileProvider,

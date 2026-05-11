@@ -4,9 +4,9 @@
  * Issue #100: on first mount of the editor preview, the base tile layer
  * was never attached to the Leaflet map. The mount effect (deps
  * `[ payload ]`) ran when the REST payload resolved and created the map;
- * the base-tile effect (deps `[ providerKey ]`) had already run on first
- * render with no map and bailed, and `providerKey` did not change after
- * the payload arrived, so the effect never re-fired. Net result: the
+ * the base-tile effect (deps `[ provider ]`) had already run on first
+ * render with no map and bailed, and `provider` did not change after the
+ * payload arrived, so the effect never re-fired. Net result: the
  * polyline rendered over an empty tile background until the user nudged
  * the provider dropdown.
  *
@@ -228,7 +228,7 @@ beforeEach( () => {
 } );
 
 describe( 'MapEditorPreview base-tile attach (issue #100)', () => {
-	it( 'attaches the base tile layer when the payload resolves on first mount, with `providerKey` unchanged across both renders', async () => {
+	it( 'attaches the base tile layer when the payload resolves on first mount, with `provider` unchanged across both renders', async () => {
 		const attributes = buildAttributes();
 		const container = document.createElement( 'div' );
 		document.body.appendChild( container );
@@ -251,10 +251,10 @@ describe( 'MapEditorPreview base-tile attach (issue #100)', () => {
 
 		// Resolve the REST payload — the mount effect now creates the
 		// Leaflet map, after which the base-tile effect must re-fire so
-		// the OSM tile layer is attached. `providerKey` is unchanged
-		// across both renders (same provider object content), so without
-		// the fix the base-tile effect does not re-run and no tile layer
-		// is created.
+		// the OSM tile layer is attached. `provider` is unchanged across
+		// both renders (same reference, since the test passes the same
+		// attribute object), so without the fix the base-tile effect does
+		// not re-run and no tile layer is created.
 		await act( async () => {
 			mockApiFetchState.resolve!( {
 				geojson: {
