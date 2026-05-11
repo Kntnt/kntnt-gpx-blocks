@@ -145,4 +145,27 @@ describe( 'detectPreviewNotices', () => {
 		);
 		expect( flags.missingKey ).toBe( false );
 	} );
+
+	it( 'does not flag missing-key when the resolved provider has its apiKey managed externally (issue #113)', () => {
+		// PHP path engaged: the provider's apiKey is supplied by a
+		// site-builder PHP filter callback, not by the per-block
+		// attribute. The editor's API-key TextControl is hidden, and
+		// the missing-key Notice must not fire — any misconfiguration
+		// surfaces in `Plugin::warning()` logs, not in the editor UI.
+		const externalPaid: PreviewNoticeProvider = {
+			label: 'Thunderforest (PHP key)',
+			requiresKey: true,
+			apiKeyManagedExternally: true,
+		};
+		const flags = detectPreviewNotices(
+			'thunderforest-external',
+			'',
+			{
+				[ FALLBACK_ID ]: osm,
+				'thunderforest-external': externalPaid,
+			},
+			FALLBACK_ID
+		);
+		expect( flags.missingKey ).toBe( false );
+	} );
 } );

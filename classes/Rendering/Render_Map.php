@@ -259,8 +259,15 @@ final class Render_Map {
 		// Resolve the tile-layer records for the per-block Interactivity
 		// state. The registry validates the filtered defaults, walks the
 		// (provider, style) pair down the nested base map, substitutes the
-		// per-provider API key into `{KEY}`, and falls back silently to
+		// effective API key into `{KEY}`, and falls back silently to
 		// `openstreetmap` on unknown provider ids (with a warning log).
+		// When the validated provider record carries an `apiKey` field
+		// (PHP-supplied key path, engaged via the
+		// `kntnt_gpx_blocks_tile_providers` filter), the registry uses
+		// that value and ignores the attribute-path `$tile_api_key`
+		// parameter entirely — the editor's API-key TextControl for that
+		// provider is hidden, and any stale value still sitting in
+		// `attributes.tileApiKeys[ providerId ]` is dead data.
 		// Overlay resolution walks each saved (provider, layer) pair down
 		// the parallel nested overlay map, substituting the per-overlay-
 		// provider key (from `tileOverlayApiKeys`) into `{KEY}` for paid
@@ -275,22 +282,30 @@ final class Render_Map {
 		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_pairs, $tile_overlay_api_keys );
 
 		// Polyline-only gate: when the resolved provider requires an API
-		// key and the per-provider entry in `tileApiKeys` is empty, null
-		// out the URL so the frontend view module ships polyline-only
-		// instead of issuing failing tile requests with a bare `apikey=`
-		// query parameter. The rest of the record (attribution, maxZoom,
-		// subdomains) survives so JS keeps the metadata for diagnostics;
-		// the documented contract is `url === null` ⇒ no base tile layer.
+		// key and the *effective* key is empty, null out the URL so the
+		// frontend view module ships polyline-only instead of issuing
+		// failing tile requests with a bare `apikey=` query parameter.
+		// The rest of the record (attribution, maxZoom, subdomains)
+		// survives so JS keeps the metadata for diagnostics; the
+		// documented contract is `url === null` ⇒ no base tile layer.
 		// This rule applies to the editor preview path too —
 		// `bypassConsent === true` only governs the consent gate, not the
-		// missing-key gate. The provider's `requiresKey` flag is read from
-		// the validated registry against the *requested* provider id — not
-		// the resolved one — so a key-required provider that falls through
-		// to OpenStreetMap due to an unknown style still emits the null URL
-		// when the editor has not entered a key.
+		// missing-key gate. The provider's `requiresKey` flag is read
+		// from the validated registry against the *requested* provider
+		// id — not the resolved one — so a key-required provider that
+		// falls through to OpenStreetMap due to an unknown style still
+		// emits the null URL when no usable key is configured. The
+		// effective key is the PHP-supplied value when the path is
+		// engaged for this provider (presence of `apiKey` on the
+		// validated record); otherwise the attribute-path key the
+		// caller already looked up from `tileApiKeys`. The empty-PHP-key
+		// warning is emitted by the registry, not here, so a single
+		// resolve pass produces a single log line.
 		$resolved_provider_record = $tile_registry->get_providers()[ $tile_provider_id ] ?? null;
 		$requires_key             = $resolved_provider_record !== null ? $resolved_provider_record['requiresKey'] : false;
-		$key_is_empty             = '' === trim( $tile_api_key );
+		$php_supplied_key         = $tile_registry->php_supplied_api_key( $tile_provider_id );
+		$effective_key            = $php_supplied_key ?? $tile_api_key;
+		$key_is_empty             = '' === trim( $effective_key );
 		if ( $requires_key && $key_is_empty ) {
 			$tile_provider['url'] = null;
 		}

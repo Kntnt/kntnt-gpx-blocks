@@ -22,6 +22,17 @@
  * exactly one base style is selected at a time; the overlay side keys it
  * `layers` and omits `default` because overlays are multi-select.
  *
+ * Base providers may additionally carry an optional `apiKey` field
+ * supplied by a `kntnt_gpx_blocks_tile_providers` filter callback.
+ * Presence of the key (`isset`) — not value — engages the **PHP-supplied
+ * key path**: the per-block `attributes.tileApiKeys[ providerId ]` value
+ * is ignored entirely, the editor hides the per-provider API-key
+ * TextControl, and the resolver substitutes the PHP-supplied value into
+ * `{KEY}` for both editor preview and frontend. A whitespace-only or
+ * empty PHP-supplied key fails closed (no tile layer; polyline-only)
+ * and emits a `Plugin::warning()` log that names the provider id but
+ * never the key value. See `docs/hooks.md` for the formal contract.
+ *
  * Validation is deterministic and follows a drop-the-narrowest-unit rule.
  * A bad single style or layer drops just that entry; provider-level
  * failures (missing required field, `default` resolves to a dropped
@@ -64,6 +75,7 @@ use Kntnt\Gpx_Blocks\Plugin;
  *     styles: array<string, StyleRecord>,
  *     signupUrl?: string,
  *     subdomains?: list<string>,
+ *     apiKey?: string,
  * }
  * @phpstan-type OverlayLayerRecord array{
  *     label: string,
@@ -221,10 +233,23 @@ final class Tile_Layer_Registry {
 	 * Resolves a saved (provider id, style id) pair to a runtime tile-layer record.
 	 *
 	 * Returns the validated record with `{KEY}` substituted for the
-	 * supplied API key. The resolved record carries only the four
+	 * effective API key. The resolved record carries only the four
 	 * Leaflet-facing fields (`url`, `attribution`, `maxZoom`, optional
 	 * `subdomains`) — the input ids are not embedded because the caller
 	 * already has them in the block attributes.
+	 *
+	 * Key resolution is binary on PHP-engagement:
+	 *
+	 * - **PHP-supplied key** (`isset( $record['apiKey'] )`): the
+	 *   PHP-supplied value is used; `$api_key` is ignored. An empty or
+	 *   whitespace-only PHP value fails closed — the URL is returned with
+	 *   its `{KEY}` placeholder intact and a `Plugin::warning()` log
+	 *   names the provider id (never the key value). Callers (e.g.
+	 *   `Render_Map`) detect the unsubstituted `{KEY}` and ship
+	 *   polyline-only.
+	 * - **Attribute path** (otherwise): the `$api_key` parameter
+	 *   (looked up by the caller from `attributes.tileApiKeys[ id ]`)
+	 *   is substituted into `{KEY}` as before.
 	 *
 	 * Resolution fall-backs, in order:
 	 *
@@ -244,8 +269,11 @@ final class Tile_Layer_Registry {
 	 *
 	 * @param string $provider_id Provider id from saved block attributes.
 	 * @param string $style_id    Style id from saved block attributes.
-	 * @param string $api_key     Per-provider tile API key (empty when
-	 *                            the provider does not require one).
+	 * @param string $api_key     Per-provider tile API key from the
+	 *                            attribute path (empty when the provider
+	 *                            does not require one). Ignored when the
+	 *                            resolved provider record carries an
+	 *                            `apiKey` field — see method docblock.
 	 *
 	 * @return ResolvedProvider
 	 */
@@ -299,10 +327,31 @@ final class Tile_Layer_Registry {
 		// Substitute the API key when the provider requires one. The
 		// validator's contract guarantees the URL contains a literal
 		// `{KEY}` when `requiresKey === true`; on the other branch the
-		// URL has no `{KEY}` and `str_replace()` is a no-op.
+		// URL has no `{KEY}` and `str_replace()` is a no-op. The
+		// PHP-supplied key path (provider record carries `apiKey`)
+		// supersedes the attribute-path `$api_key` parameter: when
+		// engaged with a non-empty key, the PHP value substitutes into
+		// `{KEY}`; when engaged with an empty/whitespace-only key, the
+		// `{KEY}` placeholder is left intact and the caller treats the
+		// unsubstituted URL as polyline-only. The empty-PHP-key warning
+		// is logged here, once per render, naming only the provider id.
 		$url = $style['url'];
 		if ( $provider['requiresKey'] ) {
-			$url = str_replace( '{KEY}', $api_key, $url );
+			if ( isset( $provider['apiKey'] ) ) {
+				$php_key = $provider['apiKey'];
+				if ( '' === $php_key ) {
+					Plugin::warning(
+						sprintf(
+							'Tile_Layer_Registry: PHP-supplied apiKey for tile provider "%s" is empty; tile layer will fail closed (polyline-only).',
+							$provider_id
+						)
+					);
+				} else {
+					$url = str_replace( '{KEY}', $php_key, $url );
+				}
+			} else {
+				$url = str_replace( '{KEY}', $api_key, $url );
+			}
 		}
 
 		// Compose the runtime record. `subdomains` is inherited from the
@@ -319,6 +368,37 @@ final class Tile_Layer_Registry {
 		}
 
 		return $out;
+
+	}
+
+	/**
+	 * Returns the PHP-supplied API key for a base provider, or `null` when
+	 * the PHP path is not engaged for that provider.
+	 *
+	 * Presence of the `apiKey` field on the validated provider record
+	 * engages the PHP path (per the `kntnt_gpx_blocks_tile_providers`
+	 * contract — see `docs/hooks.md`). The returned string carries the
+	 * normalised (trimmed) value; an empty string means the site builder
+	 * engaged the path but supplied no usable key, which the caller
+	 * treats as fail-closed (polyline-only). An unknown provider id
+	 * returns `null`.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $provider_id Base-provider id (typically from
+	 *                            `attributes.tileProvider`).
+	 *
+	 * @return string|null The normalised PHP-supplied key when engaged,
+	 *                     `null` when the provider does not carry one.
+	 */
+	public function php_supplied_api_key( string $provider_id ): ?string {
+
+		$provider = $this->get_providers()[ $provider_id ] ?? null;
+		if ( $provider === null ) {
+			return null;
+		}
+
+		return $provider['apiKey'] ?? null;
 
 	}
 
@@ -614,6 +694,26 @@ final class Tile_Layer_Registry {
 			$subdomains = $candidate;
 		}
 
+		// Optional apiKey, when present, engages the PHP-supplied key path.
+		// Presence (not value) is the engagement signal — site builders use
+		// `array_key_exists` / direct assignment, so `isset($record['apiKey'])`
+		// distinguishes "PHP supplied a value, possibly empty" from "PHP did
+		// not touch this field". Non-string values are ignored silently
+		// (treated as absent) so a misconfigured callback does not engage the
+		// path with a `null` or array; the key is normalised by trimming
+		// whitespace. The empty-after-trim case is preserved as an empty
+		// string and surfaced as fail-closed at resolve time — the validator
+		// never logs the key value.
+		$has_api_key       = false;
+		$normalised_api_key = '';
+		if ( array_key_exists( 'apiKey', $record ) ) {
+			$candidate = $record['apiKey'];
+			if ( is_string( $candidate ) ) {
+				$has_api_key        = true;
+				$normalised_api_key = trim( $candidate );
+			}
+		}
+
 		// Validate each style with the drop-the-narrowest-unit rule. A
 		// style that fails its own validator is dropped with a warning;
 		// the provider survives so long as at least one style remains.
@@ -669,6 +769,9 @@ final class Tile_Layer_Registry {
 		}
 		if ( $subdomains !== null ) {
 			$out['subdomains'] = $subdomains;
+		}
+		if ( $has_api_key ) {
+			$out['apiKey'] = $normalised_api_key;
 		}
 
 		return $out;

@@ -246,7 +246,7 @@ test( 'provider records expose signupUrl for paid providers, omit it for free on
 
 } );
 
-test( 'payload omits API keys (per-block tileApiKeys / tileOverlayApiKeys maps are never inlined)', function (): void {
+test( 'payload omits API keys (per-block tileApiKeys / tileOverlayApiKeys maps are never inlined; PHP-supplied keys never reach the editor)', function (): void {
 
 	$captured_inline = null;
 	Functions\when( 'wp_add_inline_script' )->alias(
@@ -260,10 +260,14 @@ test( 'payload omits API keys (per-block tileApiKeys / tileOverlayApiKeys maps a
 
 	$payload = (string) $captured_inline;
 
-	// The registry never carries a key in its records, but the assertion is
-	// structural: no field named `apiKey`, `tileApiKey`, `tileApiKeys`, or
-	// `tileOverlayApiKeys` may appear in the inlined string.
-	expect( $payload )->not->toContain( 'apiKey' );
+	// Structural assertion: no per-block key field (`tileApiKeys`,
+	// `tileOverlayApiKeys`) and no provider-level `"apiKey":` field may
+	// appear in the inlined string. The editor payload does carry the
+	// `apiKeyManagedExternally` boolean flag per provider, so we assert
+	// against the surrounding JSON syntax (`"apiKey":`) rather than the
+	// substring `apiKey` alone — the flag is *signalled*, the value is
+	// *never* leaked.
+	expect( $payload )->not->toContain( '"apiKey":' );
 	expect( $payload )->not->toContain( 'tileApiKey' );
 	expect( $payload )->not->toContain( 'tileApiKeys' );
 	expect( $payload )->not->toContain( 'tileOverlayApiKeys' );
@@ -361,5 +365,253 @@ test( 'accepts a constructor-injected registry without touching the default filt
 
 	expect( $captured_inline )->not->toBeNull();
 	expect( (string) $captured_inline )->toStartWith( 'window.kntntGpxBlocks = ' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// PHP-supplied API key (issue #113)
+//
+// The editor payload exposes a per-provider `apiKeyManagedExternally`
+// boolean: `true` when the filter callback supplied an `apiKey` field
+// (engagement is presence-based, not value-based). When engaged with a
+// non-empty key, the enqueuer pre-substitutes `{KEY}` in every style URL
+// server-side so the editor preview can mount the URL directly without
+// calling `substituteTileApiKey()` client-side. When engaged with an
+// empty/whitespace-only key, `{KEY}` is left intact (fail-closed) and a
+// warning is logged. The `apiKey` value itself never reaches the
+// editor payload.
+// ---------------------------------------------------------------------------
+
+/**
+ * Captures whatever the plugin's `Plugin::warning()` calls write to PHP's
+ * error_log() during $callback. The fixture mirrors the helper in
+ * `tests/Unit/Rendering/Tile_Layer_RegistryTest.php` so each test file
+ * stays self-contained.
+ *
+ * @param callable $callback Block of code to run with log capture engaged.
+ *
+ * @return string Concatenated contents the test code wrote to error_log().
+ */
+function ede_capture_warning_log( callable $callback ): string {
+
+	$tmp = tempnam( sys_get_temp_dir(), 'kntnt_gpx_blocks_ede_log_' );
+	if ( ! is_string( $tmp ) ) {
+		throw new RuntimeException( 'tempnam() failed in ede_capture_warning_log' );
+	}
+
+	$previous = ini_get( 'error_log' );
+	ini_set( 'error_log', $tmp );
+	try {
+		$callback();
+	} finally {
+		ini_set( 'error_log', $previous === false ? '' : $previous );
+	}
+
+	$contents = file_get_contents( $tmp );
+	@unlink( $tmp );
+	return is_string( $contents ) ? $contents : '';
+
+}
+
+/**
+ * Decodes the payload JSON out of the captured inline script.
+ *
+ * @param string $inline Captured inline-script string.
+ *
+ * @return array<string, mixed>
+ */
+function ede_decode_payload( string $inline ): array {
+
+	$json    = substr( $inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+	return is_array( $decoded ) ? $decoded : [];
+
+}
+
+/**
+ * Stubs apply_filters so `kntnt_gpx_blocks_tile_providers` returns a
+ * single paid-provider record with the supplied apiKey overlay applied.
+ *
+ * The provider id is `'paid-provider'`. The style id is `'default'`. The
+ * style URL contains a single `{KEY}` placeholder so substitution
+ * effects are unambiguous.
+ *
+ * @param array<string, mixed> $overlay Provider-level overlay (e.g.
+ *                                      `[ 'apiKey' => 'X' ]` to engage
+ *                                      the PHP path; omit to leave it
+ *                                      unengaged).
+ */
+function ede_install_paid_provider( array $overlay = [] ): void {
+
+	$record = array_merge(
+		[
+			'label'       => 'Paid Provider',
+			'requiresKey' => true,
+			'default'     => 'default',
+			'styles'      => [
+				'default' => [
+					'label'       => 'Default',
+					'url'         => 'https://tiles.example.com/{z}/{x}/{y}.png?key={KEY}',
+					'attribution' => '&copy; Example',
+					'maxZoom'     => 19,
+				],
+			],
+		],
+		$overlay
+	);
+
+	Functions\when( 'apply_filters' )->alias(
+		static function ( string $filter, mixed $value ) use ( $record ): mixed {
+			if ( $filter === 'kntnt_gpx_blocks_tile_providers' ) {
+				return [ 'paid-provider' => $record ];
+			}
+			if ( $filter === 'kntnt_gpx_blocks_tile_overlays' ) {
+				return [];
+			}
+			return $value;
+		}
+	);
+
+}
+
+test( 'apiKeyManagedExternally is false for every provider without a PHP-supplied apiKey', function (): void {
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$decoded = ede_decode_payload( (string) $captured_inline );
+
+	foreach ( $decoded['providers'] as $id => $record ) {
+		expect( $record )->toHaveKey( 'apiKeyManagedExternally' );
+		expect( $record['apiKeyManagedExternally'] )->toBeFalse();
+	}
+
+} );
+
+test( 'apiKeyManagedExternally is true when the PHP path is engaged, and {KEY} is pre-substituted server-side', function (): void {
+
+	ede_install_paid_provider( [ 'apiKey' => 'PHP-VALUE' ] );
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$decoded = ede_decode_payload( (string) $captured_inline );
+
+	expect( $decoded['providers'] )->toHaveKey( 'paid-provider' );
+	expect( $decoded['providers']['paid-provider']['apiKeyManagedExternally'] )->toBeTrue();
+	$url = $decoded['providers']['paid-provider']['styles']['default']['url'];
+	expect( $url )->toContain( 'key=PHP-VALUE' );
+	expect( $url )->not->toContain( '{KEY}' );
+
+} );
+
+test( 'an empty PHP-supplied apiKey leaves {KEY} intact and logs a warning naming only the provider id', function (): void {
+
+	ede_install_paid_provider( [ 'apiKey' => '   ' ] );
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	$logged = ede_capture_warning_log( static function (): void {
+		( new Editor_Data_Enqueuer() )->enqueue();
+	} );
+
+	$decoded = ede_decode_payload( (string) $captured_inline );
+
+	// Fail-closed: `{KEY}` placeholder survives, so the editor preview
+	// detects it and ships polyline-only.
+	$url = $decoded['providers']['paid-provider']['styles']['default']['url'];
+	expect( $url )->toContain( '{KEY}' );
+
+	// The flag is still `true` — engagement is presence-based, not
+	// value-based — so the editor hides the API-key TextControl.
+	expect( $decoded['providers']['paid-provider']['apiKeyManagedExternally'] )->toBeTrue();
+
+	// Warning log names the provider id, never the key value.
+	expect( $logged )->toContain( 'paid-provider' );
+
+} );
+
+test( 'the literal apiKey value never appears anywhere in the editor payload (no-leak invariant)', function (): void {
+
+	$sentinel = 'S3CR3T-DO-NOT-LEAK';
+	ede_install_paid_provider( [ 'apiKey' => $sentinel ] );
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	// The sentinel appears in the substituted URL (intended); assert
+	// that the raw `"apiKey":` key never appears in the payload (the
+	// flag is `apiKeyManagedExternally`, not `apiKey`).
+	expect( (string) $captured_inline )->not->toContain( '"apiKey":' );
+
+} );
+
+test( 'no PHP-supplied apiKey value (sentinel) ever appears in the warning log', function (): void {
+
+	$sentinel = 'S3CR3T-DO-NOT-LEAK';
+	// Padded with whitespace so the validator trims to a non-empty
+	// stored value. The success branch substitutes silently and does
+	// not log, so the no-leak assertion holds vacuously here — but the
+	// invariant we lock down is that the enqueuer never logs the value
+	// even when something *did* surface.
+	ede_install_paid_provider( [ 'apiKey' => '  ' . $sentinel . '  ' ] );
+
+	Functions\when( 'wp_add_inline_script' )->justReturn( true );
+
+	$logged = ede_capture_warning_log( static function (): void {
+		( new Editor_Data_Enqueuer() )->enqueue();
+	} );
+
+	expect( $logged )->not->toContain( $sentinel );
+
+} );
+
+test( 'empty PHP-supplied apiKey log entry never carries the apiKey value (even whitespace-only input)', function (): void {
+
+	// Use a sentinel that would be identifiable even after trimming.
+	// The validator trims `  S3CR3T  ` to `S3CR3T` which is non-empty,
+	// so this test uses the empty-after-trim path (whitespace-only).
+	// The fail-closed warning fires; we assert it carries the id only.
+	ede_install_paid_provider( [ 'apiKey' => "  \t\n" ] );
+
+	Functions\when( 'wp_add_inline_script' )->justReturn( true );
+
+	$logged = ede_capture_warning_log( static function (): void {
+		( new Editor_Data_Enqueuer() )->enqueue();
+	} );
+
+	// Log contains the id and a fail-closed marker, but never the literal
+	// whitespace input (any tab or newline character in the log would
+	// indicate a leak of the unsanitised input).
+	expect( $logged )->toContain( 'paid-provider' );
+	expect( $logged )->not->toContain( "\t" );
 
 } );

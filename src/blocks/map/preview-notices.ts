@@ -45,6 +45,7 @@
 export interface PreviewNoticeProvider {
 	readonly label: string;
 	readonly requiresKey: boolean;
+	readonly apiKeyManagedExternally?: boolean;
 }
 
 /**
@@ -121,8 +122,16 @@ export function detectPreviewNotices(
 	// id when known, fallback otherwise. This matches the runtime path in
 	// resolveProviderForPreview() so the missing-key flag is computed
 	// against the *effective* provider, not the saved-but-stale id.
+	// When the PHP-supplied key path is engaged for the resolved provider
+	// (`apiKeyManagedExternally === true`), the attribute-path key is
+	// ignored entirely and the missing-key notice never fires — the
+	// site builder, not the editor, owns the key, and any misconfiguration
+	// surfaces in `Plugin::warning()` logs rather than the editor surface.
 	const resolved = providers[ providerId ] ?? fallbackRecord;
-	const missingKey = resolved?.requiresKey === true && apiKey === '';
+	const missingKey =
+		resolved?.requiresKey === true &&
+		resolved.apiKeyManagedExternally !== true &&
+		apiKey === '';
 
 	return {
 		unknownProviderFallbackLabel: isUnknownProvider ? fallbackLabel : null,

@@ -171,6 +171,36 @@ If your optimization plugin identifies inline scripts by content rather than by 
 
 If you do not need consent gating — for example you self-host tiles, your jurisdiction does not require consent for embedded maps, or it is an internal tool — simply do not install the JavaScript glue. With no `kntnt_gpx_blocks:consent` event ever dispatched, the plugin's default-allow rule keeps the map loading on every page. There is *no* setting on the plugin side that turns the gate "on" — the gate is opt-in via your glue, not opt-out via configuration.
 
+### Protect your API key from other editors
+
+If you use a paid tile provider (Thunderforest, Mapbox, MapTiler, Jawg Maps, Stadia Maps), the default workflow asks every editor of every post to paste the API key into the GPX Map block's Inspector. The key then lives in `post_content` and is readable by anyone with `edit_posts` capability — every author, contributor, or freelancer on the site. To keep the key out of the editor and out of `post_content`, supply it from PHP through the `kntnt_gpx_blocks_tile_providers` filter:
+
+```php
+add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $providers ): array {
+    $providers['thunderforest']['apiKey'] = 'PASTE-YOUR-KEY-HERE';
+    return $providers;
+} );
+```
+
+A common pattern is to keep the literal key in `wp-config.php` (where it joins the rest of the deployment-specific secrets) and reference it from a small must-use plugin:
+
+```php
+// wp-config.php
+define( 'THUNDERFOREST_KEY', 'paste-your-key-here' );
+
+// wp-content/mu-plugins/kntnt-gpx-blocks-keys.php
+add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $providers ): array {
+    if ( defined( 'THUNDERFOREST_KEY' ) ) {
+        $providers['thunderforest']['apiKey'] = THUNDERFOREST_KEY;
+    }
+    return $providers;
+} );
+```
+
+Presence of the `apiKey` field (not its value) engages the PHP path. For any provider where PHP supplies the key, the block's Inspector hides the API-key field, the per-block `tileApiKeys` attribute is ignored, and the plugin substitutes the PHP-supplied value into the tile URL on both the frontend and the editor preview. An empty or whitespace-only PHP value fails closed — the map renders polyline-only and the misconfiguration is logged via `Plugin::warning()` — without leaking the value into the log.
+
+This protects the key from other editors. It does **not** protect the key from public-site visitors: browser-rendered tiles always leak the key in network requests, regardless of how it reaches the URL. The real defense against visitor-side scraping is to lock the key to your domain at the provider's dashboard via **Referer/Origin whitelisting**. Every paid provider listed above supports this; consult their documentation for the exact setting name.
+
 ### Developer Hooks
 
 *Stub — full reference lives in [`docs/hooks.md`](docs/hooks.md).* The plugin exposes filters for the parameters most likely to need site-specific tuning:

@@ -131,12 +131,24 @@ interface EditorRegistryStyle {
  *
  * Carries the metadata the Inspector needs to drive its UI (`label`,
  * `requiresKey`, `default` style id, optional `signupUrl`, optional
- * `subdomains`) plus the nested `styles` map of per-style records.
- * The per-style URL still contains the literal `{KEY}` placeholder for
- * paid providers — substitution against
- * `attributes.tileApiKeys[ tileProvider ]` happens in `edit.tsx`
- * immediately before the resolved record is handed to the preview,
- * mirroring how `Render_Map` substitutes server-side for the frontend.
+ * `subdomains`) plus the nested `styles` map of per-style records and
+ * the `apiKeyManagedExternally` boolean that signals whether the PHP
+ * path is engaged for this provider.
+ *
+ * When `apiKeyManagedExternally === false` the per-style URL still
+ * contains the literal `{KEY}` placeholder for paid providers —
+ * substitution against `attributes.tileApiKeys[ tileProvider ]` happens
+ * client-side in `edit.tsx` immediately before the resolved record is
+ * handed to the preview, mirroring how `Render_Map` substitutes
+ * server-side for the frontend.
+ *
+ * When `apiKeyManagedExternally === true` (the site builder supplied
+ * `apiKey` via the `kntnt_gpx_blocks_tile_providers` filter), the URL
+ * has already been substituted server-side by `Editor_Data_Enqueuer`,
+ * the editor's API-key TextControl is hidden, and the
+ * `attributes.tileApiKeys[ tileProvider ]` entry is ignored. A still-
+ * unsubstituted `{KEY}` in this branch means the PHP-supplied key was
+ * empty (fail-closed) — the preview ships polyline-only.
  *
  * @since 1.0.0
  */
@@ -147,6 +159,7 @@ interface EditorRegistryProvider {
 	readonly styles: Readonly< Record< string, EditorRegistryStyle > >;
 	readonly signupUrl?: string;
 	readonly subdomains?: readonly string[];
+	readonly apiKeyManagedExternally?: boolean;
 }
 
 /**
@@ -828,15 +841,6 @@ function resolveProviderForPreview(
 		return null;
 	}
 
-	// Polyline-only gate: when the resolved provider requires a key and the
-	// per-provider key is empty (or whitespace-only), do not return a
-	// preview record at all. Returning `null` makes the preview's base-tile
-	// useEffect skip the tile layer entirely, mirroring the frontend
-	// `Render_Map` PHP gate where the URL is nulled in state.
-	if ( provider.requiresKey && apiKey.trim() === '' ) {
-		return null;
-	}
-
 	// Resolve the style record within the provider with fall-back to the
 	// provider's own default. A `default` that itself does not resolve
 	// (defensive — should not happen post-validation) falls through to
@@ -844,6 +848,38 @@ function resolveProviderForPreview(
 	const style =
 		provider.styles[ styleId ] ?? provider.styles[ provider.default ];
 	if ( ! style ) {
+		return null;
+	}
+
+	// PHP-supplied key path. When `apiKeyManagedExternally === true`, the
+	// `Editor_Data_Enqueuer` has already substituted `{KEY}` server-side
+	// (with a non-empty PHP value), so the URL is mounted directly. The
+	// attribute-path `apiKey` parameter is ignored entirely. A residual
+	// `{KEY}` in the URL means the PHP-supplied key was empty —
+	// fail-closed — so the preview ships polyline-only, mirroring the
+	// frontend's URL-null gate in `Render_Map`.
+	if ( provider.apiKeyManagedExternally === true ) {
+		if ( style.url.includes( '{KEY}' ) ) {
+			return null;
+		}
+		const out: EditorProviderRecord = {
+			url: style.url,
+			attribution: style.attribution,
+			maxZoom: style.maxZoom,
+		};
+		if ( provider.subdomains && provider.subdomains.length > 0 ) {
+			out.subdomains = [ ...provider.subdomains ];
+		}
+		return out;
+	}
+
+	// Attribute path. Polyline-only gate: when the resolved provider
+	// requires a key and the per-provider key is empty (or whitespace-
+	// only), do not return a preview record at all. Returning `null`
+	// makes the preview's base-tile useEffect skip the tile layer
+	// entirely, mirroring the frontend `Render_Map` PHP gate where the
+	// URL is nulled in state.
+	if ( provider.requiresKey && apiKey.trim() === '' ) {
 		return null;
 	}
 
@@ -986,37 +1022,38 @@ function TilesPanel( {
 				options={ styleOptions }
 				onChange={ ( next: string ) => onChange( { style: next } ) }
 			/>
-			{ selectedProvider?.requiresKey && (
-				<TextControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					label={ __( 'API key', 'kntnt-gpx-blocks' ) }
-					value={ apiKey }
-					onChange={ ( next: string ) =>
-						onChange( { apiKey: next } )
-					}
-					help={
-						selectedProvider.signupUrl ? (
-							<>
-								{ __(
-									'This provider requires an API key.',
+			{ selectedProvider?.requiresKey &&
+				selectedProvider.apiKeyManagedExternally !== true && (
+					<TextControl
+						__next40pxDefaultSize
+						__nextHasNoMarginBottom
+						label={ __( 'API key', 'kntnt-gpx-blocks' ) }
+						value={ apiKey }
+						onChange={ ( next: string ) =>
+							onChange( { apiKey: next } )
+						}
+						help={
+							selectedProvider.signupUrl ? (
+								<>
+									{ __(
+										'This provider requires an API key.',
+										'kntnt-gpx-blocks'
+									) }{ ' ' }
+									<ExternalLink
+										href={ selectedProvider.signupUrl }
+									>
+										{ __( 'Get one', 'kntnt-gpx-blocks' ) }
+									</ExternalLink>
+								</>
+							) : (
+								__(
+									"This provider requires an API key. See the provider's documentation.",
 									'kntnt-gpx-blocks'
-								) }{ ' ' }
-								<ExternalLink
-									href={ selectedProvider.signupUrl }
-								>
-									{ __( 'Get one', 'kntnt-gpx-blocks' ) }
-								</ExternalLink>
-							</>
-						) : (
-							__(
-								"This provider requires an API key. See the provider's documentation.",
-								'kntnt-gpx-blocks'
+								)
 							)
-						)
-					}
-				/>
-			) }
+						}
+					/>
+				) }
 		</PanelBody>
 	);
 }

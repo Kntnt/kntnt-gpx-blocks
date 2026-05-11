@@ -88,8 +88,31 @@ $providers = apply_filters( 'kntnt_gpx_blocks_tile_providers', $defaults );
 //     subdomains?: string[], // Optional Leaflet {s} substitution list,
 //                            // inherited by every style of this provider
 //                            // whose URL contains {s}.
+//     apiKey?: string,       // Optional PHP-supplied API key. Presence
+//                            // (not value) engages the PHP path — see
+//                            // the "PHP-supplied API key" subsection
+//                            // below for the full contract.
 // }>
 ```
+
+#### PHP-supplied API key
+
+The optional `apiKey` field lets a site builder supply a paid provider's API key from PHP — typically from a `wp-config.php` constant — and bypass the per-block `attributes.tileApiKeys` path entirely. This protects the key from any user with `edit_posts` capability who would otherwise be able to read it from `post_content`, the REST API, or the editor's Inspector field.
+
+```php
+add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $p ): array {
+    if ( defined( 'THUNDERFOREST_KEY' ) ) {
+        $p['thunderforest']['apiKey'] = THUNDERFOREST_KEY;
+    }
+    return $p;
+} );
+```
+
+- **Engagement rule.** `isset( $record['apiKey'] )` — presence, not value — engages the PHP path. The site builder controls where the value comes from (hard-coded string, `wp-config.php` constant via `defined()` guard, environment variable, secrets manager, etc.); plugin code only reads the resolved `apiKey` field.
+- **Precedence.** Binary. When the PHP path is engaged for a provider, `attributes.tileApiKeys[ providerId ]` is never read, the editor's API-key TextControl for that provider is hidden with no notice (the provider behaves identically to a free provider in the UI), and both editor preview and frontend use the PHP-supplied key.
+- **Fail-closed.** `apiKey === ''` (or whitespace-only) under PHP engagement yields polyline-only state on both frontend and editor preview — same degraded UX as a missing attribute-path key, but the editor field stays hidden. The misconfiguration surfaces in `Plugin::warning()` logs, not in the editor UI.
+- **Validator hygiene.** Non-string `apiKey` values are dropped silently (treated as absent). Whitespace is trimmed before storage. The validator's warning log mentions the provider id only; the key value (or the unsanitised input) **never** appears in any log line.
+- **Threat-model scope.** This protects against `edit_posts`-level users. It does NOT protect against public-site visitors — browser-rendered tiles always leak the key in network requests. Lock your key to your domain via Referer/Origin whitelisting at the tile provider for the public-visitor case.
 
 ### `kntnt_gpx_blocks_tile_overlays`
 
@@ -122,7 +145,7 @@ Every record is validated at filter-application time. The validator follows a **
 **Base providers (`kntnt_gpx_blocks_tile_providers`)**
 
 - Provider id and style id must match `^[a-z0-9-]+$` (lowercase letters, digits, hyphens; non-empty).
-- Provider-level: `label`, `requiresKey` (bool), `default` (non-empty string style id), and `styles` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present.
+- Provider-level: `label`, `requiresKey` (bool), `default` (non-empty string style id), and `styles` (non-empty map) are required. Optional `signupUrl` is an `https://` URL when present. Optional `subdomains` is a non-empty list of non-empty strings when present. Optional `apiKey` is a string when present (whitespace is trimmed; non-string values are dropped silently); presence engages the PHP path — see the [PHP-supplied API key](#php-supplied-api-key) subsection.
 - Per-style: `label`, `url`, `attribution`, `maxZoom` are required.
 - `url` must start with `https://` and contain the literals `{z}`, `{x}`, `{y}`.
 - The per-style URL contains `{KEY}` iff `provider.requiresKey === true`.

@@ -11,9 +11,13 @@
  * The payload is JSON-encoded and attached as a `'before'` inline script on
  * the GPX Map block's editor handle, so it lands in the editor document
  * before the block's React entry runs and reads the global. API keys are
- * deliberately excluded — those are per-block (`attributes.tileApiKeys`,
- * a provider-keyed object) and never leave PHP except as the substituted
- * `{KEY}` value in the rendered tile URL.
+ * deliberately excluded from the payload: attribute-path keys are per-block
+ * (`attributes.tileApiKeys`, a provider-keyed object) and never leave PHP
+ * except as the substituted `{KEY}` value in the rendered tile URL, and
+ * PHP-supplied keys (engaged via the optional `apiKey` field on a
+ * `kntnt_gpx_blocks_tile_providers` callback) are substituted server-side
+ * before the URL reaches the editor — the editor receives a boolean
+ * `apiKeyManagedExternally` flag per provider but never the key itself.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -125,16 +129,36 @@ final class Editor_Data_Enqueuer {
 	 * `MapEditorPreview` can mount the resolved style's tile layer via
 	 * `L.tileLayer()`. Provider-level fields surfaced: `label`,
 	 * `requiresKey`, `default`, optional `signupUrl`, optional
-	 * `subdomains`. Per-style fields surfaced under `styles[ id ]`:
-	 * `label`, `url` (with `{KEY}` left intact for paid providers),
-	 * `attribution`, `maxZoom`. The shape is deliberately explicit so a
-	 * future change to the registry's internal record type does not
-	 * silently leak through the editor data; only the fields listed below
-	 * ever reach the browser. The per-block API keys are *never* part of
-	 * this payload — they live in `attributes.tileApiKeys` (a
-	 * provider-keyed object) and the entry for the currently-selected
-	 * provider is substituted into `{KEY}` client-side by `edit.tsx`
-	 * before forwarding the URL to the preview.
+	 * `subdomains`, and `apiKeyManagedExternally` (the boolean flag the
+	 * editor reads to decide whether to render the per-provider API-key
+	 * TextControl). Per-style fields surfaced under `styles[ id ]`:
+	 * `label`, `url` (with `{KEY}` left intact for the attribute path;
+	 * pre-substituted server-side when the PHP path is engaged and the
+	 * resolved key is non-empty — see below), `attribution`, `maxZoom`.
+	 *
+	 * **PHP-supplied key path.** When a provider record carries the
+	 * optional `apiKey` field (engaged via the
+	 * `kntnt_gpx_blocks_tile_providers` filter), the per-block
+	 * `attributes.tileApiKeys[ providerId ]` value is ignored entirely
+	 * and the editor must not render an API-key TextControl for that
+	 * provider. This shaper:
+	 *
+	 * - emits `apiKeyManagedExternally: true` per provider so the editor
+	 *   knows to hide the TextControl;
+	 * - pre-substitutes `{KEY}` in every style URL when the resolved key
+	 *   is non-empty, so the preview can mount the URL directly without
+	 *   invoking the client-side `substituteTileApiKey()` helper;
+	 * - leaves `{KEY}` intact and logs a `Plugin::warning()` naming only
+	 *   the provider id (never the key value) when the resolved key is
+	 *   empty or whitespace-only — the editor preview then detects the
+	 *   unsubstituted `{KEY}` and ships polyline-only, mirroring the
+	 *   frontend's fail-closed contract.
+	 *
+	 * The `apiKey` itself is **never** part of the editor payload — only
+	 * the boolean flag and the resolved URL ever reach the browser. The
+	 * shape is deliberately explicit so a future change to the registry's
+	 * internal record type does not silently leak through the editor
+	 * data; only the fields listed below ever reach the browser.
 	 *
 	 * @since 1.0.0
 	 *
@@ -150,12 +174,14 @@ final class Editor_Data_Enqueuer {
 	 *     }>,
 	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
+	 *     apiKey?: string,
 	 * }> $providers Validated provider records keyed by id.
 	 *
 	 * @return array<string, array{
 	 *     label: string,
 	 *     requiresKey: bool,
 	 *     default: string,
+	 *     apiKeyManagedExternally: bool,
 	 *     styles: array<string, array{
 	 *         label: string,
 	 *         url: string,
@@ -172,24 +198,52 @@ final class Editor_Data_Enqueuer {
 
 		foreach ( $providers as $id => $record ) {
 
+			// Detect PHP-supplied key engagement. Presence of `apiKey` on
+			// the validated record (not its value) is the engagement
+			// signal. An empty PHP key fails closed — the URL is left
+			// with its `{KEY}` placeholder and a warning is logged so
+			// the misconfiguration surfaces in the log.
+			$php_path_engaged = array_key_exists( 'apiKey', $record );
+			$php_key          = $php_path_engaged ? $record['apiKey'] : '';
+			$php_key_empty    = $php_path_engaged && '' === $php_key;
+			if ( $php_key_empty ) {
+				Plugin::warning(
+					sprintf(
+						'Editor_Data_Enqueuer: PHP-supplied apiKey for tile provider "%s" is empty; editor preview will fail closed (polyline-only).',
+						$id
+					)
+				);
+			}
+
 			// Compose the per-style sub-map. The shape mirrors the
 			// validator's typed style record verbatim; the validator has
 			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
+			// When the PHP path is engaged with a non-empty key, the
+			// `{KEY}` placeholder is substituted server-side so the
+			// editor preview never sees the raw key in its props graph;
+			// when the PHP key is empty, `{KEY}` is left intact so the
+			// preview's fail-closed detector (unsubstituted `{KEY}`) ships
+			// polyline-only.
 			$styles = [];
 			foreach ( $record['styles'] as $style_id => $style ) {
+				$url = $style['url'];
+				if ( $php_path_engaged && ! $php_key_empty ) {
+					$url = str_replace( '{KEY}', $php_key, $url );
+				}
 				$styles[ $style_id ] = [
 					'label'       => $style['label'],
-					'url'         => $style['url'],
+					'url'         => $url,
 					'attribution' => $style['attribution'],
 					'maxZoom'     => $style['maxZoom'],
 				];
 			}
 
 			$entry = [
-				'label'       => $record['label'],
-				'requiresKey' => $record['requiresKey'],
-				'default'     => $record['default'],
-				'styles'      => $styles,
+				'label'                   => $record['label'],
+				'requiresKey'             => $record['requiresKey'],
+				'default'                 => $record['default'],
+				'apiKeyManagedExternally' => $php_path_engaged,
+				'styles'                  => $styles,
 			];
 			if ( isset( $record['signupUrl'] ) ) {
 				$entry['signupUrl'] = $record['signupUrl'];

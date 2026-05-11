@@ -164,11 +164,19 @@ jest.mock(
 	{ virtual: true }
 );
 
+// Capture every props payload `MapEditorPreview` receives so the tests
+// can assert against the resolved `provider` record (or `null` for
+// polyline-only). Keeps the mock to a single noop component while still
+// exposing the shape the parent forwarded.
+const capturedPreviewProps: Array< Record< string, unknown > > = [];
 jest.mock(
 	'./editor-preview',
 	() => ( {
 		__esModule: true,
-		MapEditorPreview: () => null,
+		MapEditorPreview: ( props: Record< string, unknown > ) => {
+			capturedPreviewProps.push( props );
+			return null;
+		},
 	} ),
 	{ virtual: true }
 );
@@ -339,9 +347,11 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 	texts: CapturedTextControl[];
 	selects: CapturedSelectControl[];
 	writes: Array< Record< string, unknown > >;
+	previewProps: Array< Record< string, unknown > >;
 } {
 	capturedTextControls.length = 0;
 	capturedSelectControls.length = 0;
+	capturedPreviewProps.length = 0;
 	const writes: Array< Record< string, unknown > > = [];
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
@@ -363,6 +373,7 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 		texts: [ ...capturedTextControls ],
 		selects: [ ...capturedSelectControls ],
 		writes,
+		previewProps: [ ...capturedPreviewProps ],
 	};
 }
 
@@ -570,5 +581,172 @@ describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () =>
 				},
 			},
 		] );
+	} );
+} );
+
+// PHP-supplied API key (issue #113). When the editor-data registry marks
+// a provider with `apiKeyManagedExternally: true`, the per-provider API-key
+// TextControl is hidden — the site builder owns the key in PHP and the
+// editor must not surface it. The flag is presence-based (engagement is
+// driven by the existence of the `apiKey` field on the
+// `kntnt_gpx_blocks_tile_providers` filter callback's record, not its
+// value), so the editor never sees the key value itself: only the URL
+// the server pre-substituted, and the boolean flag.
+describe( 'MapEdit Tiles panel — PHP-supplied apiKey (issue #113)', () => {
+	const originalRegistry = (
+		globalThis as {
+			kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+		}
+	 ).kntntGpxBlocks;
+
+	beforeAll( () => {
+		// Add two providers to the editor-data registry, mirroring what
+		// `Editor_Data_Enqueuer::shape_providers()` would emit when the
+		// PHP path is engaged: `apiKeyManagedExternally: true`, with
+		// `{KEY}` either already substituted server-side (the resolved
+		// key was non-empty) or still present (the resolved key was
+		// empty, signalling fail-closed / polyline-only).
+		(
+			globalThis as {
+				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+			}
+		 ).kntntGpxBlocks = {
+			providers: {
+				...( originalRegistry as { providers: object } ).providers,
+				thunderforestExternal: {
+					label: 'Thunderforest (PHP key)',
+					requiresKey: true,
+					default: 'outdoor',
+					apiKeyManagedExternally: true,
+					signupUrl: 'https://www.thunderforest.com/',
+					styles: {
+						outdoor: {
+							label: 'Outdoors',
+							url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=PHP-SUBSTITUTED',
+							attribution: 'Thunderforest',
+							maxZoom: 22,
+						},
+					},
+				},
+				thunderforestExternalEmpty: {
+					label: 'Thunderforest (PHP key, empty)',
+					requiresKey: true,
+					default: 'outdoor',
+					apiKeyManagedExternally: true,
+					signupUrl: 'https://www.thunderforest.com/',
+					styles: {
+						outdoor: {
+							label: 'Outdoors',
+							url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={KEY}',
+							attribution: 'Thunderforest',
+							maxZoom: 22,
+						},
+					},
+				},
+			},
+			overlays: {},
+		};
+	} );
+
+	afterAll( () => {
+		(
+			globalThis as {
+				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+			}
+		 ).kntntGpxBlocks = originalRegistry;
+	} );
+
+	it( 'hides the API-key TextControl for a provider whose apiKey is managed externally', () => {
+		const { texts } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforestExternal',
+				tileStyle: 'outdoor',
+				tileApiKeys: {
+					thunderforestExternal: 'this-attribute-key-is-ignored',
+				},
+			} )
+		);
+
+		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
+		expect( apiKeyField ).toBeUndefined();
+	} );
+
+	it( 'still hides the API-key TextControl when the PHP-supplied key is empty (polyline-only preview branch)', () => {
+		// The `apiKeyManagedExternally` flag remains `true` regardless
+		// of whether the resolved PHP key was empty; engagement is
+		// presence-based. The user must not see a TextControl that
+		// would tempt them into supplying an attribute-path key the
+		// renderer would never read.
+		const { texts } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforestExternalEmpty',
+				tileStyle: 'outdoor',
+				tileApiKeys: {},
+			} )
+		);
+
+		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
+		expect( apiKeyField ).toBeUndefined();
+	} );
+
+	it( 'still renders the API-key TextControl for paid providers whose apiKey is not managed externally (attribute-path behaviour unchanged)', () => {
+		const { texts } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
+				tileApiKeys: { thunderforest: 'ATTR_KEY' },
+			} )
+		);
+
+		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
+		expect( apiKeyField ).toBeDefined();
+		expect( apiKeyField?.value ).toBe( 'ATTR_KEY' );
+	} );
+
+	it( 'forwards the pre-substituted URL to MapEditorPreview without invoking client substitution', () => {
+		// Engaged-with-non-empty-key path: the server-side URL has
+		// already had `{KEY}` replaced, so the preview receives that
+		// URL verbatim — no `{KEY}` placeholder and no attribute-path
+		// substitution.
+		const { previewProps } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforestExternal',
+				tileStyle: 'outdoor',
+				tileApiKeys: {
+					thunderforestExternal: 'this-attribute-key-is-ignored',
+				},
+			} )
+		);
+
+		const lastProps = previewProps[ previewProps.length - 1 ];
+		const attributes = lastProps?.attributes as { provider: unknown };
+		const provider = attributes?.provider as {
+			url: string;
+			attribution: string;
+			maxZoom: number;
+		} | null;
+		expect( provider ).not.toBeNull();
+		expect( provider?.url ).toBe(
+			'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=PHP-SUBSTITUTED'
+		);
+		expect( provider?.url ).not.toContain( '{KEY}' );
+		// Attribute-path key never reaches the URL — the bypass is binary.
+		expect( provider?.url ).not.toContain(
+			'this-attribute-key-is-ignored'
+		);
+	} );
+
+	it( 'forwards provider=null to MapEditorPreview (polyline-only) when the PHP key is empty and the URL still contains {KEY}', () => {
+		const { previewProps } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforestExternalEmpty',
+				tileStyle: 'outdoor',
+				tileApiKeys: {},
+			} )
+		);
+
+		const lastProps = previewProps[ previewProps.length - 1 ];
+		const attributes = lastProps?.attributes as { provider: unknown };
+		expect( attributes?.provider ).toBeNull();
 	} );
 } );
