@@ -334,6 +334,33 @@ test( 'resolve_provider substitutes the API key into {KEY} for key-required prov
 
 } );
 
+test( 'resolve_provider trims surrounding whitespace before substituting the API key', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', '  XYZ-TOKEN  ' );
+
+	expect( $resolved['url'] )->not->toContain( '{KEY}' );
+	expect( $resolved['url'] )->toContain( 'apikey=XYZ-TOKEN' );
+	expect( $resolved['url'] )->not->toContain( 'apikey=%20' );
+	expect( $resolved['url'] )->not->toContain( 'XYZ-TOKEN  ' );
+	expect( $resolved['url'] )->not->toContain( '  XYZ-TOKEN' );
+
+} );
+
+test( 'resolve_provider leaves {KEY} unsubstituted when the attribute-path key is whitespace-only (fail-closed)', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', "  \t\n  " );
+
+	// A whitespace-only attribute-path key must be treated identically to an
+	// empty string: leave {KEY} intact so the caller ships polyline-only,
+	// rather than substituting whitespace into the URL.
+	expect( $resolved['url'] )->toContain( '{KEY}' );
+	expect( $resolved['url'] )->not->toContain( 'apikey=%20' );
+	expect( $resolved['url'] )->not->toContain( "apikey= " );
+
+} );
+
 test( 'resolve_provider does not substitute when provider does not require a key', function (): void {
 
 	$registry = new Tile_Layer_Registry();
@@ -954,6 +981,26 @@ test( 'resolve_overlays drops the pair when the key is whitespace-only', functio
 	);
 
 	expect( $resolved )->toBe( [] );
+
+} );
+
+test( 'resolve_overlays trims surrounding whitespace before substituting the API key', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	$resolved = $registry->resolve_overlays(
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
+		[ 'openweathermap' => '  OWM-TOKEN  ' ]
+	);
+
+	// The trim must apply to the substitution itself, not just the
+	// empty-check — otherwise `"  OWM-TOKEN  "` passes the non-empty
+	// decision and leaks whitespace into the final URL.
+	expect( $resolved )->toHaveCount( 1 );
+	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
+	expect( $resolved[0]['url'] )->toContain( 'appid=OWM-TOKEN' );
+	expect( $resolved[0]['url'] )->not->toContain( 'appid=%20' );
+	expect( $resolved[0]['url'] )->not->toContain( 'OWM-TOKEN  ' );
+	expect( $resolved[0]['url'] )->not->toContain( '  OWM-TOKEN' );
 
 } );
 

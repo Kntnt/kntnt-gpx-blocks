@@ -348,6 +348,11 @@ final class Tile_Layer_Registry {
 		// `{KEY}` placeholder is left intact and the caller treats the
 		// unsubstituted URL as polyline-only. The empty-PHP-key warning
 		// is logged here, once per render, naming only the provider id.
+		// The attribute-path key is trimmed before both the emptiness
+		// decision and the substitution so a whitespace-only entry is
+		// treated identically to `''` (fail-closed) and a value with
+		// stray whitespace around it does not leak that whitespace into
+		// the tile URL.
 		$url = $style['url'];
 		if ( $provider['requiresKey'] ) {
 			if ( isset( $provider['apiKey'] ) ) {
@@ -363,7 +368,10 @@ final class Tile_Layer_Registry {
 					$url = str_replace( '{KEY}', $php_key, $url );
 				}
 			} else {
-				$url = str_replace( '{KEY}', $api_key, $url );
+				$trimmed_key = trim( $api_key );
+				if ( '' !== $trimmed_key ) {
+					$url = str_replace( '{KEY}', $trimmed_key, $url );
+				}
 			}
 		}
 
@@ -546,8 +554,8 @@ final class Tile_Layer_Registry {
 					$url = str_replace( '{KEY}', $php_key, $url );
 				} else {
 					$raw_key = $api_keys[ $provider_id ] ?? '';
-					$api_key = is_string( $raw_key ) ? $raw_key : '';
-					if ( '' === trim( $api_key ) ) {
+					$api_key = is_string( $raw_key ) ? trim( $raw_key ) : '';
+					if ( '' === $api_key ) {
 						Plugin::warning(
 							sprintf(
 								'Tile_Layer_Registry: tile-overlay layer "%s" within provider "%s" requires an API key but none is configured; dropping.',
