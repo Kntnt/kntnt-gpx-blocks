@@ -15,25 +15,13 @@
  * spread / conditional that used to live in `src/blocks/map/edit.tsx`
  * and `src/blocks/elevation/edit.tsx`.
  *
- * Two functions are exported:
- *
- *  - `normaliseDimensionsAttributes()` — returns a copy of the
- *    attribute object with the default written into
- *    `style.dimensions.minHeight` when the rule fires. Returns the
- *    same reference (`===`) when nothing needs to change, so React
- *    memos downstream do not see spurious churn. Suited to callers
- *    that want a fully-normalised attribute object — for example a
- *    `editor.BlockEdit` HOC filter that forwards the substituted
- *    attributes onward.
- *
- *  - `getDefaultMinHeight()` — returns the per-block default string
- *    (or `undefined` when the block is not one of the plugin's two
- *    blocks). Used by `MapEdit` / `ElevationEdit` to inject the
- *    default inline on the wrapper only when both
- *    `style.dimensions.minHeight` and `style.dimensions.aspectRatio`
- *    are blank or missing; otherwise the inline injection is skipped
- *    and the editor's block-supports machinery is left to surface
- *    any user-set values.
+ * `getDefaultMinHeight()` returns the per-block default string (or
+ * `undefined` when the block is not one of the plugin's two blocks).
+ * Used by `MapEdit` / `ElevationEdit` to inject the default inline on
+ * the wrapper only when both `style.dimensions.minHeight` and
+ * `style.dimensions.aspectRatio` are blank or missing; otherwise the
+ * inline injection is skipped and the editor's block-supports
+ * machinery is left to surface any user-set values.
  *
  * @since 1.0.0
  */
@@ -151,83 +139,4 @@ export function getDefaultMinHeight(
 	}
 
 	return defaultMinHeight;
-}
-
-/**
- * Returns the attribute object with the plugin's `min-height` default
- * applied (when both fields count as blank) and with a blank-equivalent
- * `aspectRatio` (`'auto'`) stripped from `style.dimensions`.
- *
- * Mirrors the PHP `Dimensions_Defaults::filter()` rules:
- *
- *  - `aspectRatio` is stripped when it counts as blank-equivalent
- *    (`'auto'`). WordPress core's `wp_render_dimensions_support()` reads
- *    only `! empty( aspectRatio )` and appends `min-height: unset` on
- *    the wrapper whenever the attribute is non-empty regardless of its
- *    value, which would override any min-height — ours or a user's.
- *    Stripping the key keeps the wrapper free of that override on the
- *    editor side too (where Gutenberg's edit-time pipeline does not
- *    emit the unset, but the contract stays parallel).
- *  - The per-block `min-height` default is written into `style.dimensions`
- *    when both fields count as blank.
- *
- * When neither mutation applies (unrelated block name, user has set a
- * minHeight, user has set a real aspectRatio), returns the input object
- * referentially identical so React `useBlockProps` memos downstream are
- * not invalidated by spurious wrapping.
- *
- * The original input is never mutated; the returned object is a
- * structural shallow clone with `style.dimensions` patched.
- *
- * @since 1.0.0
- *
- * @param blockName  Block name from `block.json`'s `name` field.
- * @param attributes Saved attribute object as forwarded by Gutenberg.
- * @return Effective attributes for the editor's render pipeline.
- */
-export function normaliseDimensionsAttributes<
-	T extends Record< string, unknown >,
->( blockName: string, attributes: T ): T {
-	if ( DEFAULTS[ blockName ] === undefined ) {
-		return attributes;
-	}
-
-	const { minHeight, aspectRatio } = readDimensions( attributes );
-	const minHeightBlank = isBlank( minHeight );
-	const aspectRatioBlank = isBlankAspectRatio( aspectRatio );
-
-	const stripAspectRatio = aspectRatioBlank && aspectRatio !== undefined;
-	const injectDefault = minHeightBlank && aspectRatioBlank;
-
-	if ( ! stripAspectRatio && ! injectDefault ) {
-		return attributes;
-	}
-
-	const style = ( attributes as { style?: unknown } ).style;
-	const dimensions =
-		style && typeof style === 'object'
-			? ( style as { dimensions?: unknown } ).dimensions
-			: undefined;
-
-	const baseStyle =
-		style && typeof style === 'object' ? ( style as object ) : {};
-	const baseDimensions: Record< string, unknown > =
-		dimensions && typeof dimensions === 'object'
-			? { ...( dimensions as Record< string, unknown > ) }
-			: {};
-
-	if ( stripAspectRatio ) {
-		delete baseDimensions.aspectRatio;
-	}
-	if ( injectDefault ) {
-		baseDimensions.minHeight = DEFAULTS[ blockName ];
-	}
-
-	return {
-		...( attributes as object ),
-		style: {
-			...baseStyle,
-			dimensions: baseDimensions,
-		},
-	} as T;
 }
