@@ -249,12 +249,11 @@ final class Render_Map {
 		$gpx_file_url = wp_get_attachment_url( $attachment_id );
 		$gpx_file_url = $gpx_file_url !== false ? $gpx_file_url : null;
 
-		// Detect the editor render context. The REST block-renderer endpoint
-		// invokes the render callback inside a REST request; gating on
-		// `edit_posts` excludes anonymous REST callers from the bypass. The JS
-		// view module reads this flag to mount Leaflet immediately when the
-		// editor preview is being rendered, irrespective of consent state.
-		$bypass_consent = defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'edit_posts' );
+		// Detect the editor render context. The JS view module reads this flag
+		// to mount Leaflet immediately when the editor preview is being
+		// rendered, irrespective of consent state. The predicate lives in
+		// Request_Context so it pivots in lockstep with Render_Elevation.
+		$bypass_consent = Request_Context::is_editor_request();
 
 		// Resolve the tile-layer records for the per-block Interactivity
 		// state. The registry validates the filtered defaults, walks the

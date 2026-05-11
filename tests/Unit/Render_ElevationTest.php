@@ -1469,7 +1469,7 @@ test( 'empty-state wrapper carries the user-supplied additional CSS class', func
 // ---------------------------------------------------------------------------
 // Editor-preview cursor (issue #91)
 //
-// When Render_Elevation::is_editor_request() returns true the cursor group is
+// When Request_Context::is_editor_request() returns true the cursor group is
 // server-rendered visible at fraction=0.5 with the midpoint LTTB sample's
 // distance/elevation pre-filled into the tooltip. The frontend (non-editor)
 // render path keeps style="display:none" so view.ts can reveal the cursor on

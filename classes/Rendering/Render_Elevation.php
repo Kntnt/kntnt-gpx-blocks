@@ -209,13 +209,12 @@ final class Render_Elevation {
 		// each get their own distinct suffix derived from the resolved map id.
 		$desc_id = 'kntnt-gpx-blocks-elevation-desc-' . esc_attr( $resolved_map_id );
 
-		// Detect the editor render context. The REST block-renderer endpoint
-		// invokes the render callback inside a REST request; gating on
-		// `edit_posts` excludes anonymous REST callers from the bypass. When
-		// true, build_chart() pre-positions the cursor at fraction=0.5 and
-		// renders it visible so the user has live feedback for the Cursor /
-		// Tooltip controls without having to scrub the chart first.
-		$is_editor_preview = self::is_editor_request();
+		// Detect the editor render context. When true, build_chart()
+		// pre-positions the cursor at fraction=0.5 and renders it visible so
+		// the user has live feedback for the Cursor / Tooltip controls without
+		// having to scrub the chart first. The predicate lives in
+		// Request_Context so it pivots in lockstep with Render_Map.
+		$is_editor_preview = Request_Context::is_editor_request();
 
 		// Resolve the chart aspect ratio from the editor's `style.dimensions`
 		// slot — it shapes the SVG's viewBox so uniform scaling (issue #20)
@@ -465,22 +464,6 @@ final class Render_Elevation {
 
 		return [ $y_min, $y_max ];
 
-	}
-
-	/**
-	 * Detects an editor render context.
-	 *
-	 * The REST block-renderer endpoint invokes dynamic render callbacks inside
-	 * a REST request; gating on `edit_posts` excludes anonymous REST callers
-	 * from the bypass. Matches the idiom Render_Map uses for its
-	 * `bypassConsent` flag so both blocks detect editor previews identically.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @return bool True when called from the editor's block-renderer.
-	 */
-	private static function is_editor_request(): bool {
-		return defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'edit_posts' );
 	}
 
 	/**
