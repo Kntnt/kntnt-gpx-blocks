@@ -5,7 +5,7 @@
  * Jest coverage. Nothing in this module touches the DOM or Leaflet, so it
  * can be exercised without a full browser environment.
  *
- * Three jobs split along the cursor-sync data flow:
+ * Two jobs split along the cursor-sync data flow:
  *
  * - `fractionToLatLng` resolves a fraction-of-total-distance to a `[lat, lng]`
  *   point on the *original-distance* parameterisation by binary-searching the
@@ -21,9 +21,6 @@
  *   matched segment. The numeric work is done in a flat Cartesian space —
  *   sufficient for distances under a few hundred kilometres at non-polar
  *   latitudes, which covers every GPX track we care about.
- *
- * - `formatFraction` is shared between Map and Elevation tests for parity
- *   checks; production callers do not currently use it.
  *
  * The two cross-block primitives — `lowerBoundIndex` and `clamp01` — live in
  * `../shared/geometry.ts` and are imported here. See `docs/architecture.md`
@@ -54,7 +51,7 @@ export type LatLng = readonly [ number, number ];
  *
  * @since 0.2.0
  */
-export interface ProjectedClick {
+interface ProjectedClick {
 	readonly fraction: number;
 	readonly latLng: LatLng;
 }
@@ -69,7 +66,7 @@ export interface ProjectedClick {
  * @param t - Interpolation parameter; not clamped here.
  * @return Linearly blended value.
  */
-export function lerp( a: number, b: number, t: number ): number {
+function lerp( a: number, b: number, t: number ): number {
 	return a + ( b - a ) * t;
 }
 
@@ -224,20 +221,4 @@ export function clickToFraction(
 	const fraction = clamp01( distance / totalDistance );
 
 	return { fraction, latLng: bestProj };
-}
-
-/**
- * Format a fraction as a fixed-precision string for snapshot tests.
- *
- * Used in tests that want a stable assertion against a fraction without
- * floating-point fuzz. Production code does not call this.
- *
- * @since 0.2.0
- *
- * @param fraction - Fraction-of-total-distance in `[0, 1]`.
- * @param decimals - Decimals to retain; defaults to 6.
- * @return The fraction as a fixed-precision string.
- */
-export function formatFraction( fraction: number, decimals = 6 ): string {
-	return clamp01( fraction ).toFixed( decimals );
 }

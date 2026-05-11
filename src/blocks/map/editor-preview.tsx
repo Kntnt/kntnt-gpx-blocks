@@ -784,7 +784,7 @@ export const MapEditorPreview = ( {
  *
  * @since 1.0.0
  */
-export interface FirstWaypoint {
+interface FirstWaypoint {
 	readonly lat: number;
 	readonly lon: number;
 	readonly name: string;
@@ -801,7 +801,7 @@ export interface FirstWaypoint {
  *
  * @since 1.0.0
  */
-export interface PreviewAnchor {
+interface PreviewAnchor {
 	readonly lat: number;
 	readonly lon: number;
 }
