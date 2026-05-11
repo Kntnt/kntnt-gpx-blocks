@@ -496,37 +496,45 @@ function TypographyToolsPanel( {
 }
 
 /**
- * Renders the "Overlays" inspector panel when the registry is non-empty.
+ * Renders one collapsible inspector panel per overlay provider, plus an
+ * optional orphan panel at the bottom.
  *
  * Reads the validated overlay-provider registry from
  * `window.kntntGpxBlocks.overlays` (populated by
- * `Bootstrap\Editor_Data_Enqueuer`) and renders one sub-section per
- * provider. Each sub-section carries:
+ * `Bootstrap\Editor_Data_Enqueuer`) and emits one `<PanelBody>` per
+ * provider so the inspector stays uncluttered when several overlay
+ * providers are enabled. Each provider's panel renders, in order:
  *
- * - The provider's label as a sub-header.
- * - For `requiresKey === true` providers: an API-key `TextControl` and a
- *   "Get one" `ExternalLink` to `signupUrl` when present. The same key is
- *   shared across every layer of that provider that the editor enables;
- *   the value is read from and written to
- *   `attributes.tileOverlayApiKeys[ providerId ]`.
- * - One `ToggleControl` per layer. The toggle's checked state mirrors
- *   whether the (provider, layer) pair is present in
- *   `attributes.tileOverlays`; toggling adds or removes the pair from the
- *   array, preserving stacking order.
+ * 1. One `ToggleControl` per layer. The toggle's checked state mirrors
+ *    whether the (provider, layer) pair is present in
+ *    `attributes.tileOverlays`; toggling adds or removes the pair from
+ *    the array, preserving stacking order.
+ * 2. For `requiresKey === true` providers: an API-key `TextControl` and
+ *    a "Get one" `ExternalLink` to `signupUrl` when present. The key
+ *    sits below the layer list because the user interacts with the
+ *    list often and configures the key once. The same key is shared
+ *    across every layer of that provider the editor enables; the value
+ *    is read from and written to
+ *    `attributes.tileOverlayApiKeys[ providerId ]`.
+ *
+ * Each provider panel is collapsed by default (`initialOpen={false}`) —
+ * a site builder may enable several overlay providers, and opening
+ * every panel by default would recreate the visual clutter that
+ * motivated this restructure.
  *
  * Stale-state surfacing — orphan saved pairs (the provider is gone, or
- * the layer is gone within a still-present provider) are surfaced at the
- * bottom of the panel as disabled toggles labelled with the orphan ids
- * themselves so the editor reflects persisted state without silently
- * rewriting it. The user removes them by saving the post with different
- * choices or by manually unchecking the disabled toggle (which still
- * fires the standard `onChange` because `disabled` is purely an
- * affordance — the underlying state can be cleared with the same code
- * path).
+ * the layer is gone within a still-present provider) are surfaced in a
+ * separate "Unrecognised overlays" panel at the bottom as disabled
+ * toggles labelled with the orphan ids themselves so the editor
+ * reflects persisted state without silently rewriting it. The user
+ * removes them by saving the post with different choices or by
+ * manually unchecking the disabled toggle (which still fires the
+ * standard `onChange` because `disabled` is purely an affordance — the
+ * underlying state can be cleared with the same code path).
  *
  * When the registry is empty (e.g. a site builder dropped every default
  * overlay provider via the `kntnt_gpx_blocks_tile_overlays` filter) the
- * panel collapses to nothing — the issue spec calls for "no PanelBody",
+ * component renders nothing — the issue spec calls for "no PanelBody",
  * not an empty panel.
  *
  * @since 1.0.0
@@ -554,15 +562,12 @@ function OverlaysPanel( {
 } ): JSX.Element | null {
 	const overlays = window.kntntGpxBlocks?.overlays ?? {};
 	const providerIds = Object.keys( overlays );
-	if ( providerIds.length === 0 ) {
-		return null;
-	}
 
 	// Pre-compute the orphan pairs (saved pairs whose provider is missing
 	// from the registry, or whose layer is missing within a present
-	// provider). They render as disabled toggles at the bottom of the
-	// panel so the editor sees the persisted state rather than having it
-	// silently rewritten on render.
+	// provider). They render in a dedicated panel at the bottom so the
+	// editor sees the persisted state rather than having it silently
+	// rewritten on render.
 	const orphanPairs = selectedPairs.filter( ( pair ) => {
 		const provider = overlays[ pair.provider ];
 		if ( ! provider ) {
@@ -571,8 +576,14 @@ function OverlaysPanel( {
 		return ! provider.layers[ pair.layer ];
 	} );
 
+	// Nothing to render when the registry is empty and no orphan pair
+	// would otherwise pull a panel into existence either.
+	if ( providerIds.length === 0 && orphanPairs.length === 0 ) {
+		return null;
+	}
+
 	return (
-		<PanelBody title={ __( 'Overlays', 'kntnt-gpx-blocks' ) }>
+		<>
 			{ providerIds.map( ( providerId ) => {
 				const provider = overlays[ providerId ];
 				if ( ! provider ) {
@@ -580,47 +591,12 @@ function OverlaysPanel( {
 				}
 				const layerIds = Object.keys( provider.layers );
 				return (
-					<div
+					<PanelBody
 						key={ providerId }
+						title={ provider.label }
+						initialOpen={ false }
 						className="kntnt-gpx-blocks-overlay-provider"
 					>
-						<h3 className="kntnt-gpx-blocks-overlay-provider-label">
-							{ provider.label }
-						</h3>
-						{ provider.requiresKey && (
-							<TextControl
-								__next40pxDefaultSize
-								__nextHasNoMarginBottom
-								label={ __( 'API key', 'kntnt-gpx-blocks' ) }
-								value={ overlayApiKeys[ providerId ] ?? '' }
-								onChange={ ( next: string ) =>
-									onApiKeyChange( providerId, next )
-								}
-								help={
-									provider.signupUrl ? (
-										<>
-											{ __(
-												'This provider requires an API key.',
-												'kntnt-gpx-blocks'
-											) }{ ' ' }
-											<ExternalLink
-												href={ provider.signupUrl }
-											>
-												{ __(
-													'Get one',
-													'kntnt-gpx-blocks'
-												) }
-											</ExternalLink>
-										</>
-									) : (
-										__(
-											"This provider requires an API key. See the provider's documentation.",
-											'kntnt-gpx-blocks'
-										)
-									)
-								}
-							/>
-						) }
 						{ layerIds.map( ( layerId ) => {
 							const layer = provider.layers[ layerId ];
 							if ( ! layer ) {
@@ -665,14 +641,49 @@ function OverlaysPanel( {
 								/>
 							);
 						} ) }
-					</div>
+						{ provider.requiresKey && (
+							<TextControl
+								__next40pxDefaultSize
+								__nextHasNoMarginBottom
+								label={ __( 'API key', 'kntnt-gpx-blocks' ) }
+								value={ overlayApiKeys[ providerId ] ?? '' }
+								onChange={ ( next: string ) =>
+									onApiKeyChange( providerId, next )
+								}
+								help={
+									provider.signupUrl ? (
+										<>
+											{ __(
+												'This provider requires an API key.',
+												'kntnt-gpx-blocks'
+											) }{ ' ' }
+											<ExternalLink
+												href={ provider.signupUrl }
+											>
+												{ __(
+													'Get one',
+													'kntnt-gpx-blocks'
+												) }
+											</ExternalLink>
+										</>
+									) : (
+										__(
+											"This provider requires an API key. See the provider's documentation.",
+											'kntnt-gpx-blocks'
+										)
+									)
+								}
+							/>
+						) }
+					</PanelBody>
 				);
 			} ) }
 			{ orphanPairs.length > 0 && (
-				<div className="kntnt-gpx-blocks-overlay-provider kntnt-gpx-blocks-overlay-orphans">
-					<h3 className="kntnt-gpx-blocks-overlay-provider-label">
-						{ __( 'Unrecognised overlays', 'kntnt-gpx-blocks' ) }
-					</h3>
+				<PanelBody
+					title={ __( 'Unrecognised overlays', 'kntnt-gpx-blocks' ) }
+					initialOpen={ false }
+					className="kntnt-gpx-blocks-overlay-provider kntnt-gpx-blocks-overlay-orphans"
+				>
 					{ orphanPairs.map( ( pair ) => {
 						const orphanLabel = `${ pair.provider } / ${ pair.layer }`;
 						return (
@@ -699,9 +710,9 @@ function OverlaysPanel( {
 							/>
 						);
 					} ) }
-				</div>
+				</PanelBody>
 			) }
-		</PanelBody>
+		</>
 	);
 }
 

@@ -1,14 +1,19 @@
 /**
- * Inspector-shape test for the GPX Map Edit component's Overlays panel
- * (issue #106 — overlay provider/layer hierarchy with per-provider API keys).
+ * Inspector-shape test for the GPX Map Edit component's Overlays panels
+ * (issues #106 + #112 — overlay provider/layer hierarchy with per-provider
+ * API keys, one collapsible PanelBody per provider, key positioned below
+ * the layer list).
  *
- * The Overlays panel now renders one sub-section per overlay provider:
- * provider label header, conditional API-key TextControl + signup
- * ExternalLink for `requiresKey === true` providers, and one
- * ToggleControl per layer. Toggling adds or removes a `{provider, layer}`
- * pair from `attributes.tileOverlays`, preserving stacking order. The
- * single API key per provider is shared across every layer of that
- * provider that the editor enables and lives in
+ * The Overlays surface now renders one collapsible `<PanelBody>` per
+ * overlay provider — titled with the provider label — and inside each
+ * panel the layer toggles render first, then the conditional API-key
+ * TextControl + signup ExternalLink for `requiresKey === true`
+ * providers. The list-then-key order reflects the relative interaction
+ * frequency: the editor toggles layers often and configures the key
+ * once. Toggling adds or removes a `{provider, layer}` pair from
+ * `attributes.tileOverlays`, preserving stacking order. The single API
+ * key per provider is shared across every layer of that provider the
+ * editor enables and lives in
  * `attributes.tileOverlayApiKeys[ providerId ]`.
  *
  * This file mounts `MapEdit` with the Overlays-panel controls captured
@@ -45,8 +50,25 @@ type CapturedTextControl = {
 	onChange: ( next: string ) => void;
 };
 
+/**
+ * Captured `PanelBody` props payload. Each entry corresponds to one
+ * rendered PanelBody in the inspector. The `children` reference is
+ * preserved so individual tests can re-render a single panel in
+ * isolation when they need to assert the local DOM-order of its
+ * children, free from cross-panel noise.
+ *
+ * @since 1.0.0
+ */
+type CapturedPanel = {
+	title: string;
+	initialOpen: boolean | undefined;
+	className: string | undefined;
+	children: React.ReactNode;
+};
+
 const capturedToggles: CapturedToggle[] = [];
 const capturedTextControls: CapturedTextControl[] = [];
+const capturedPanels: CapturedPanel[] = [];
 
 // Mock @wordpress/block-editor — collapses every surface MapEdit reaches.
 jest.mock(
@@ -86,7 +108,20 @@ jest.mock(
 	'@wordpress/components',
 	() => ( {
 		__esModule: true,
-		PanelBody: ( { children }: { children: React.ReactNode } ) => children,
+		PanelBody: ( props: {
+			title?: string;
+			initialOpen?: boolean;
+			className?: string;
+			children?: React.ReactNode;
+		} ) => {
+			capturedPanels.push( {
+				title: props.title ?? '',
+				initialOpen: props.initialOpen,
+				className: props.className,
+				children: props.children,
+			} );
+			return props.children;
+		},
 		ToggleControl: ( props: {
 			label: string;
 			checked: boolean;
@@ -315,7 +350,8 @@ function buildAttributes(
 }
 
 /**
- * Mounts MapEdit and returns captured toggles, text controls, and writes.
+ * Mounts MapEdit and returns captured toggles, text controls, panels,
+ * and writes.
  *
  * @param attributes Attribute payload to feed into MapEdit.
  *
@@ -324,10 +360,12 @@ function buildAttributes(
 function mountAndCapture( attributes: Record< string, unknown > ): {
 	toggles: CapturedToggle[];
 	texts: CapturedTextControl[];
+	panels: CapturedPanel[];
 	writes: Array< Record< string, unknown > >;
 } {
 	capturedToggles.length = 0;
 	capturedTextControls.length = 0;
+	capturedPanels.length = 0;
 	const writes: Array< Record< string, unknown > > = [];
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
@@ -348,7 +386,43 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 	return {
 		toggles: [ ...capturedToggles ],
 		texts: [ ...capturedTextControls ],
+		panels: [ ...capturedPanels ],
 		writes,
+	};
+}
+
+/**
+ * Re-renders a single captured PanelBody's children into an isolated
+ * React root so the resulting `capturedToggles` / `capturedTextControls`
+ * arrays contain only that panel's controls, in DOM order.
+ *
+ * The MapEdit top-level mount yields a flat capture of every toggle and
+ * text-control across the inspector — useful for cross-panel assertions
+ * but unable to verify *within-panel* ordering. Mounting one panel at a
+ * time gives us that ordering on a clean slate.
+ *
+ * @since 1.0.0
+ *
+ * @param panel Captured PanelBody record from a previous mount.
+ *
+ * @return The toggles and texts rendered by this panel only, in
+ *         document order.
+ */
+function captureSinglePanel( panel: CapturedPanel ): {
+	toggles: CapturedToggle[];
+	texts: CapturedTextControl[];
+} {
+	capturedToggles.length = 0;
+	capturedTextControls.length = 0;
+	const container = document.createElement( 'div' );
+	const root = createRoot( container );
+	flushSync( () => {
+		root.render( createElement( 'div', null, panel.children ) );
+	} );
+	root.unmount();
+	return {
+		toggles: [ ...capturedToggles ],
+		texts: [ ...capturedTextControls ],
 	};
 }
 
@@ -627,5 +701,155 @@ describe( 'MapEdit Overlays panel — provider/layer hierarchy (issue #106)', ()
 		expect( orphan ).toBeDefined();
 		expect( orphan?.disabled ).toBe( true );
 		expect( orphan?.checked ).toBe( true );
+	} );
+} );
+
+describe( 'MapEdit Overlays panel — per-provider PanelBody (issue #112)', () => {
+	it( 'renders one PanelBody per overlay provider, titled with the provider label, collapsed by default', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		// Filter the captured panels down to the overlay surface by its
+		// dedicated className — the MapEdit inspector also renders other
+		// PanelBody instances (Controls, Interactions, Waypoint info,
+		// Tiles, etc.) we deliberately do not assert against here.
+		const overlayPanels = panels.filter( ( p ) =>
+			( p.className ?? '' ).includes(
+				'kntnt-gpx-blocks-overlay-provider'
+			)
+		);
+		expect( overlayPanels ).toHaveLength( 3 );
+
+		const titles = overlayPanels.map( ( p ) => p.title );
+		expect( titles ).toEqual( [
+			'Waymarked Trails',
+			'OpenSeaMap',
+			'OpenWeatherMap',
+		] );
+
+		for ( const panel of overlayPanels ) {
+			expect( panel.initialOpen ).toBe( false );
+		}
+	} );
+
+	it( 'inside a key-required provider panel, the layer toggles render before the API-key TextControl', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const owmPanel = panels.find( ( p ) => p.title === 'OpenWeatherMap' );
+		expect( owmPanel ).toBeDefined();
+
+		const { toggles, texts } = captureSinglePanel(
+			owmPanel as CapturedPanel
+		);
+
+		// Three layer toggles, one API-key TextControl, list-then-key.
+		expect( toggles.map( ( t ) => t.label ) ).toEqual( [
+			'Clouds',
+			'Precipitation',
+			'Temperature',
+		] );
+		expect( texts.map( ( t ) => t.label ) ).toEqual( [ 'API key' ] );
+	} );
+
+	it( 'inside a free provider panel, no API-key TextControl is rendered', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const seamapPanel = panels.find( ( p ) => p.title === 'OpenSeaMap' );
+		expect( seamapPanel ).toBeDefined();
+
+		const { toggles, texts } = captureSinglePanel(
+			seamapPanel as CapturedPanel
+		);
+		expect( toggles.map( ( t ) => t.label ) ).toEqual( [ 'Sea marks' ] );
+		expect( texts ).toEqual( [] );
+	} );
+
+	it( 'renders no overlay PanelBody at all when the overlay registry is empty', () => {
+		const original = ( globalThis as { kntntGpxBlocks?: unknown } )
+			.kntntGpxBlocks as {
+			providers: unknown;
+			overlays: Record< string, unknown >;
+		};
+
+		try {
+			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks = {
+				providers: original.providers,
+				overlays: {},
+			};
+			const { panels } = mountAndCapture( buildAttributes() );
+			const overlayPanels = panels.filter( ( p ) =>
+				( p.className ?? '' ).includes(
+					'kntnt-gpx-blocks-overlay-provider'
+				)
+			);
+			expect( overlayPanels ).toEqual( [] );
+		} finally {
+			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks =
+				original;
+		}
+	} );
+
+	it( 'gracefully handles an overlay provider that declares no layers — panel renders with only the API-key field', () => {
+		const original = ( globalThis as { kntntGpxBlocks?: unknown } )
+			.kntntGpxBlocks as {
+			providers: unknown;
+			overlays: Record< string, unknown >;
+		};
+
+		try {
+			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks = {
+				providers: original.providers,
+				overlays: {
+					'empty-paid-provider': {
+						label: 'Empty Paid Provider',
+						requiresKey: true,
+						signupUrl: 'https://example.test/signup',
+						layers: {},
+					},
+				},
+			};
+			const { panels } = mountAndCapture( buildAttributes() );
+			const overlayPanels = panels.filter( ( p ) =>
+				( p.className ?? '' ).includes(
+					'kntnt-gpx-blocks-overlay-provider'
+				)
+			);
+			expect( overlayPanels ).toHaveLength( 1 );
+			expect( overlayPanels[ 0 ].title ).toBe( 'Empty Paid Provider' );
+
+			const { toggles, texts } = captureSinglePanel( overlayPanels[ 0 ] );
+			expect( toggles ).toEqual( [] );
+			expect( texts.map( ( t ) => t.label ) ).toEqual( [ 'API key' ] );
+		} finally {
+			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks =
+				original;
+		}
+	} );
+
+	it( 'orphans render in their own collapsible PanelBody at the bottom of the overlay panels', () => {
+		const { panels } = mountAndCapture(
+			buildAttributes( {
+				tileOverlays: [
+					{ provider: 'dropped-by-filter', layer: 'whatever' },
+				],
+			} )
+		);
+
+		const overlayPanels = panels.filter( ( p ) =>
+			( p.className ?? '' ).includes(
+				'kntnt-gpx-blocks-overlay-provider'
+			)
+		);
+
+		// The provider panels still render plus an additional orphan
+		// panel at the end with its distinctive className modifier.
+		expect(
+			overlayPanels[ overlayPanels.length - 1 ].className ?? ''
+		).toContain( 'kntnt-gpx-blocks-overlay-orphans' );
+		expect( overlayPanels[ overlayPanels.length - 1 ].title ).toBe(
+			'Unrecognised overlays'
+		);
+		expect( overlayPanels[ overlayPanels.length - 1 ].initialOpen ).toBe(
+			false
+		);
 	} );
 } );
