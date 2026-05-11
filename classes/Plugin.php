@@ -83,131 +83,6 @@ final class Plugin {
 	private static ?array $plugin_data = null;
 
 	/**
-	 * The Updater instance bound to the update-transient filter.
-	 *
-	 * Held as a property so the array callable passed to add_filter() keeps a
-	 * strong reference to the object for the lifetime of the request.
-	 *
-	 * @since 1.0.0
-	 * @var Updater|null
-	 */
-	private ?Updater $updater = null;
-
-	/**
-	 * The Consent_Stub instance bound to wp_enqueue_scripts.
-	 *
-	 * Held as a property so the array callable passed to add_action() keeps a
-	 * strong reference to the object for the lifetime of the request.
-	 *
-	 * @since 1.0.0
-	 * @var Consent\Consent_Stub|null
-	 */
-	private ?Consent\Consent_Stub $consent_stub = null;
-
-	/**
-	 * The Preview_Controller instance bound to rest_api_init.
-	 *
-	 * Held as a property so the array callable passed to add_action() keeps a
-	 * strong reference to the object for the lifetime of the request.
-	 *
-	 * @since 1.0.0
-	 * @var Rest\Preview_Controller|null
-	 */
-	private ?Rest\Preview_Controller $preview_controller = null;
-
-	/**
-	 * The Statistics_Shortcode instance bound to init.
-	 *
-	 * Held as a property so the array callable passed to add_action() keeps a
-	 * strong reference to the object for the lifetime of the request — and
-	 * so the shortcode's per-request memo of resolved (post, map) pairs
-	 * survives across the five inline shortcodes per inserted variation.
-	 *
-	 * @since 1.0.0
-	 * @var Bindings\Statistics_Shortcode|null
-	 */
-	private ?Bindings\Statistics_Shortcode $statistics_shortcode = null;
-
-	/**
-	 * The Variation_Registrar instance bound to enqueue_block_editor_assets.
-	 *
-	 * Held as a property so the array callable passed to add_action() keeps a
-	 * strong reference to the object for the lifetime of the request.
-	 *
-	 * @since 1.0.0
-	 * @var Bootstrap\Variation_Registrar|null
-	 */
-	private ?Bootstrap\Variation_Registrar $variation_registrar = null;
-
-	/**
-	 * The Editor_Data_Enqueuer instance bound to enqueue_block_editor_assets.
-	 *
-	 * Held as a property so the array callable passed to add_action() keeps a
-	 * strong reference to the object for the lifetime of the request.
-	 *
-	 * @since 1.0.0
-	 * @var Bootstrap\Editor_Data_Enqueuer|null
-	 */
-	private ?Bootstrap\Editor_Data_Enqueuer $editor_data_enqueuer = null;
-
-	/**
-	 * The Theme_Json_Border_Optin instance bound to wp_theme_json_data_theme.
-	 *
-	 * Held as a property so the array callable passed to add_filter() keeps a
-	 * strong reference to the object for the lifetime of the request. Issue
-	 * #87: surfaces the Border panel on the Map and Elevation blocks across
-	 * themes that haven't opted in via their own theme.json.
-	 *
-	 * @since 1.0.0
-	 * @var Bootstrap\Theme_Json_Border_Optin|null
-	 */
-	private ?Bootstrap\Theme_Json_Border_Optin $theme_json_border_optin = null;
-
-	/**
-	 * The Theme_Json_Aspect_Ratios instance bound to wp_theme_json_data_theme.
-	 *
-	 * Held as a property so the array callable passed to add_filter() keeps a
-	 * strong reference to the object for the lifetime of the request. Issue
-	 * #108: extends the editor's aspect-ratio dropdown for Map and Elevation
-	 * with six panorama-friendly presets, while leaving every other block on
-	 * the site untouched.
-	 *
-	 * @since 1.0.0
-	 * @var Bootstrap\Theme_Json_Aspect_Ratios|null
-	 */
-	private ?Bootstrap\Theme_Json_Aspect_Ratios $theme_json_aspect_ratios = null;
-
-	/**
-	 * The Border_Radius_Normalizer instance bound to render_block_data.
-	 *
-	 * Held as a property so the array callable passed to add_filter() keeps a
-	 * strong reference to the object for the lifetime of the request. Issue
-	 * #109: collapses the per-corner border-radius object form to the unified
-	 * shorthand string when all non-empty corners agree, so the frontend
-	 * wrapper matches the editor preview when one corner is stored as the
-	 * empty string.
-	 *
-	 * @since 1.0.0
-	 * @var Bootstrap\Border_Radius_Normalizer|null
-	 */
-	private ?Bootstrap\Border_Radius_Normalizer $border_radius_normalizer = null;
-
-	/**
-	 * The Dimensions_Defaults instance bound to render_block_data.
-	 *
-	 * Held as a property so the array callable passed to add_filter() keeps a
-	 * strong reference to the object for the lifetime of the request. Issue
-	 * #117: normalises `style.dimensions.minHeight` to the per-block default
-	 * (`30vh` on Map, `15vh` on Elevation) when both `minHeight` and
-	 * `aspectRatio` are blank, so every downstream consumer reads the value
-	 * through the same path an explicit user value would take.
-	 *
-	 * @since 1.0.0
-	 * @var Rendering\Dimensions_Defaults|null
-	 */
-	private ?Rendering\Dimensions_Defaults $dimensions_defaults = null;
-
-	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -392,6 +267,11 @@ final class Plugin {
 	 * order; each registers its own actions and filters here so the constructor
 	 * remains the single authoritative place to trace the hook graph.
 	 *
+	 * Component instances are local variables. The global `$wp_filter` array
+	 * (and `$shortcode_tags` for the shortcode handler) holds the bound
+	 * array callable `[$object, 'method']`, which keeps the object alive for
+	 * the lifetime of the request.
+	 *
 	 * @since 1.0.0
 	 */
 	private function __construct() {
@@ -427,63 +307,67 @@ final class Plugin {
 		}
 
 		// Wire the update checker to the WordPress update transient.
-		$this->updater = new Updater();
-		add_filter( 'pre_set_site_transient_update_plugins', [ $this->updater, 'check_for_updates' ] );
+		$updater = new Updater();
+		add_filter( 'pre_set_site_transient_update_plugins', [ $updater, 'check_for_updates' ] );
 
 		// Inline the consent-contract stub in <head> on every frontend request.
 		// docs/consent.md requires the stub to load before any block view module
 		// reads window.kntnt_gpx_blocks, which wp_enqueue_scripts at default
 		// priority guarantees.
-		$this->consent_stub = new Consent\Consent_Stub();
-		add_action( 'wp_enqueue_scripts', [ $this->consent_stub, 'enqueue' ] );
+		$consent_stub = new Consent\Consent_Stub();
+		add_action( 'wp_enqueue_scripts', [ $consent_stub, 'enqueue' ] );
 
 		// Register the editor-only preview REST endpoint so the GPX Map block's
 		// Edit component can fetch cached GeoJSON without going through
 		// ServerSideRender. The Interactivity API does not bootstrap inside
 		// SSR-injected DOM in the editor, so the editor mounts Leaflet via a
 		// React useEffect against this endpoint.
-		$this->preview_controller = new Rest\Preview_Controller( $attachment_cache );
-		add_action( 'rest_api_init', [ $this->preview_controller, 'register_routes' ] );
+		$preview_controller = new Rest\Preview_Controller( $attachment_cache );
+		add_action( 'rest_api_init', [ $preview_controller, 'register_routes' ] );
 
 		// Register the [kntnt-gpx <key>] shortcode that exposes the cached
 		// GPX statistics anywhere shortcodes resolve. The GPX Statistics
 		// block-variation ships five `core/paragraph`s whose `content`
 		// contains the shortcode inline; the same shortcode is equally
 		// available in any other paragraph, heading, list item, classic
-		// block, or widget on the page.
-		$this->statistics_shortcode = new Bindings\Statistics_Shortcode( $attachment_cache );
-		add_action( 'init', [ $this->statistics_shortcode, 'register' ] );
+		// block, or widget on the page. The shortcode's per-request memo
+		// of resolved (post, map) pairs survives across the five inline
+		// calls because add_shortcode() retains the same array callable
+		// — and therefore the same object — in the global $shortcode_tags
+		// registry for the lifetime of the request.
+		$statistics_shortcode = new Bindings\Statistics_Shortcode( $attachment_cache );
+		add_action( 'init', [ $statistics_shortcode, 'register' ] );
 
 		// Enqueue the editor-only script that registers the GPX Statistics
 		// block variation of core/group. The variation surfaces the layout
 		// in the main block inserter (under the kntnt category), with the
 		// same bindings on the inner paragraphs as a manual insertion.
-		$this->variation_registrar = new Bootstrap\Variation_Registrar();
-		add_action( 'enqueue_block_editor_assets', [ $this->variation_registrar, 'enqueue' ] );
+		$variation_registrar = new Bootstrap\Variation_Registrar();
+		add_action( 'enqueue_block_editor_assets', [ $variation_registrar, 'enqueue' ] );
 
 		// Inline `window.kntntGpxBlocks` with the validated tile-provider and
 		// overlay registries on every editor request so the GPX Map block's
 		// Inspector controls can enumerate them. Both the per-block tile
 		// dropdown (issue #79) and the overlay toggles (issue #80) read from
 		// this single global.
-		$this->editor_data_enqueuer = new Bootstrap\Editor_Data_Enqueuer();
-		add_action( 'enqueue_block_editor_assets', [ $this->editor_data_enqueuer, 'enqueue' ] );
+		$editor_data_enqueuer = new Bootstrap\Editor_Data_Enqueuer();
+		add_action( 'enqueue_block_editor_assets', [ $editor_data_enqueuer, 'enqueue' ] );
 
 		// Opt the Map and Elevation blocks into the editor's Border panel via
 		// the theme.json data layer (issue #87). The block.json declarations
 		// alone aren't enough on themes that don't enable appearanceTools or
 		// per-feature border settings; the per-block opt-in here surfaces
 		// the panel regardless of the active theme.
-		$this->theme_json_border_optin = new Bootstrap\Theme_Json_Border_Optin();
-		add_filter( 'wp_theme_json_data_theme', [ $this->theme_json_border_optin, 'filter' ] );
+		$theme_json_border_optin = new Bootstrap\Theme_Json_Border_Optin();
+		add_filter( 'wp_theme_json_data_theme', [ $theme_json_border_optin, 'filter' ] );
 
 		// Extend the editor's Dimensions → Aspect ratio dropdown for the Map
 		// and Elevation blocks with six panorama-friendly presets (issue #108).
 		// Core's WP_Theme_JSON::merge_lists() deduplicates by slug, so the
 		// kntnt-prefixed entries append to whatever the active theme exposes.
 		// Other blocks see the dropdown unchanged.
-		$this->theme_json_aspect_ratios = new Bootstrap\Theme_Json_Aspect_Ratios();
-		add_filter( 'wp_theme_json_data_theme', [ $this->theme_json_aspect_ratios, 'filter' ] );
+		$theme_json_aspect_ratios = new Bootstrap\Theme_Json_Aspect_Ratios();
+		add_filter( 'wp_theme_json_data_theme', [ $theme_json_aspect_ratios, 'filter' ] );
 
 		// Normalise the per-corner `style.border.radius` shape on the two
 		// blocks before the wrapper is rendered (issue #109). Gutenberg
@@ -493,8 +377,8 @@ final class Plugin {
 		// Collapsing the object to the unified string when every non-empty
 		// corner agrees produces the four-rounded-corner output the editor
 		// preview promised.
-		$this->border_radius_normalizer = new Bootstrap\Border_Radius_Normalizer();
-		add_filter( 'render_block_data', [ $this->border_radius_normalizer, 'filter' ] );
+		$border_radius_normalizer = new Bootstrap\Border_Radius_Normalizer();
+		add_filter( 'render_block_data', [ $border_radius_normalizer, 'filter' ] );
 
 		// Normalise the plugin-defined `min-height` default on the two
 		// blocks before the wrapper is rendered (issue #117). When both
@@ -505,8 +389,8 @@ final class Plugin {
 		// SCSS baseline, the editor's `useBlockProps()` style merge —
 		// then sees a concrete value through the standard block-supports
 		// pipeline, the same path an explicit user value would take.
-		$this->dimensions_defaults = new Rendering\Dimensions_Defaults();
-		add_filter( 'render_block_data', [ $this->dimensions_defaults, 'filter' ] );
+		$dimensions_defaults = new Rendering\Dimensions_Defaults();
+		add_filter( 'render_block_data', [ $dimensions_defaults, 'filter' ] );
 
 	}
 

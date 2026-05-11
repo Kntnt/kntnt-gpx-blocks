@@ -26,9 +26,8 @@ use Kntnt\Gpx_Blocks\Plugin;
 /**
  * Enqueues the inline consent-contract stub.
  *
- * Constructed once by Plugin and held there as a strong reference so the array
- * callable passed to add_action() survives the request. Has no per-instance
- * state.
+ * Constructed once by Plugin and bound to wp_enqueue_scripts. Has no
+ * per-instance state.
  *
  * @package Kntnt\Gpx_Blocks
  * @since 1.0.0

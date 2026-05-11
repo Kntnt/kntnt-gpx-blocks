@@ -470,6 +470,56 @@ test( 'memoizes resolve and fetch across five calls for the same (post, map) pai
 
 } );
 
+test( 'five inline shortcodes per inserted variation hit the cache exactly once', function (): void {
+
+	// Validates the caveat in issue #121: now that Statistics_Shortcode lives
+	// only inside $shortcode_tags (no Plugin::$statistics_shortcode), the
+	// per-request memo must still collapse the five inline renders down to a
+	// single cache fetch. The statistics meta key is read exactly once by
+	// Attachment_Cache::get(), so counting `get_post_meta($id, '_kntnt_gpx_blocks_statistics', true)`
+	// is a faithful proxy for "one cache fetch".
+	shortcode_stub_get_post( 1 );
+	shortcode_stub_get_the_id( 1 );
+	Functions\when( 'parse_blocks' )->justReturn( [ shortcode_map_block( 42 ) ] );
+	Functions\when( 'get_attached_file' )->alias(
+		static fn ( int $id ): string|false => $id === 42 ? shortcode_fixture_path() : false
+	);
+
+	$path  = shortcode_fixture_path();
+	$hash  = md5_file( $path );
+	$stats = shortcode_full_stats();
+
+	// Route every meta read through a single closure so we can count exactly
+	// the one read that represents the cache fetch.
+	$statistics_reads = 0;
+	Functions\when( 'get_post_meta' )->alias(
+		static function ( int $id, string $key, bool $single ) use ( &$statistics_reads, $stats, $hash ): mixed {
+			if ( $id !== 42 || ! $single ) {
+				return '' === $single ? [] : '';
+			}
+			if ( '_kntnt_gpx_blocks_statistics' === $key ) {
+				$statistics_reads++;
+				return $stats;
+			}
+			return match ( $key ) {
+				'_kntnt_gpx_blocks_geojson'     => json_encode( [ 'type' => 'FeatureCollection', 'features' => [] ] ),
+				'_kntnt_gpx_blocks_version'     => Cache_Version::CURRENT,
+				'_kntnt_gpx_blocks_source_hash' => $hash,
+				default                         => '',
+			};
+		}
+	);
+
+	$shortcode = new Statistics_Shortcode();
+
+	foreach ( [ 'distance', 'min-elevation', 'max-elevation', 'ascent', 'descent' ] as $key ) {
+		$shortcode->render( [ 0 => $key ] );
+	}
+
+	expect( $statistics_reads )->toBe( 1 );
+
+} );
+
 test( 'memoizes resolve errors so subsequent calls do not re-invoke parse_blocks', function (): void {
 
 	shortcode_stub_get_post( 1 );

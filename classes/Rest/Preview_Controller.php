@@ -28,9 +28,8 @@ use Kntnt\Gpx_Blocks\Rendering\Render_Error;
 /**
  * Registers and serves the editor-only preview endpoint.
  *
- * Constructed once by Plugin and held there as a strong reference so the
- * array callable passed to add_action() survives the request. Has no
- * per-instance state.
+ * Constructed once by Plugin and bound to rest_api_init. Has no per-instance
+ * state beyond the injected cache.
  *
  * @package Kntnt\Gpx_Blocks
  * @since 1.0.0

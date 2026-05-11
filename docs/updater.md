@@ -46,7 +46,7 @@ $updater = new Updater();
 add_filter( 'pre_set_site_transient_update_plugins', [ $updater, 'check_for_updates' ] );
 ```
 
-The `Updater` instance is held on the singleton so the bound array callable stays valid. There is no `unhook` path; the filter runs for the lifetime of the request.
+The bound array callable `[$updater, 'check_for_updates']` is stored in WordPress's global `$wp_filter` registry, which keeps the `Updater` instance alive for the lifetime of the request. There is no `unhook` path; the filter runs for the lifetime of the request.
 
 ## What the Updater does **not** do
 
