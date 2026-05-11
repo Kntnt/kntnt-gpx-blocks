@@ -59,6 +59,7 @@ import {
 	type EditorProviderRecord,
 } from './editor-preview';
 import { flattenPresets } from '../shared/flatten-presets';
+import { getDefaultMinHeight } from '../shared/dimensions-defaults';
 import { substituteTileApiKey } from './tile-key';
 import { detectPreviewNotices } from './preview-notices';
 
@@ -1214,20 +1215,21 @@ export const MapEdit = ( {
 		flattenPresets< FontFamilyPreset >( themeFontFamilies );
 	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
 
-	// Apply the plugin-defined default `min-height` when the editor has not
-	// set one (issue #115). Without this, toggling the Dimensions panel's
-	// aspect-ratio away from Original and back leaves min-height blank and
-	// core emits `aspect-ratio: unset` inline, defeating the SCSS baseline
-	// and collapsing the wrapper to zero height. useBlockProps merges core's
-	// dimensions block-supports on top of the style passed in, so a user-set
-	// `style.dimensions.minHeight` still wins.
-	const userMinHeight = (
-		attributes as { style?: { dimensions?: { minHeight?: unknown } } }
-	 ).style?.dimensions?.minHeight;
-	const minHeightDefault: React.CSSProperties =
-		typeof userMinHeight === 'string' && userMinHeight !== ''
-			? {}
-			: { minHeight: '30vh' };
+	// Resolve the plugin-defined default `min-height` for the wrapper.
+	// `getDefaultMinHeight()` returns `'30vh'` when the user has set
+	// neither minHeight nor aspectRatio on this block — the same
+	// condition the server-side `Dimensions_Defaults` filter checks —
+	// and `undefined` in every other case. When the value is
+	// `undefined`, no inline minHeight is injected here and core's
+	// dimensions block-supports machinery surfaces whatever the user
+	// chose. Issue #117 centralises this rule between PHP and JS.
+	const defaultMinHeight = getDefaultMinHeight(
+		'kntnt-gpx-blocks/map',
+		attributes
+	);
+	const minHeightDefault: React.CSSProperties = defaultMinHeight
+		? { minHeight: defaultMinHeight }
+		: {};
 
 	// Inject the project class so the shared style.scss rules (layout
 	// baseline, focus styles, hit-band styling, tooltip styling, …) apply to

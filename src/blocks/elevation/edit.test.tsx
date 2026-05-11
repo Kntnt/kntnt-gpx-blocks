@@ -214,7 +214,7 @@ describe( 'ElevationEdit ServerSideRender attributes', () => {
 	} );
 } );
 
-describe( 'ElevationEdit wrapper min-height default (issue #115)', () => {
+describe( 'ElevationEdit wrapper min-height default (issue #117)', () => {
 	beforeEach( () => {
 		capturedAttributes.length = 0;
 		capturedBlockPropsStyles.length = 0;
@@ -290,7 +290,7 @@ describe( 'ElevationEdit wrapper min-height default (issue #115)', () => {
 		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '15vh' );
 	} );
 
-	it( 'omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
+	it( 'C3: omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
 		const container = document.createElement( 'div' );
 		const root = createRoot( container );
 		flushSync( () => {
@@ -312,5 +312,58 @@ describe( 'ElevationEdit wrapper min-height default (issue #115)', () => {
 		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
 			'minHeight'
 		);
+	} );
+
+	it( 'C4: omits the default when style.dimensions.aspectRatio is set, even if minHeight is blank', () => {
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( ElevationEdit, {
+					attributes: buildAttributes( {
+						style: {
+							dimensions: {
+								minHeight: '',
+								aspectRatio: '16/9',
+							},
+						},
+					} ),
+					setAttributes: () => {},
+					clientId: 'test',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/elevation',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
+			'minHeight'
+		);
+	} );
+
+	it( 'C6: does not call setAttributes while computing the default', () => {
+		// Mirrors the MapEdit C6 assertion — the default is invisible
+		// and must not be written back into saved post content.
+		const writes: Array< Record< string, unknown > > = [];
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( ElevationEdit, {
+					attributes: buildAttributes(),
+					setAttributes: ( next: Record< string, unknown > ) => {
+						writes.push( next );
+					},
+					clientId: 'test',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/elevation',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( writes ).toEqual( [] );
 	} );
 } );

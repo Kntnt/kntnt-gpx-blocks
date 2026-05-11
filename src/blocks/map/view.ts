@@ -42,7 +42,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
-import { isCenterUsableForMaxBounds, paddedBoundsFromBox } from './bounds';
+import { applyMaxBoundsIfSafe, paddedBoundsFromBox } from './bounds';
 import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
 import {
 	addTiles,
@@ -723,30 +723,34 @@ function bootMount(
 				// minimum span before padding; structurally invalid input
 				// returns `null` and is skipped.
 				//
-				// The post-`fitBounds` center is also guarded: if the
+				// The post-`fitBounds` state is also guarded: if the
 				// container still has zero width at this point (some flex
 				// or grid parents hold off width assignment past the
 				// IntersectionObserver callback), Leaflet's fitBounds math
-				// goes to `scale = -Infinity` and produces a NaN center.
-				// Calling `setMaxBounds` with a finite bbox while the center
-				// is NaN trips Leaflet's internal `_panInsideMaxBounds`,
-				// which unprojects the NaN center and throws (issue #116).
-				// Skipping the constraint in that branch keeps the polyline
-				// visible — the worst case is unconstrained panning, which
-				// is the pre-#110 behaviour.
-				if ( isCenterUsableForMaxBounds( map.getCenter() ) ) {
-					const sw = bounds.getSouthWest();
-					const ne = bounds.getNorthEast();
-					const padded = paddedBoundsFromBox( {
-						southWest: [ sw.lat, sw.lng ],
-						northEast: [ ne.lat, ne.lng ],
-					} );
-					if ( padded ) {
-						map.setMaxBounds( [
-							padded.southWest,
-							padded.northEast,
-						] );
-					}
+				// goes to `scale = -Infinity` and produces a NaN center
+				// or a NaN zoom (and sometimes both — issue #116 first
+				// surfaced the center half, issue #117 the zoom half).
+				// Calling `setMaxBounds` while either is non-finite trips
+				// Leaflet's internal `_panInsideMaxBounds`, which
+				// unprojects the bad value and throws "Invalid LatLng
+				// object: (NaN, NaN)". This guard is the backstop —
+				// `Dimensions_Defaults` already prevents the zero-size
+				// state from arising during a normal page render — and
+				// should never fire on a healthy page. Skipping the
+				// constraint in the rare bad-state branch keeps the
+				// polyline visible at the cost of unconstrained panning,
+				// which is the pre-#110 behaviour.
+				const sw = bounds.getSouthWest();
+				const ne = bounds.getNorthEast();
+				const padded = paddedBoundsFromBox( {
+					southWest: [ sw.lat, sw.lng ],
+					northEast: [ ne.lat, ne.lng ],
+				} );
+				if ( padded ) {
+					applyMaxBoundsIfSafe( map, [
+						padded.southWest,
+						padded.northEast,
+					] );
 				}
 			}
 

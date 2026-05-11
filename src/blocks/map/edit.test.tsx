@@ -534,15 +534,15 @@ describe( 'MapEdit typography panel cleanup (issue #85)', () => {
 	} );
 } );
 
-describe( 'MapEdit wrapper min-height default (issue #115)', () => {
-	it( 'injects minHeight 30vh when style.dimensions.minHeight is missing', () => {
+describe( 'MapEdit wrapper min-height default (issue #117)', () => {
+	it( 'C5: useBlockProps receives minHeight 30vh when style.dimensions.minHeight is missing', () => {
 		renderAndCapture( buildAttributes() );
 
 		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
 		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
 	} );
 
-	it( 'injects minHeight 30vh when style.dimensions.minHeight is blank', () => {
+	it( 'useBlockProps receives minHeight 30vh when style.dimensions.minHeight is blank', () => {
 		renderAndCapture(
 			buildAttributes( { style: { dimensions: { minHeight: '' } } } )
 		);
@@ -551,8 +551,8 @@ describe( 'MapEdit wrapper min-height default (issue #115)', () => {
 		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
 	} );
 
-	it( 'injects minHeight 30vh in the Original-after-toggle case (aspectRatio cleared, minHeight blank)', () => {
-		// Reproduces the editor sequence from the issue: user picked a
+	it( 'useBlockProps receives minHeight 30vh in the Original-after-toggle case', () => {
+		// Reproduces the editor sequence from issue #115: user picked a
 		// non-Original aspect-ratio (which cleared minHeight), then toggled
 		// it back to Original (which cleared aspectRatio). Both attributes
 		// land empty under style.dimensions.
@@ -566,7 +566,7 @@ describe( 'MapEdit wrapper min-height default (issue #115)', () => {
 		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
 	} );
 
-	it( 'omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
+	it( 'C3: omits the default when style.dimensions.minHeight is an explicit non-empty string', () => {
 		renderAndCapture(
 			buildAttributes( {
 				style: { dimensions: { minHeight: '500px' } },
@@ -577,5 +577,55 @@ describe( 'MapEdit wrapper min-height default (issue #115)', () => {
 		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
 			'minHeight'
 		);
+	} );
+
+	it( 'C4: omits the default when style.dimensions.aspectRatio is set, even if minHeight is blank', () => {
+		// When the user picks a non-Original aspect-ratio the container
+		// already has a definite height; adding a min-height on top
+		// would fight that constraint. The editor must therefore skip
+		// the inline injection — same condition the server-side
+		// Dimensions_Defaults filter checks.
+		renderAndCapture(
+			buildAttributes( {
+				style: {
+					dimensions: { minHeight: '', aspectRatio: '16/9' },
+				},
+			} )
+		);
+
+		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
+		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
+			'minHeight'
+		);
+	} );
+
+	it( 'C6: does not call setAttributes while computing the default', () => {
+		// The default is invisible: the user still sees a blank Minimum
+		// height field in the Dimensions panel after the editor renders.
+		// A setAttributes call would write the default back into saved
+		// post content and break that contract.
+		const writes: Array< Record< string, unknown > > = [];
+		capturedColorPanels.length = 0;
+		capturedPanelBodies.length = 0;
+		capturedBlockPropsStyles.length = 0;
+
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( MapEdit, {
+					attributes: buildAttributes(),
+					setAttributes: ( next: Record< string, unknown > ) => {
+						writes.push( next );
+					},
+					clientId: 'test-client',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/map',
+				} as never )
+			);
+		} );
+		root.unmount();
+
+		expect( writes ).toEqual( [] );
 	} );
 } );

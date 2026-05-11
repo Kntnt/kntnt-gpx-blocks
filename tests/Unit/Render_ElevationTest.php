@@ -858,11 +858,11 @@ test( 'ignores legacy axisFont* attributes left over from an older save', functi
 
 	$html = Render_Elevation::render(
 		[
-			'mapId'           => 'auto',
-			'axisFontFamily'  => 'Comic Sans MS',
-			'axisFontSize'    => '16px',
-			'axisFontWeight'  => 'bold',
-			'axisFontStyle'   => 'italic',
+			'mapId'          => 'auto',
+			'axisFontFamily' => 'Comic Sans MS',
+			'axisFontSize'   => '16px',
+			'axisFontWeight' => 'bold',
+			'axisFontStyle'  => 'italic',
 		],
 		'',
 		elev_fake_block( 24 ),
@@ -886,11 +886,11 @@ test( 'ignores legacy tooltipFont* attributes left over from an older save', fun
 
 	$html = Render_Elevation::render(
 		[
-			'mapId'              => 'auto',
-			'tooltipFontFamily'  => 'Comic Sans MS',
-			'tooltipFontSize'    => '20px',
-			'tooltipFontWeight'  => 'bold',
-			'tooltipFontStyle'   => 'italic',
+			'mapId'             => 'auto',
+			'tooltipFontFamily' => 'Comic Sans MS',
+			'tooltipFontSize'   => '20px',
+			'tooltipFontWeight' => 'bold',
+			'tooltipFontStyle'  => 'italic',
 		],
 		'',
 		elev_fake_block( 25 ),
@@ -1313,7 +1313,10 @@ test( 'wrapper carries alignwide on the normal path when align is "wide"', funct
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'wide' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'align' => 'wide' ],
+		[
+			'mapId' => 'auto',
+			'align' => 'wide',
+		],
 		'',
 		elev_fake_block( 100 ),
 	);
@@ -1328,7 +1331,10 @@ test( 'wrapper carries alignfull on the normal path when align is "full"', funct
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'full' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'align' => 'full' ],
+		[
+			'mapId' => 'auto',
+			'align' => 'full',
+		],
 		'',
 		elev_fake_block( 101 ),
 	);
@@ -1343,7 +1349,10 @@ test( 'wrapper carries HTML id on the normal path when anchor is set', function 
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'anchor' => 'profile-section' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'anchor' => 'profile-section' ],
+		[
+			'mapId'  => 'auto',
+			'anchor' => 'profile-section',
+		],
 		'',
 		elev_fake_block( 102 ),
 	);
@@ -1358,7 +1367,10 @@ test( 'wrapper carries the user-supplied additional CSS class on the normal path
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'className' => 'is-style-rounded my-extra-class' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'className' => 'is-style-rounded my-extra-class' ],
+		[
+			'mapId'     => 'auto',
+			'className' => 'is-style-rounded my-extra-class',
+		],
 		'',
 		elev_fake_block( 103 ),
 	);
@@ -1380,7 +1392,10 @@ test( 'empty-state wrapper carries alignwide when align is "wide"', function ():
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'wide' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'align' => 'wide' ],
+		[
+			'mapId' => 'auto',
+			'align' => 'wide',
+		],
 		'',
 		elev_fake_block( 110 ),
 	);
@@ -1397,7 +1412,10 @@ test( 'empty-state wrapper carries alignfull when align is "full"', function ():
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'align' => 'full' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'align' => 'full' ],
+		[
+			'mapId' => 'auto',
+			'align' => 'full',
+		],
 		'',
 		elev_fake_block( 111 ),
 	);
@@ -1414,7 +1432,10 @@ test( 'empty-state wrapper carries HTML id when anchor is set', function (): voi
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'anchor' => 'no-elevation-here' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'anchor' => 'no-elevation-here' ],
+		[
+			'mapId'  => 'auto',
+			'anchor' => 'no-elevation-here',
+		],
 		'',
 		elev_fake_block( 112 ),
 	);
@@ -1431,7 +1452,10 @@ test( 'empty-state wrapper carries the user-supplied additional CSS class', func
 	$GLOBALS['kntnt_elev_test_attrs'] = [ 'className' => 'is-style-rounded my-extra-class' ];
 
 	$html = Render_Elevation::render(
-		[ 'mapId' => 'auto', 'className' => 'is-style-rounded my-extra-class' ],
+		[
+			'mapId'     => 'auto',
+			'className' => 'is-style-rounded my-extra-class',
+		],
 		'',
 		elev_fake_block( 113 ),
 	);
@@ -1800,10 +1824,10 @@ test( 'inline style is terminated so core-appended per-corner border-radius surv
 
 	$html = Render_Elevation::render(
 		[
-			'mapId'         => 'auto',
-			'axisColor'     => '#111111',
-			'lineColor'     => '#0073aa',
-			'tooltipColor'  => '#222222',
+			'mapId'        => 'auto',
+			'axisColor'    => '#111111',
+			'lineColor'    => '#0073aa',
+			'tooltipColor' => '#222222',
 		],
 		'',
 		elev_fake_block( 500 ),
@@ -1849,100 +1873,135 @@ test( 'inline style is terminated so core-appended per-corner border-radius surv
 } );
 
 // ---------------------------------------------------------------------------
-// Issue #115 — the plugin-defined default `min-height: 15vh` is emitted
-// inline on the wrapper whenever `style.dimensions.minHeight` is blank or
-// missing. The buggy state core leaves the editor in after toggling
-// aspect-ratio away from Original and back — a blank min-height field
-// combined with an inline `aspect-ratio: unset` — defeats the SCSS
-// baseline and collapses the wrapper to zero height. An always-on inline
-// default beats the inline `aspect-ratio: unset` because it is itself an
-// explicit inline declaration.
+// Issue #117 — the plugin-defined default `min-height` is normalised at
+// the attribute source through the `Dimensions_Defaults` filter, not
+// per-consumer inline injection inside `Render_Elevation::render()`. The
+// tests here invoke the filter on a parsed block, hand its output to
+// render, and assert that the wrapper inline style carries the value
+// through core's `get_block_wrapper_attributes()` pipeline (simulated
+// in the test harness) instead of plugin-side string concatenation.
 // ---------------------------------------------------------------------------
 
-test( 'inline min-height default is emitted when style.dimensions.minHeight is missing (issue #115)', function (): void {
+/**
+ * Simulates core's dimensions block-supports CSS emission from a
+ * `style.dimensions` slot for the Elevation tests' harness.
+ *
+ * @param array<string,mixed> $attrs Parsed-block attrs after the filter.
+ */
+function elev_simulate_dimensions_core_style( array $attrs ): void {
+	$dimensions = is_array( $attrs['style'] ?? null )
+		? ( is_array( $attrs['style']['dimensions'] ?? null )
+			? $attrs['style']['dimensions']
+			: [] )
+		: [];
+	$parts = [];
+	$min   = $dimensions['minHeight'] ?? '';
+	if ( is_string( $min ) && '' !== $min ) {
+		$parts[] = 'min-height:' . $min;
+	}
+	$ar = $dimensions['aspectRatio'] ?? '';
+	if ( is_string( $ar ) && '' !== $ar ) {
+		$parts[] = 'aspect-ratio:' . $ar;
+	}
+	$GLOBALS['kntnt_elev_test_core_style'] = count( $parts ) > 0
+		? implode( ';', $parts ) . ';'
+		: '';
+}
+
+test( 'B1 (Elevation): render emits min-height:15vh via filter-normalised attrs when both fields are blank', function (): void {
 
 	elev_setup_normal_path( 700, 600, 'map-default-min-height' );
 
-	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 600 ) );
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
+		[
+			'blockName'    => 'kntnt-gpx-blocks/elevation',
+			'attrs'        => [ 'mapId' => 'auto' ],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
+		],
+	);
+	elev_simulate_dimensions_core_style( $parsed['attrs'] );
+
+	$html = Render_Elevation::render( $parsed['attrs'], '', elev_fake_block( 600 ) );
 
 	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
 	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height: 15vh' );
+	expect( $style_match[1] )->toContain( 'min-height:15vh' );
 
 } );
 
-test( 'inline min-height default is emitted when style.dimensions.minHeight is blank (issue #115)', function (): void {
+test( 'B2 (Elevation): Render_Elevation no longer concatenates min-height into its own style_parts', function (): void {
 
-	elev_setup_normal_path( 701, 601, 'map-blank-min-height' );
+	// When the parsed block carries neither minHeight nor aspectRatio
+	// AND the filter has NOT run, Render_Elevation must not emit any
+	// min-height of its own — the responsibility moved to
+	// Dimensions_Defaults. The harness's core-style global stays empty
+	// here, so any min-height appearing in the wrapper would have to
+	// come from plugin-side concatenation, which is what we want to
+	// see has gone away.
+	elev_setup_normal_path( 710, 610, 'map-plain' );
 
-	$html = Render_Elevation::render(
-		[
-			'mapId' => 'auto',
-			'style' => [ 'dimensions' => [ 'minHeight' => '' ] ],
-		],
-		'',
-		elev_fake_block( 601 ),
-	);
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 610 ) );
 
-	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
-	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height: 15vh' );
-
-} );
-
-test( 'inline min-height default still emitted when aspectRatio is set but minHeight is blank (issue #115)', function (): void {
-
-	// Reproduces the bug shape from the issue: the editor sets an aspect
-	// ratio, which clears min-height. The plugin must still inject its
-	// default so the wrapper has a non-zero height regardless of how core
-	// surfaces the aspect-ratio choice.
-	elev_setup_normal_path( 702, 602, 'map-aspect-only' );
-
-	$html = Render_Elevation::render(
-		[
-			'mapId' => 'auto',
-			'style' => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
-		],
-		'',
-		elev_fake_block( 602 ),
-	);
-
-	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
-	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height: 15vh' );
+	expect( $html )->not->toContain( 'min-height: 15vh' );
+	expect( $html )->not->toContain( 'min-height:15vh' );
 
 } );
 
-test( 'inline min-height default is omitted when style.dimensions.minHeight is user-set (issue #115)', function (): void {
+test( 'B3 (Elevation): with aspectRatio set, the filter does not inject and no plugin min-height appears', function (): void {
 
-	// When the user has typed an explicit value, the plugin must not
-	// emit its own default. Core's block-supports machinery emits the
-	// user's value into the wrapper's inline style — simulated here by
-	// the test's $kntnt_elev_test_core_style global, which appends the
-	// declaration the same way real core would.
-	elev_setup_normal_path( 703, 603, 'map-explicit-min-height' );
+	elev_setup_normal_path( 720, 620, 'map-aspect-only' );
 
-	$GLOBALS['kntnt_elev_test_core_style'] = 'min-height:500px;';
-
-	$html = Render_Elevation::render(
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
 		[
-			'mapId' => 'auto',
-			'style' => [ 'dimensions' => [ 'minHeight' => '500px' ] ],
+			'blockName'    => 'kntnt-gpx-blocks/elevation',
+			'attrs'        => [
+				'mapId' => 'auto',
+				'style' => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
+			],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
 		],
-		'',
-		elev_fake_block( 603 ),
 	);
+	elev_simulate_dimensions_core_style( $parsed['attrs'] );
+
+	$html = Render_Elevation::render( $parsed['attrs'], '', elev_fake_block( 620 ) );
 
 	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
 	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'aspect-ratio:16/9' );
+	expect( $style_match[1] )->not->toContain( 'min-height' );
 
-	// Core's contribution must still be present — the test wired it
-	// through the wrapper helper.
+} );
+
+test( 'B-explicit (Elevation): user-set min-height passes through unchanged and the plugin does not double-emit', function (): void {
+
+	elev_setup_normal_path( 730, 630, 'map-explicit' );
+
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
+		[
+			'blockName'    => 'kntnt-gpx-blocks/elevation',
+			'attrs'        => [
+				'mapId' => 'auto',
+				'style' => [ 'dimensions' => [ 'minHeight' => '500px' ] ],
+			],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
+		],
+	);
+	elev_simulate_dimensions_core_style( $parsed['attrs'] );
+
+	$html = Render_Elevation::render( $parsed['attrs'], '', elev_fake_block( 630 ) );
+
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
 	expect( $style_match[1] )->toContain( 'min-height:500px' );
-
-	// The plugin default (15vh) must not appear in the wrapper style
-	// when the user has set their own value.
 	expect( $style_match[1] )->not->toContain( '15vh' );
 
 } );
-

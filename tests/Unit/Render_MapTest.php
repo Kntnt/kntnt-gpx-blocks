@@ -907,10 +907,10 @@ test( 'wp_interactivity_state propagates tooltipShowName and tooltipShowDesc whe
 
 	Render_Map::render(
 		[
-			'attachmentId'     => 84,
-			'mapId'            => 'map-tt-toggles-off',
-			'tooltipShowName'  => false,
-			'tooltipShowDesc'  => false,
+			'attachmentId'    => 84,
+			'mapId'           => 'map-tt-toggles-off',
+			'tooltipShowName' => false,
+			'tooltipShowDesc' => false,
 		],
 		'',
 		map_fake_block(),
@@ -1741,8 +1741,14 @@ test( 'wp_interactivity_state carries selected tileOverlay pairs and drops unkno
 			'attachmentId' => 203,
 			'mapId'        => 'map-overlays',
 			'tileOverlays' => [
-				[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
-				[ 'provider' => 'definitely-not-real', 'layer' => 'whatever' ],
+				[
+					'provider' => 'waymarked-trails',
+					'layer'    => 'hiking',
+				],
+				[
+					'provider' => 'definitely-not-real',
+					'layer'    => 'whatever',
+				],
 			],
 		],
 		'',
@@ -1811,7 +1817,7 @@ test( 'wp_interactivity_state carries multiple selected overlay pairs in editor-
 							],
 						],
 					],
-					'custom-overlay' => [
+					'custom-overlay'   => [
 						'label'       => 'Custom Overlay',
 						'requiresKey' => false,
 						'layers'      => [
@@ -1848,8 +1854,14 @@ test( 'wp_interactivity_state carries multiple selected overlay pairs in editor-
 			'attachmentId' => 205,
 			'mapId'        => 'map-multi-overlays',
 			'tileOverlays' => [
-				[ 'provider' => 'custom-overlay', 'layer' => 'grid' ],
-				[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+				[
+					'provider' => 'custom-overlay',
+					'layer'    => 'grid',
+				],
+				[
+					'provider' => 'waymarked-trails',
+					'layer'    => 'hiking',
+				],
 			],
 		],
 		'',
@@ -1886,7 +1898,10 @@ test( 'overlay records in state carry url, attribution, and maxZoom (slim, no id
 			'attachmentId' => 206,
 			'mapId'        => 'map-overlay-record-shape',
 			'tileOverlays' => [
-				[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+				[
+					'provider' => 'waymarked-trails',
+					'layer'    => 'hiking',
+				],
 			],
 		],
 		'',
@@ -1960,7 +1975,10 @@ test( 'overlay records in state preserve subdomains when present in the overlay 
 			'attachmentId' => 207,
 			'mapId'        => 'map-overlay-subdomains',
 			'tileOverlays' => [
-				[ 'provider' => 'sd-overlay', 'layer' => 'main' ],
+				[
+					'provider' => 'sd-overlay',
+					'layer'    => 'main',
+				],
 			],
 		],
 		'',
@@ -1995,8 +2013,14 @@ test( 'unknown overlay pairs in attributes are silently dropped from state', fun
 			'attachmentId' => 208,
 			'mapId'        => 'map-overlay-unknown-only',
 			'tileOverlays' => [
-				[ 'provider' => 'definitely-not-real', 'layer' => 'whatever' ],
-				[ 'provider' => 'also-not-real', 'layer' => 'whatever' ],
+				[
+					'provider' => 'definitely-not-real',
+					'layer'    => 'whatever',
+				],
+				[
+					'provider' => 'also-not-real',
+					'layer'    => 'whatever',
+				],
 			],
 		],
 		'',
@@ -2031,7 +2055,10 @@ test( 'wp_interactivity_state substitutes the per-overlay-provider tileOverlayAp
 			'attachmentId'       => 220,
 			'mapId'              => 'map-overlay-key-sub',
 			'tileOverlays'       => [
-				[ 'provider' => 'openweathermap', 'layer' => 'clouds' ],
+				[
+					'provider' => 'openweathermap',
+					'layer'    => 'clouds',
+				],
 			],
 			'tileOverlayApiKeys' => [ 'openweathermap' => 'OWM-XYZ' ],
 		],
@@ -2068,8 +2095,14 @@ test( 'wp_interactivity_state drops the overlay pair when the key-required provi
 			'attachmentId'       => 221,
 			'mapId'              => 'map-overlay-no-key',
 			'tileOverlays'       => [
-				[ 'provider' => 'openweathermap', 'layer' => 'clouds' ],
-				[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+				[
+					'provider' => 'openweathermap',
+					'layer'    => 'clouds',
+				],
+				[
+					'provider' => 'waymarked-trails',
+					'layer'    => 'hiking',
+				],
 			],
 			'tileOverlayApiKeys' => [],
 		],
@@ -2139,12 +2172,21 @@ test( 'wp_interactivity_state coerces malformed overlay pair entries out', funct
 			'attachmentId' => 223,
 			'mapId'        => 'map-overlay-coerce',
 			'tileOverlays' => [
-				[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+				[
+					'provider' => 'waymarked-trails',
+					'layer'    => 'hiking',
+				],
 				'not-an-array',
 				[ 'provider' => 'waymarked-trails' ],
 				[ 'layer' => 'hiking' ],
-				[ 'provider' => 123, 'layer' => 'hiking' ],
-				[ 'provider' => 'waymarked-trails', 'layer' => '' ],
+				[
+					'provider' => 123,
+					'layer'    => 'hiking',
+				],
+				[
+					'provider' => 'waymarked-trails',
+					'layer'    => '',
+				],
 			],
 		],
 		'',
@@ -2344,17 +2386,49 @@ test( 'inline style is terminated so core-appended per-corner border-radius surv
 } );
 
 // ---------------------------------------------------------------------------
-// Issue #115 — the plugin-defined default `min-height: 30vh` is emitted
-// inline on the wrapper whenever `style.dimensions.minHeight` is blank or
-// missing. The buggy state core leaves the editor in after toggling
-// aspect-ratio away from Original and back — a blank min-height field
-// combined with an inline `aspect-ratio: unset` — defeats the SCSS
-// baseline and collapses the wrapper to zero height. An always-on inline
-// default beats the inline `aspect-ratio: unset` because it is itself an
-// explicit inline declaration.
+// Issue #117 — the plugin-defined default `min-height` is normalised at
+// the attribute source through the `Dimensions_Defaults` filter, not
+// per-consumer inline injection inside `Render_Map::render()`. The B-tests
+// here invoke the filter on a parsed block, hand its output to render,
+// and assert that the wrapper inline style carries the value through
+// core's `get_block_wrapper_attributes()` pipeline (simulated in the
+// test harness) instead of plugin-side string concatenation.
 // ---------------------------------------------------------------------------
 
-test( 'inline min-height default is emitted when style.dimensions.minHeight is missing (issue #115)', function (): void {
+/**
+ * Simulates core's dimensions block-supports CSS emission from a
+ * `style.dimensions` slot.
+ *
+ * Real WordPress walks the parsed `attrs.style.dimensions` and appends
+ * `min-height: <value>` and `aspect-ratio: <value>` to the wrapper's
+ * `style` attribute. The plugin's render code stopped touching that
+ * slot with issue #117 — the value must therefore reach the wrapper
+ * through this path, which the test harness simulates by writing into
+ * `$GLOBALS['kntnt_map_test_core_style']`.
+ *
+ * @param array<string,mixed> $attrs Parsed-block attrs after the filter.
+ */
+function map_simulate_dimensions_core_style( array $attrs ): void {
+	$dimensions = is_array( $attrs['style'] ?? null )
+		? ( is_array( $attrs['style']['dimensions'] ?? null )
+			? $attrs['style']['dimensions']
+			: [] )
+		: [];
+	$parts = [];
+	$min   = $dimensions['minHeight'] ?? '';
+	if ( is_string( $min ) && '' !== $min ) {
+		$parts[] = 'min-height:' . $min;
+	}
+	$ar = $dimensions['aspectRatio'] ?? '';
+	if ( is_string( $ar ) && '' !== $ar ) {
+		$parts[] = 'aspect-ratio:' . $ar;
+	}
+	$GLOBALS['kntnt_map_test_core_style'] = count( $parts ) > 0
+		? implode( ';', $parts ) . ';'
+		: '';
+}
+
+test( 'B1: render emits min-height:30vh via filter-normalised attrs when both minHeight and aspectRatio are blank', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 700, $coords );
@@ -2364,113 +2438,153 @@ test( 'inline min-height default is emitted when style.dimensions.minHeight is m
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
 
-	$html = Render_Map::render(
+	// Run the filter on a parsed block whose attrs carry neither
+	// minHeight nor aspectRatio, then hand the normalised attrs to
+	// render. The test harness's get_block_wrapper_attributes mock
+	// surfaces the dimensions block-supports CSS the same way real
+	// core would.
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
 		[
-			'attachmentId' => 700,
-			'mapId'        => 'map-default-min-height',
+			'blockName'    => 'kntnt-gpx-blocks/map',
+			'attrs'        => [
+				'attachmentId' => 700,
+				'mapId'        => 'map-default-min-height',
+			],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
 		],
-		'',
-		map_fake_block(),
 	);
+	map_simulate_dimensions_core_style( $parsed['attrs'] );
+
+	$html = Render_Map::render( $parsed['attrs'], '', map_fake_block() );
 
 	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
 	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height: 30vh' );
+	expect( $style_match[1] )->toContain( 'min-height:30vh' );
 
 } );
 
-test( 'inline min-height default is emitted when style.dimensions.minHeight is blank (issue #115)', function (): void {
+test( 'B1 (Elevation): filter-normalised attrs carry min-height:15vh through to the wrapper', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
-	$store  = map_seeded_store( 701, $coords );
+	$store  = map_seeded_store( 760, $coords );
 	map_bind_meta( $store );
-	map_stub_attached_file( 701, map_fixture_path( 'happy-path.gpx' ) );
+	map_stub_attached_file( 760, map_fixture_path( 'happy-path.gpx' ) );
+
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
+		[
+			'blockName'    => 'kntnt-gpx-blocks/elevation',
+			'attrs'        => [],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
+		],
+	);
+
+	expect( $parsed['attrs']['style']['dimensions']['minHeight'] )->toBe( '15vh' );
+
+} );
+
+test( 'B2: Render_Map no longer concatenates min-height into its own style_parts', function (): void {
+
+	// When the parsed block carries neither minHeight nor aspectRatio
+	// AND the filter has NOT run, Render_Map must not emit any
+	// min-height of its own — the responsibility moved to
+	// Dimensions_Defaults. The harness's core-style global stays empty
+	// here, so any min-height surfacing in the wrapper would have to
+	// come from plugin-side concatenation, which is what we want to
+	// see has gone away.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 710, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 710, map_fixture_path( 'happy-path.gpx' ) );
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
 
 	$html = Render_Map::render(
 		[
-			'attachmentId' => 701,
-			'mapId'        => 'map-blank-min-height',
-			'style'        => [ 'dimensions' => [ 'minHeight' => '' ] ],
+			'attachmentId' => 710,
+			'mapId'        => 'map-plain',
 		],
 		'',
 		map_fake_block(),
 	);
 
-	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
-	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height: 30vh' );
+	expect( $html )->not->toContain( 'min-height: 30vh' );
+	expect( $html )->not->toContain( 'min-height:30vh' );
 
 } );
 
-test( 'inline min-height default still emitted when aspectRatio is set but minHeight is blank (issue #115)', function (): void {
+test( 'B3: with aspectRatio set and minHeight blank, the filter does not inject and no plugin min-height appears', function (): void {
 
-	// Reproduces the bug shape from the issue: the editor sets an aspect
-	// ratio, which clears min-height. The plugin must still inject its
-	// default so the wrapper has a non-zero height regardless of how core
-	// surfaces the aspect-ratio choice.
 	$coords = map_synthetic_coords( 10 );
-	$store  = map_seeded_store( 702, $coords );
+	$store  = map_seeded_store( 720, $coords );
 	map_bind_meta( $store );
-	map_stub_attached_file( 702, map_fixture_path( 'happy-path.gpx' ) );
+	map_stub_attached_file( 720, map_fixture_path( 'happy-path.gpx' ) );
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
 
-	$html = Render_Map::render(
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
 		[
-			'attachmentId' => 702,
-			'mapId'        => 'map-aspect-only',
-			'style'        => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
+			'blockName'    => 'kntnt-gpx-blocks/map',
+			'attrs'        => [
+				'attachmentId' => 720,
+				'mapId'        => 'map-aspect-only',
+				'style'        => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
+			],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
 		],
-		'',
-		map_fake_block(),
 	);
+	map_simulate_dimensions_core_style( $parsed['attrs'] );
+
+	$html = Render_Map::render( $parsed['attrs'], '', map_fake_block() );
 
 	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
 	expect( $matched )->toBe( 1 );
-	expect( $style_match[1] )->toContain( 'min-height: 30vh' );
+	expect( $style_match[1] )->toContain( 'aspect-ratio:16/9' );
+	expect( $style_match[1] )->not->toContain( 'min-height' );
 
 } );
 
-test( 'inline min-height default is omitted when style.dimensions.minHeight is user-set (issue #115)', function (): void {
+test( 'B-explicit: user-set min-height passes through unchanged and the plugin does not double-emit', function (): void {
 
-	// When the user has typed an explicit value, the plugin must not
-	// emit its own default. Core's block-supports machinery emits the
-	// user's value into the wrapper's inline style — simulated here by
-	// the test's $kntnt_map_test_core_style global, which appends the
-	// declaration the same way real core would.
 	$coords = map_synthetic_coords( 10 );
-	$store  = map_seeded_store( 703, $coords );
+	$store  = map_seeded_store( 730, $coords );
 	map_bind_meta( $store );
-	map_stub_attached_file( 703, map_fixture_path( 'happy-path.gpx' ) );
+	map_stub_attached_file( 730, map_fixture_path( 'happy-path.gpx' ) );
 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
 
-	$GLOBALS['kntnt_map_test_core_style'] = 'min-height:500px;';
-
-	$html = Render_Map::render(
+	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
+	$parsed = $filter->filter(
 		[
-			'attachmentId' => 703,
-			'mapId'        => 'map-explicit-min-height',
-			'style'        => [ 'dimensions' => [ 'minHeight' => '500px' ] ],
+			'blockName'    => 'kntnt-gpx-blocks/map',
+			'attrs'        => [
+				'attachmentId' => 730,
+				'mapId'        => 'map-explicit',
+				'style'        => [ 'dimensions' => [ 'minHeight' => '500px' ] ],
+			],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
 		],
-		'',
-		map_fake_block(),
 	);
+	map_simulate_dimensions_core_style( $parsed['attrs'] );
+
+	$html = Render_Map::render( $parsed['attrs'], '', map_fake_block() );
 
 	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
 	expect( $matched )->toBe( 1 );
-
-	// Core's contribution must still be present — the test wired it
-	// through the wrapper helper.
 	expect( $style_match[1] )->toContain( 'min-height:500px' );
-
-	// The plugin default (30vh) must not appear in the wrapper style
-	// when the user has set their own value.
 	expect( $style_match[1] )->not->toContain( '30vh' );
 
 } );

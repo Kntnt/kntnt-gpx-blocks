@@ -181,6 +181,13 @@ export function paddedBoundsFromBox(
  * skip the constraint?". A latitude of 95° is geometrically wrong but
  * doesn't crash Leaflet; only NaN/Infinity does.
  *
+ * Prefer `canApplyMaxBounds` at the call site — issue #117 widened the
+ * guard to cover the parallel `_zoom = NaN` failure where `getCenter()`
+ * is finite but `getZoom()` is not, which still crashes `_panInsideMaxBounds`.
+ * This narrower predicate is retained as the building block of the new
+ * one and for any future caller that genuinely cares only about the
+ * center.
+ *
  * @since 1.0.0
  *
  * @param center     - Map center as `{ lat, lng }` (Leaflet's `getCenter()`
@@ -194,4 +201,97 @@ export function isCenterUsableForMaxBounds( center: {
 	readonly lng: number;
 } ): boolean {
 	return Number.isFinite( center.lat ) && Number.isFinite( center.lng );
+}
+
+/**
+ * The narrow Leaflet surface `applyMaxBoundsIfSafe` consults.
+ *
+ * Declaring a structural type rather than importing `L.Map` keeps this
+ * module free of the Leaflet types in tests where Leaflet is not
+ * installed. Production callers pass a real `L.Map` and the structural
+ * match holds.
+ *
+ * @since 1.0.0
+ */
+export interface MapForMaxBounds {
+	/** Leaflet's `getCenter()` — returns the current map center. */
+	readonly getCenter: () => { readonly lat: number; readonly lng: number };
+	/** Leaflet's `getZoom()` — returns the current zoom level. */
+	readonly getZoom: () => number;
+	/** Leaflet's `setMaxBounds()` — sets the rigid pan constraint. */
+	readonly setMaxBounds: ( bounds: readonly [ LatLng, LatLng ] ) => void;
+}
+
+/**
+ * Decides whether the map is in a state where `setMaxBounds` will not
+ * throw.
+ *
+ * Issue #117 widens the v0.11.3 guard. The original v0.11.3 check
+ * (`isCenterUsableForMaxBounds`) only looked at the center; that closes
+ * the path where `getCenter()` reads as `(NaN, NaN)` but leaves the
+ * parallel path where the center is finite while `_zoom` is `NaN` (the
+ * `getScaleZoom(-Infinity, …)` branch in Leaflet's internals). Both
+ * paths are reachable when `fitBounds` runs against a 0-size container
+ * and both crash `setMaxBounds` → `_panInsideMaxBounds` for the same
+ * reason: an internal unproject step against non-finite input throws
+ * "Invalid LatLng object: (NaN, NaN)".
+ *
+ * This predicate accepts only when both the center and the zoom are
+ * finite numbers. Out-of-range (but finite) values pass — Leaflet
+ * handles those without crashing; only `NaN` and `±Infinity` are the
+ * pathology this gate exists to catch. In a normal page lifecycle the
+ * predicate returns `true` on every fitBounds call; the false branch
+ * is reached only when the wrapper had zero pixel width or height at
+ * the moment Leaflet ran the fit math, which is itself the bug
+ * `Dimensions_Defaults` exists to prevent. The two work as belt and
+ * braces — the attribute-side fix prevents the bad state from arising,
+ * this predicate keeps `setMaxBounds` from crashing if something else
+ * (a third-party CSS rule, a future block-supports interaction) gets
+ * the wrapper to zero size anyway.
+ *
+ * @since 1.0.0
+ *
+ * @param center     - Map center as `{ lat, lng }` (Leaflet's `getCenter()`
+ *                   shape).
+ * @param center.lat - Latitude in WGS84 decimal degrees.
+ * @param center.lng - Longitude in WGS84 decimal degrees.
+ * @param zoom       - Current zoom level as returned by Leaflet's
+ *                   `getZoom()`.
+ * @return `true` when center and zoom are both finite numbers.
+ */
+export function canApplyMaxBounds(
+	center: { readonly lat: number; readonly lng: number },
+	zoom: number
+): boolean {
+	return isCenterUsableForMaxBounds( center ) && Number.isFinite( zoom );
+}
+
+/**
+ * Apply `setMaxBounds` to a map only when `canApplyMaxBounds` says it
+ * is safe to do so.
+ *
+ * Encapsulates the gate so the call site in `view.ts` reads as a single
+ * action and so the gate can be unit-tested without instantiating a
+ * real Leaflet map (the predicate alone is already covered by
+ * `bounds.test.ts`; this thin wrapper closes the integration loop —
+ * issue #117 E1). Returns `true` when the constraint was applied and
+ * `false` when the gate skipped it; the boolean is useful to callers
+ * that want to log the rare skip.
+ *
+ * @since 1.0.0
+ *
+ * @param map    - The map to constrain. Anything that exposes
+ *               `getCenter`, `getZoom`, and `setMaxBounds` qualifies.
+ * @param bounds - The `[southWest, northEast]` rectangle to apply.
+ * @return `true` when the constraint was applied; `false` when skipped.
+ */
+export function applyMaxBoundsIfSafe(
+	map: MapForMaxBounds,
+	bounds: readonly [ LatLng, LatLng ]
+): boolean {
+	if ( ! canApplyMaxBounds( map.getCenter(), map.getZoom() ) ) {
+		return false;
+	}
+	map.setMaxBounds( bounds );
+	return true;
 }

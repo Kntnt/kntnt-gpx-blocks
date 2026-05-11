@@ -11,6 +11,8 @@
 import {
 	DEFAULT_PADDING_FRACTION,
 	MIN_SPAN_DEGREES,
+	applyMaxBoundsIfSafe,
+	canApplyMaxBounds,
 	isCenterUsableForMaxBounds,
 	paddedBoundsFromBox,
 	type BoundingBox,
@@ -210,3 +212,112 @@ describe( 'isCenterUsableForMaxBounds (issue #116)', () => {
 		).toBe( false );
 	} );
 } );
+
+describe( 'canApplyMaxBounds (issue #117 — also reject NaN zoom)', () => {
+	it( 'D1: accepts a finite center together with a finite zoom', () => {
+		expect( canApplyMaxBounds( { lat: 59.33, lng: 18.07 }, 12 ) ).toBe(
+			true
+		);
+	} );
+
+	it( 'D2: rejects a finite center when zoom is NaN (post-fitBounds against 0-size container)', () => {
+		expect(
+			canApplyMaxBounds( { lat: 59.33, lng: 18.07 }, Number.NaN )
+		).toBe( false );
+	} );
+
+	it( 'D3: rejects when zoom is ±Infinity', () => {
+		expect(
+			canApplyMaxBounds( { lat: 0, lng: 0 }, Number.POSITIVE_INFINITY )
+		).toBe( false );
+		expect(
+			canApplyMaxBounds( { lat: 0, lng: 0 }, Number.NEGATIVE_INFINITY )
+		).toBe( false );
+	} );
+
+	it( 'D4: rejects when center.lat is NaN even if zoom is finite', () => {
+		expect( canApplyMaxBounds( { lat: Number.NaN, lng: 18.07 }, 10 ) ).toBe(
+			false
+		);
+	} );
+
+	it( 'D5: rejects when center.lng is NaN even if zoom is finite', () => {
+		expect( canApplyMaxBounds( { lat: 59.33, lng: Number.NaN }, 10 ) ).toBe(
+			false
+		);
+	} );
+} );
+
+describe( 'applyMaxBoundsIfSafe (issue #117 — E1 integration check)', () => {
+	it( 'applies setMaxBounds and returns true when center and zoom are both finite', () => {
+		const calls: Array< readonly [ LatLngTuple, LatLngTuple ] > = [];
+		const map = {
+			getCenter: () => ( { lat: 59.33, lng: 18.07 } ),
+			getZoom: () => 12,
+			setMaxBounds: ( b: readonly [ LatLngTuple, LatLngTuple ] ) => {
+				calls.push( b );
+			},
+		};
+		const bounds: readonly [ LatLngTuple, LatLngTuple ] = [
+			[ 59, 17 ],
+			[ 60, 19 ],
+		];
+
+		const applied = applyMaxBoundsIfSafe( map, bounds );
+
+		expect( applied ).toBe( true );
+		expect( calls ).toHaveLength( 1 );
+		expect( calls[ 0 ] ).toBe( bounds );
+	} );
+
+	it( 'E1: skips setMaxBounds and returns false when getZoom() returns NaN (0-size container)', () => {
+		// Reproduces the post-fitBounds state described in issue #117:
+		// the container is 0×0, fitBounds ran anyway, and getZoom() now
+		// reports NaN even though getCenter() looks finite. Calling
+		// setMaxBounds in that state would crash Leaflet.
+		let setMaxBoundsCalled = false;
+		const map = {
+			getSize: () => ( { x: 0, y: 0 } ),
+			getCenter: () => ( { lat: 0, lng: 0 } ),
+			getZoom: () => Number.NaN,
+			setMaxBounds: () => {
+				setMaxBoundsCalled = true;
+			},
+		};
+		const bounds: readonly [ LatLngTuple, LatLngTuple ] = [
+			[ 59, 17 ],
+			[ 60, 19 ],
+		];
+
+		const applied = applyMaxBoundsIfSafe( map, bounds );
+
+		expect( applied ).toBe( false );
+		expect( setMaxBoundsCalled ).toBe( false );
+	} );
+
+	it( 'also skips when getCenter() reports NaN even though zoom is finite', () => {
+		let setMaxBoundsCalled = false;
+		const map = {
+			getCenter: () => ( {
+				lat: Number.NaN,
+				lng: Number.NaN,
+			} ),
+			getZoom: () => 12,
+			setMaxBounds: () => {
+				setMaxBoundsCalled = true;
+			},
+		};
+		const bounds: readonly [ LatLngTuple, LatLngTuple ] = [
+			[ 59, 17 ],
+			[ 60, 19 ],
+		];
+
+		const applied = applyMaxBoundsIfSafe( map, bounds );
+
+		expect( applied ).toBe( false );
+		expect( setMaxBoundsCalled ).toBe( false );
+	} );
+} );
+
+// Helper alias used by the integration tests above.
+type LatLngTuple = readonly [ number, number ];

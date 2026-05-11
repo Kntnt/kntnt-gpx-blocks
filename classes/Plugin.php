@@ -193,6 +193,21 @@ final class Plugin {
 	private ?Bootstrap\Border_Radius_Normalizer $border_radius_normalizer = null;
 
 	/**
+	 * The Dimensions_Defaults instance bound to render_block_data.
+	 *
+	 * Held as a property so the array callable passed to add_filter() keeps a
+	 * strong reference to the object for the lifetime of the request. Issue
+	 * #117: normalises `style.dimensions.minHeight` to the per-block default
+	 * (`30vh` on Map, `15vh` on Elevation) when both `minHeight` and
+	 * `aspectRatio` are blank, so every downstream consumer reads the value
+	 * through the same path an explicit user value would take.
+	 *
+	 * @since 1.0.0
+	 * @var Rendering\Dimensions_Defaults|null
+	 */
+	private ?Rendering\Dimensions_Defaults $dimensions_defaults = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -480,6 +495,18 @@ final class Plugin {
 		// preview promised.
 		$this->border_radius_normalizer = new Bootstrap\Border_Radius_Normalizer();
 		add_filter( 'render_block_data', [ $this->border_radius_normalizer, 'filter' ] );
+
+		// Normalise the plugin-defined `min-height` default on the two
+		// blocks before the wrapper is rendered (issue #117). When both
+		// `style.dimensions.minHeight` and `style.dimensions.aspectRatio`
+		// are blank or missing, write the per-block default (`30vh` Map,
+		// `15vh` Elevation) onto the parsed block's `attrs`. Every
+		// downstream consumer — `get_block_wrapper_attributes()`, the
+		// SCSS baseline, the editor's `useBlockProps()` style merge —
+		// then sees a concrete value through the standard block-supports
+		// pipeline, the same path an explicit user value would take.
+		$this->dimensions_defaults = new Rendering\Dimensions_Defaults();
+		add_filter( 'render_block_data', [ $this->dimensions_defaults, 'filter' ] );
 
 	}
 

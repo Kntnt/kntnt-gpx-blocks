@@ -27,6 +27,7 @@ import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
 
 import { useAutoPickMapId } from './use-auto-pick-map-id';
+import { getDefaultMinHeight } from '../shared/dimensions-defaults';
 
 /**
  * Attributes for the GPX Elevation block.
@@ -152,18 +153,20 @@ export const ElevationEdit = ( {
 		inlineStyle[ '--kntnt-gpx-blocks-tooltip-color' ] = tooltipColor;
 	}
 
-	// Apply the plugin-defined default `min-height` when the editor has not
-	// set one (issue #115). Without this, toggling the Dimensions panel's
-	// aspect-ratio away from Original and back leaves min-height blank and
-	// core emits `aspect-ratio: unset` inline, defeating the SCSS baseline
-	// and collapsing the wrapper to zero height. useBlockProps merges core's
-	// dimensions block-supports on top of the style passed in, so a user-set
-	// `style.dimensions.minHeight` still wins.
-	const userMinHeight = (
-		attributes as { style?: { dimensions?: { minHeight?: unknown } } }
-	 ).style?.dimensions?.minHeight;
-	if ( typeof userMinHeight !== 'string' || userMinHeight === '' ) {
-		inlineStyle.minHeight = '15vh';
+	// Resolve the plugin-defined default `min-height` for the wrapper.
+	// `getDefaultMinHeight()` returns `'15vh'` when the user has set
+	// neither minHeight nor aspectRatio on this block — the same
+	// condition the server-side `Dimensions_Defaults` filter checks —
+	// and `undefined` in every other case. When the value is
+	// `undefined`, no inline minHeight is injected here and core's
+	// dimensions block-supports machinery surfaces whatever the user
+	// chose. Issue #117 centralises this rule between PHP and JS.
+	const defaultMinHeight = getDefaultMinHeight(
+		'kntnt-gpx-blocks/elevation',
+		attributes
+	);
+	if ( defaultMinHeight ) {
+		inlineStyle.minHeight = defaultMinHeight;
 	}
 
 	const blockProps = useBlockProps( {
