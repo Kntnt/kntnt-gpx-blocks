@@ -155,18 +155,29 @@ export function getDefaultMinHeight(
 
 /**
  * Returns the attribute object with the plugin's `min-height` default
- * applied when the block is one of the plugin's two blocks and both
- * `style.dimensions.minHeight` and `style.dimensions.aspectRatio` are
- * blank or missing.
+ * applied (when both fields count as blank) and with a blank-equivalent
+ * `aspectRatio` (`'auto'`) stripped from `style.dimensions`.
  *
- * When the rule does not trigger — unrelated block name, user has set
- * a minHeight, user has set a non-Original aspectRatio — returns the
- * input object referentially identical so React `useBlockProps` memos
- * downstream are not invalidated by the wrapping.
+ * Mirrors the PHP `Dimensions_Defaults::filter()` rules:
  *
- * The returned object is structurally a shallow clone of the input
- * with only `style.dimensions.minHeight` patched; the original input
- * is never mutated.
+ *  - `aspectRatio` is stripped when it counts as blank-equivalent
+ *    (`'auto'`). WordPress core's `wp_render_dimensions_support()` reads
+ *    only `! empty( aspectRatio )` and appends `min-height: unset` on
+ *    the wrapper whenever the attribute is non-empty regardless of its
+ *    value, which would override any min-height — ours or a user's.
+ *    Stripping the key keeps the wrapper free of that override on the
+ *    editor side too (where Gutenberg's edit-time pipeline does not
+ *    emit the unset, but the contract stays parallel).
+ *  - The per-block `min-height` default is written into `style.dimensions`
+ *    when both fields count as blank.
+ *
+ * When neither mutation applies (unrelated block name, user has set a
+ * minHeight, user has set a real aspectRatio), returns the input object
+ * referentially identical so React `useBlockProps` memos downstream are
+ * not invalidated by spurious wrapping.
+ *
+ * The original input is never mutated; the returned object is a
+ * structural shallow clone with `style.dimensions` patched.
  *
  * @since 1.0.0
  *
@@ -177,8 +188,18 @@ export function getDefaultMinHeight(
 export function normaliseDimensionsAttributes<
 	T extends Record< string, unknown >,
 >( blockName: string, attributes: T ): T {
-	const defaultMinHeight = getDefaultMinHeight( blockName, attributes );
-	if ( defaultMinHeight === undefined ) {
+	if ( DEFAULTS[ blockName ] === undefined ) {
+		return attributes;
+	}
+
+	const { minHeight, aspectRatio } = readDimensions( attributes );
+	const minHeightBlank = isBlank( minHeight );
+	const aspectRatioBlank = isBlankAspectRatio( aspectRatio );
+
+	const stripAspectRatio = aspectRatioBlank && aspectRatio !== undefined;
+	const injectDefault = minHeightBlank && aspectRatioBlank;
+
+	if ( ! stripAspectRatio && ! injectDefault ) {
 		return attributes;
 	}
 
@@ -190,19 +211,23 @@ export function normaliseDimensionsAttributes<
 
 	const baseStyle =
 		style && typeof style === 'object' ? ( style as object ) : {};
-	const baseDimensions =
+	const baseDimensions: Record< string, unknown > =
 		dimensions && typeof dimensions === 'object'
-			? ( dimensions as object )
+			? { ...( dimensions as Record< string, unknown > ) }
 			: {};
+
+	if ( stripAspectRatio ) {
+		delete baseDimensions.aspectRatio;
+	}
+	if ( injectDefault ) {
+		baseDimensions.minHeight = DEFAULTS[ blockName ];
+	}
 
 	return {
 		...( attributes as object ),
 		style: {
 			...baseStyle,
-			dimensions: {
-				...baseDimensions,
-				minHeight: defaultMinHeight,
-			},
+			dimensions: baseDimensions,
 		},
 	} as T;
 }

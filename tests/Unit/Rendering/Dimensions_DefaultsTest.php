@@ -66,7 +66,7 @@ test( 'A2: Map with both minHeight and aspectRatio as blank strings gets minHeig
 
 } );
 
-test( "A2b: Map with aspectRatio='auto' and minHeight blank gets minHeight=30vh", function (): void {
+test( "A2b: Map with aspectRatio='auto' gets minHeight=30vh and the 'auto' key stripped", function (): void {
 
 	$filter = new Dimensions_Defaults();
 
@@ -88,6 +88,36 @@ test( "A2b: Map with aspectRatio='auto' and minHeight blank gets minHeight=30vh"
 
 	expect( $result['attrs']['style']['dimensions']['minHeight'] ?? null )
 		->toBe( '30vh' );
+	expect( $result['attrs']['style']['dimensions'] )
+		->not->toHaveKey( 'aspectRatio' );
+
+} );
+
+test( "A2c: Map with aspectRatio='auto' and explicit minHeight strips 'auto' and keeps the user value", function (): void {
+
+	$filter = new Dimensions_Defaults();
+
+	$parsed = [
+		'blockName'    => 'kntnt-gpx-blocks/map',
+		'attrs'        => [
+			'style' => [
+				'dimensions' => [
+					'minHeight'   => '500px',
+					'aspectRatio' => 'auto',
+				],
+			],
+		],
+		'innerBlocks'  => [],
+		'innerHTML'    => '',
+		'innerContent' => [],
+	];
+
+	$result = $filter->filter( $parsed );
+
+	expect( $result['attrs']['style']['dimensions']['minHeight'] ?? null )
+		->toBe( '500px' );
+	expect( $result['attrs']['style']['dimensions'] )
+		->not->toHaveKey( 'aspectRatio' );
 
 } );
 
@@ -191,7 +221,7 @@ test( 'A6: Elevation with both blank/missing gets minHeight=15vh', function (): 
 
 } );
 
-test( "A6b: Elevation with aspectRatio='auto' and minHeight blank gets minHeight=15vh", function (): void {
+test( "A6b: Elevation with aspectRatio='auto' gets minHeight=15vh and the 'auto' key stripped", function (): void {
 
 	$filter = new Dimensions_Defaults();
 
@@ -213,6 +243,8 @@ test( "A6b: Elevation with aspectRatio='auto' and minHeight blank gets minHeight
 
 	expect( $result['attrs']['style']['dimensions']['minHeight'] ?? null )
 		->toBe( '15vh' );
+	expect( $result['attrs']['style']['dimensions'] )
+		->not->toHaveKey( 'aspectRatio' );
 
 } );
 

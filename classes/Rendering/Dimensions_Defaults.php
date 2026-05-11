@@ -99,29 +99,49 @@ final class Dimensions_Defaults {
 		$style      = is_array( $attrs['style'] ?? null ) ? $attrs['style'] : [];
 		$dimensions = is_array( $style['dimensions'] ?? null ) ? $style['dimensions'] : [];
 
-		// Read both fields and ask the predicate whether each is blank.
-		// `aspectRatio` blocks the injection when it carries any meaningful
-		// value — the container then has a definite height and adding a
-		// min-height on top would fight that constraint. The CSS keyword
-		// `'auto'` is the value WordPress writes when the user picks the
-		// "Original" option in the aspect-ratio dropdown *after* having
-		// selected another ratio — semantically equivalent to "no ratio",
-		// so the aspect-ratio check treats it as blank too.
-		if ( ! self::is_blank( $dimensions['minHeight'] ?? null ) ) {
-			return $parsed_block;
+		// Classify each field. `aspectRatio` is considered blank when it is
+		// `null`, the empty string, or the CSS keyword `'auto'` — the value
+		// WordPress writes when the user picks the "Original" option in the
+		// aspect-ratio dropdown after having selected another ratio.
+		// `'auto'` is semantically "no aspect-ratio constraint", the same
+		// end-state as a blank value.
+		$min_height_blank   = self::is_blank( $dimensions['minHeight'] ?? null );
+		$aspect_ratio_blank = self::is_blank_aspect_ratio( $dimensions['aspectRatio'] ?? null );
+
+		// Strip `aspectRatio` from attrs when it counts as blank but is
+		// still present as a stored value (the `'auto'` case is the one
+		// we care about; `''` and missing are no-ops here). WordPress core's
+		// `wp_render_dimensions_support()` appends `min-height: unset` to
+		// the wrapper's inline style whenever this attribute is non-empty
+		// regardless of value, which would override any min-height we
+		// inject below (and any explicit user-set min-height too). Removing
+		// the key keeps core's `! empty()` check false and skips the
+		// `min-height: unset` emit. Saved post content is untouched —
+		// the strip happens only on the in-memory parsed block.
+		$strip_aspect_ratio = $aspect_ratio_blank && array_key_exists( 'aspectRatio', $dimensions );
+		if ( $strip_aspect_ratio ) {
+			unset( $dimensions['aspectRatio'] );
 		}
-		if ( ! self::is_blank_aspect_ratio( $dimensions['aspectRatio'] ?? null ) ) {
+
+		// Inject the per-block `min-height` default when both fields end
+		// up blank. With `aspectRatio` stripped above, the wrapper has no
+		// height constraint of its own — the default keeps it from
+		// collapsing to zero pixels.
+		$inject_default = $min_height_blank && $aspect_ratio_blank;
+		if ( $inject_default ) {
+			$dimensions['minHeight'] = self::DEFAULTS[ $block_name ];
+		}
+
+		// Skip the write-back when neither mutation applied. Pass through
+		// the original `$parsed_block` reference so PHPUnit `===` checks
+		// in upstream tests can still assert byte-identity.
+		if ( ! $strip_aspect_ratio && ! $inject_default ) {
 			return $parsed_block;
 		}
 
-		// Write the per-block default back through the path, rebuilding
-		// each segment from the value just read so the final structure
-		// preserves any sibling keys the user already set under
-		// `style.*` or `style.dimensions.*`.
-		$dimensions['minHeight'] = self::DEFAULTS[ $block_name ];
-		$style['dimensions']     = $dimensions;
-		$attrs['style']          = $style;
-		$parsed_block['attrs']   = $attrs;
+		$style['dimensions']   = $dimensions;
+		$attrs['style']        = $style;
+		$parsed_block['attrs'] = $attrs;
 
 		return $parsed_block;
 

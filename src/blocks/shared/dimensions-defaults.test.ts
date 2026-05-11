@@ -79,7 +79,7 @@ describe( 'normaliseDimensionsAttributes (issue #117)', () => {
 		expect( dims?.aspectRatio ).toBe( '16/9' );
 	} );
 
-	it( "treats aspectRatio='auto' as no ratio set and injects minHeight=30vh for Map", () => {
+	it( "strips aspectRatio='auto' and injects minHeight=30vh for Map", () => {
 		const attrs = {
 			style: { dimensions: { aspectRatio: 'auto' } },
 		} as Record< string, unknown >;
@@ -90,12 +90,17 @@ describe( 'normaliseDimensionsAttributes (issue #117)', () => {
 		);
 
 		const dims = (
-			out as { style?: { dimensions?: { minHeight?: string } } }
+			out as {
+				style?: {
+					dimensions?: { minHeight?: string; aspectRatio?: string };
+				};
+			}
 		 ).style?.dimensions;
 		expect( dims?.minHeight ).toBe( '30vh' );
+		expect( dims ).not.toHaveProperty( 'aspectRatio' );
 	} );
 
-	it( "treats aspectRatio='auto' as no ratio set and injects minHeight=15vh for Elevation", () => {
+	it( "strips aspectRatio='auto' and injects minHeight=15vh for Elevation", () => {
 		const attrs = {
 			style: { dimensions: { aspectRatio: 'auto' } },
 		} as Record< string, unknown >;
@@ -106,9 +111,37 @@ describe( 'normaliseDimensionsAttributes (issue #117)', () => {
 		);
 
 		const dims = (
-			out as { style?: { dimensions?: { minHeight?: string } } }
+			out as {
+				style?: {
+					dimensions?: { minHeight?: string; aspectRatio?: string };
+				};
+			}
 		 ).style?.dimensions;
 		expect( dims?.minHeight ).toBe( '15vh' );
+		expect( dims ).not.toHaveProperty( 'aspectRatio' );
+	} );
+
+	it( "strips aspectRatio='auto' but preserves an explicit user minHeight", () => {
+		const attrs = {
+			style: {
+				dimensions: { minHeight: '500px', aspectRatio: 'auto' },
+			},
+		} as Record< string, unknown >;
+
+		const out = normaliseDimensionsAttributes(
+			'kntnt-gpx-blocks/map',
+			attrs
+		);
+
+		const dims = (
+			out as {
+				style?: {
+					dimensions?: { minHeight?: string; aspectRatio?: string };
+				};
+			}
+		 ).style?.dimensions;
+		expect( dims?.minHeight ).toBe( '500px' );
+		expect( dims ).not.toHaveProperty( 'aspectRatio' );
 	} );
 
 	it( 'leaves the Original-after-toggle case (both fields literal "") to inject minHeight=30vh', () => {
