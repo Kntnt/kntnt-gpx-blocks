@@ -19,6 +19,7 @@ declare( strict_types = 1 );
 namespace Kntnt\Gpx_Blocks\Rendering;
 
 use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
+use Kntnt\Gpx_Blocks\Conversion\Distance;
 use Kntnt\Gpx_Blocks\Format\Value_Formatter;
 use Kntnt\Gpx_Blocks\Plugin;
 
@@ -92,14 +93,6 @@ final class Render_Elevation {
 	 * @var float
 	 */
 	private const KM_AXIS_LABEL_THRESHOLD_METERS = 2000.0;
-
-	/**
-	 * Earth radius in metres for Haversine summation. Matches Statistics_Calculator.
-	 *
-	 * @since 1.0.0
-	 * @var float
-	 */
-	private const EARTH_RADIUS_METERS = 6371000.0;
 
 	/**
 	 * Returns the rendered HTML for a single GPX Elevation block instance.
@@ -409,7 +402,7 @@ final class Render_Elevation {
 		// and emitting a (distance, elevation) sample whenever elevation is set.
 		foreach ( $coords as $coord ) {
 			if ( null !== $prev ) {
-				$distance += self::haversine_meters( $prev[1], $prev[0], $coord[1], $coord[0] );
+				$distance += Distance::haversine_meters( $prev[1], $prev[0], $coord[1], $coord[0] );
 			}
 			if ( isset( $coord[2] ) ) {
 				$series[] = [ $distance, $coord[2] ];
@@ -1141,36 +1134,6 @@ final class Render_Elevation {
 			$wrapper,
 			esc_html__( 'No elevation data in this GPX file.', 'kntnt-gpx-blocks' ),
 		);
-
-	}
-
-	/**
-	 * Great-circle distance between two lat/lon pairs in metres.
-	 *
-	 * Matches Statistics_Calculator's Haversine formula (Earth radius
-	 * 6371000 m) so the cumulative distances on the chart agree exactly with
-	 * the total distance reported by the Statistics block.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param float $lat1 Latitude of point 1, decimal degrees.
-	 * @param float $lon1 Longitude of point 1, decimal degrees.
-	 * @param float $lat2 Latitude of point 2, decimal degrees.
-	 * @param float $lon2 Longitude of point 2, decimal degrees.
-	 *
-	 * @return float
-	 */
-	private static function haversine_meters( float $lat1, float $lon1, float $lat2, float $lon2 ): float {
-
-		$phi1     = deg2rad( $lat1 );
-		$phi2     = deg2rad( $lat2 );
-		$d_phi    = deg2rad( $lat2 - $lat1 );
-		$d_lambda = deg2rad( $lon2 - $lon1 );
-
-		$a = sin( $d_phi / 2 ) ** 2
-			+ cos( $phi1 ) * cos( $phi2 ) * sin( $d_lambda / 2 ) ** 2;
-
-		return self::EARTH_RADIUS_METERS * 2 * atan2( sqrt( $a ), sqrt( 1 - $a ) );
 
 	}
 
