@@ -354,10 +354,33 @@ final class Render_Map {
 		// Build the inline style string from the validated theming attributes.
 		// Dimensions (`aspect-ratio`, `min-height`) are emitted by core's
 		// `dimensions` block supports — the wrapper attributes returned by
-		// `get_block_wrapper_attributes()` already carry them, so this render
-		// callback only needs to contribute the colour and typography custom
-		// properties on top.
+		// `get_block_wrapper_attributes()` already carry them when the
+		// editor has set values. The plugin's only contributions in this
+		// slot are the colour and typography custom properties on top of
+		// core's declarations, plus the always-on min-height default that
+		// covers the blank state (issue #115).
 		$style_parts = [];
+
+		// Always emit the plugin-defined default `min-height` inline when
+		// the editor has not set one. Without this, the buggy WordPress
+		// editor state where toggling aspect-ratio away from Original and
+		// back leaves min-height blank emits an inline `aspect-ratio:
+		// unset` that defeats the SCSS baseline `aspect-ratio: 3/1;
+		// min-height: 240px;` and collapses the wrapper to zero height
+		// (issue #115). An explicit inline declaration beats `aspect-ratio:
+		// unset` because both live at the same inline-style cascade level
+		// and `aspect-ratio: unset` does not affect `min-height`. When the
+		// user has set their own value the block-supports machinery
+		// appends `min-height: <value>` later in the same style attribute
+		// — last-wins in the CSS cascade — so the plugin default is
+		// transparently overridden.
+		$style_dimensions = is_array( $attributes['style'] ?? null ) && is_array( $attributes['style']['dimensions'] ?? null )
+			? $attributes['style']['dimensions']
+			: [];
+		$user_min_height  = $style_dimensions['minHeight'] ?? null;
+		if ( ! is_string( $user_min_height ) || '' === $user_min_height ) {
+			$style_parts[] = 'min-height: 30vh';
+		}
 
 		// Append CSS custom properties for track and cursor colours when set.
 		// Empty strings fall back to the hardcoded defaults in style.scss.
@@ -472,11 +495,12 @@ final class Render_Map {
 		$wrapper = get_block_wrapper_attributes( $wrapper_args );
 
 		// Return the block element. Leaflet mounts directly into this wrapper.
-		// Width is 100% via the SCSS baseline; aspect-ratio and min-height come
-		// from core's `dimensions` block supports — either as the editor's
-		// override carried in `$wrapper`'s inline style, or as the SCSS fallback
-		// (`3 / 1` and `240px`). Either way Leaflet always sees a correctly
-		// sized container.
+		// Width is 100% via the SCSS baseline; aspect-ratio comes from core's
+		// `dimensions` block supports (or the SCSS fallback `3 / 1`), and
+		// `min-height` is always present inline — either the editor's chosen
+		// value carried by `get_block_wrapper_attributes()` or the plugin
+		// default `30vh` injected above (issue #115). Either way Leaflet
+		// always sees a correctly sized container.
 		// role="application" and aria-label expose the interactive map to assistive
 		// technology. <noscript> is shown only when JS is disabled.
 		// data-wp-init bootstraps the block. The suffixed data-wp-watch directive

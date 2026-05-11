@@ -1848,3 +1848,101 @@ test( 'inline style is terminated so core-appended per-corner border-radius surv
 
 } );
 
+// ---------------------------------------------------------------------------
+// Issue #115 — the plugin-defined default `min-height: 15vh` is emitted
+// inline on the wrapper whenever `style.dimensions.minHeight` is blank or
+// missing. The buggy state core leaves the editor in after toggling
+// aspect-ratio away from Original and back — a blank min-height field
+// combined with an inline `aspect-ratio: unset` — defeats the SCSS
+// baseline and collapses the wrapper to zero height. An always-on inline
+// default beats the inline `aspect-ratio: unset` because it is itself an
+// explicit inline declaration.
+// ---------------------------------------------------------------------------
+
+test( 'inline min-height default is emitted when style.dimensions.minHeight is missing (issue #115)', function (): void {
+
+	elev_setup_normal_path( 700, 600, 'map-default-min-height' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 600 ) );
+
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'min-height: 15vh' );
+
+} );
+
+test( 'inline min-height default is emitted when style.dimensions.minHeight is blank (issue #115)', function (): void {
+
+	elev_setup_normal_path( 701, 601, 'map-blank-min-height' );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId' => 'auto',
+			'style' => [ 'dimensions' => [ 'minHeight' => '' ] ],
+		],
+		'',
+		elev_fake_block( 601 ),
+	);
+
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'min-height: 15vh' );
+
+} );
+
+test( 'inline min-height default still emitted when aspectRatio is set but minHeight is blank (issue #115)', function (): void {
+
+	// Reproduces the bug shape from the issue: the editor sets an aspect
+	// ratio, which clears min-height. The plugin must still inject its
+	// default so the wrapper has a non-zero height regardless of how core
+	// surfaces the aspect-ratio choice.
+	elev_setup_normal_path( 702, 602, 'map-aspect-only' );
+
+	$html = Render_Elevation::render(
+		[
+			'mapId' => 'auto',
+			'style' => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
+		],
+		'',
+		elev_fake_block( 602 ),
+	);
+
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'min-height: 15vh' );
+
+} );
+
+test( 'inline min-height default is omitted when style.dimensions.minHeight is user-set (issue #115)', function (): void {
+
+	// When the user has typed an explicit value, the plugin must not
+	// emit its own default. Core's block-supports machinery emits the
+	// user's value into the wrapper's inline style — simulated here by
+	// the test's $kntnt_elev_test_core_style global, which appends the
+	// declaration the same way real core would.
+	elev_setup_normal_path( 703, 603, 'map-explicit-min-height' );
+
+	$GLOBALS['kntnt_elev_test_core_style'] = 'min-height:500px;';
+
+	$html = Render_Elevation::render(
+		[
+			'mapId' => 'auto',
+			'style' => [ 'dimensions' => [ 'minHeight' => '500px' ] ],
+		],
+		'',
+		elev_fake_block( 603 ),
+	);
+
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+
+	// Core's contribution must still be present — the test wired it
+	// through the wrapper helper.
+	expect( $style_match[1] )->toContain( 'min-height:500px' );
+
+	// The plugin default (15vh) must not appear in the wrapper style
+	// when the user has set their own value.
+	expect( $style_match[1] )->not->toContain( '15vh' );
+
+} );
+

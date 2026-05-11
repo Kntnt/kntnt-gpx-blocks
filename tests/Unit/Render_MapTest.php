@@ -2342,3 +2342,135 @@ test( 'inline style is terminated so core-appended per-corner border-radius surv
 	}
 
 } );
+
+// ---------------------------------------------------------------------------
+// Issue #115 — the plugin-defined default `min-height: 30vh` is emitted
+// inline on the wrapper whenever `style.dimensions.minHeight` is blank or
+// missing. The buggy state core leaves the editor in after toggling
+// aspect-ratio away from Original and back — a blank min-height field
+// combined with an inline `aspect-ratio: unset` — defeats the SCSS
+// baseline and collapses the wrapper to zero height. An always-on inline
+// default beats the inline `aspect-ratio: unset` because it is itself an
+// explicit inline declaration.
+// ---------------------------------------------------------------------------
+
+test( 'inline min-height default is emitted when style.dimensions.minHeight is missing (issue #115)', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 700, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 700, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 700,
+			'mapId'        => 'map-default-min-height',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'min-height: 30vh' );
+
+} );
+
+test( 'inline min-height default is emitted when style.dimensions.minHeight is blank (issue #115)', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 701, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 701, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 701,
+			'mapId'        => 'map-blank-min-height',
+			'style'        => [ 'dimensions' => [ 'minHeight' => '' ] ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'min-height: 30vh' );
+
+} );
+
+test( 'inline min-height default still emitted when aspectRatio is set but minHeight is blank (issue #115)', function (): void {
+
+	// Reproduces the bug shape from the issue: the editor sets an aspect
+	// ratio, which clears min-height. The plugin must still inject its
+	// default so the wrapper has a non-zero height regardless of how core
+	// surfaces the aspect-ratio choice.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 702, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 702, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 702,
+			'mapId'        => 'map-aspect-only',
+			'style'        => [ 'dimensions' => [ 'aspectRatio' => '16/9' ] ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	expect( $style_match[1] )->toContain( 'min-height: 30vh' );
+
+} );
+
+test( 'inline min-height default is omitted when style.dimensions.minHeight is user-set (issue #115)', function (): void {
+
+	// When the user has typed an explicit value, the plugin must not
+	// emit its own default. Core's block-supports machinery emits the
+	// user's value into the wrapper's inline style — simulated here by
+	// the test's $kntnt_map_test_core_style global, which appends the
+	// declaration the same way real core would.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 703, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 703, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$GLOBALS['kntnt_map_test_core_style'] = 'min-height:500px;';
+
+	$html = Render_Map::render(
+		[
+			'attachmentId' => 703,
+			'mapId'        => 'map-explicit-min-height',
+			'style'        => [ 'dimensions' => [ 'minHeight' => '500px' ] ],
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+
+	// Core's contribution must still be present — the test wired it
+	// through the wrapper helper.
+	expect( $style_match[1] )->toContain( 'min-height:500px' );
+
+	// The plugin default (30vh) must not appear in the wrapper style
+	// when the user has set their own value.
+	expect( $style_match[1] )->not->toContain( '30vh' );
+
+} );

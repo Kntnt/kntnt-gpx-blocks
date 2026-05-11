@@ -4,8 +4,12 @@
 //
 // - The wrapper sets the layout box. `aspect-ratio` and `min-height` are
 //   delegated to core's `dimensions` block supports; the SCSS baseline
-//   `aspect-ratio: 4 / 1; min-height: 120px;` applies whenever the editor
-//   leaves both fields empty.
+//   `aspect-ratio: 4 / 1; min-height: 15vh;` applies whenever the editor
+//   leaves both fields empty. The render path also always emits an inline
+//   `min-height` default matching this baseline so the buggy WordPress
+//   editor state where toggling aspect-ratio away from Original and back
+//   emits an inline `aspect-ratio: unset` does not collapse the wrapper
+//   to zero (issue #115).
 // - The wrapper reserves space for the HTML axis-label overlays outside
 //   the SVG plot area via `padding-left` / `padding-bottom` driven by
 //   font-relative CSS variables. Larger axis font-size grows the reserved
@@ -23,12 +27,13 @@
 .kntnt-gpx-blocks-elevation {
 	// ─── Layout baseline ──────────────────────────────────────────────────
 	// Overridden inline by core's `dimensions` block supports when the editor
-	// sets either field.
+	// sets either field, and additionally overridden by the render path's
+	// always-on inline `min-height` default (issue #115).
 	position: relative;
 	box-sizing: border-box;
 	width: 100%;
 	aspect-ratio: 4 / 1;
-	min-height: 120px;
+	min-height: 15vh;
 
 	// Padding reserves space for the HTML axis-label overlays. The two
 	// dedicated label-size variables are font-relative so increasing the

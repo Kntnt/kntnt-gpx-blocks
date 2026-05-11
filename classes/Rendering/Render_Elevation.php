@@ -247,10 +247,32 @@ final class Render_Elevation {
 		// Dimensions (`aspect-ratio`, `min-height`) and typography (`font-family`,
 		// `font-size`, etc.) are emitted by core's `dimensions` and `typography`
 		// block supports — the wrapper attributes returned by
-		// `get_block_wrapper_attributes()` already carry them. Empty colour
-		// values fall back to the SCSS defaults; the SVG axis labels and
-		// cursor-tooltip text inherit typography from the block wrapper.
+		// `get_block_wrapper_attributes()` already carry them when the editor
+		// has set values. Empty colour values fall back to the SCSS defaults;
+		// the SVG axis labels and cursor-tooltip text inherit typography from
+		// the block wrapper.
 		$style_parts = [];
+
+		// Always emit the plugin-defined default `min-height` inline when
+		// the editor has not set one. Without this, the buggy WordPress
+		// editor state where toggling aspect-ratio away from Original and
+		// back leaves min-height blank emits an inline `aspect-ratio:
+		// unset` that defeats the SCSS baseline `aspect-ratio: 4/1;
+		// min-height: 120px;` and collapses the wrapper to zero height
+		// (issue #115). An explicit inline declaration beats `aspect-ratio:
+		// unset` because both live at the same inline-style cascade level
+		// and `aspect-ratio: unset` does not affect `min-height`. When the
+		// user has set their own value the block-supports machinery
+		// appends `min-height: <value>` later in the same style attribute
+		// — last-wins in the CSS cascade — so the plugin default is
+		// transparently overridden.
+		$style_dimensions = is_array( $attributes['style'] ?? null ) && is_array( $attributes['style']['dimensions'] ?? null )
+			? $attributes['style']['dimensions']
+			: [];
+		$user_min_height  = $style_dimensions['minHeight'] ?? null;
+		if ( ! is_string( $user_min_height ) || '' === $user_min_height ) {
+			$style_parts[] = 'min-height: 15vh';
+		}
 
 		if ( '' !== $axis_color ) {
 			$style_parts[] = '--kntnt-gpx-blocks-axis-color: ' . $axis_color;

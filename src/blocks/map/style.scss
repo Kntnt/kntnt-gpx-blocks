@@ -1,20 +1,24 @@
 // Styles shared between the editor and the frontend for the GPX Map block.
 // Layout dimensions (`aspect-ratio`, `min-height`) come from core's
 // `dimensions` block supports, which emit the editor-chosen values inline on
-// the wrapper at render time. The `aspect-ratio: 3 / 1; min-height: 240px;`
+// the wrapper at render time. The `aspect-ratio: 3 / 1; min-height: 30vh;`
 // rule below is the baseline shape applied when the editor leaves both
 // dimensions empty; the inline style from core's block supports overrides it
-// when set. Leaflet's own stylesheet is imported in view.ts so that
-// @wordpress/scripts bundles it into the view-side CSS asset rather than the
-// editor stylesheet.
+// when set. The render path also always emits an inline `min-height` default
+// matching this baseline so the buggy WordPress editor state where toggling
+// aspect-ratio away from Original and back emits an inline
+// `aspect-ratio: unset` does not collapse the wrapper to zero (issue #115).
+// Leaflet's own stylesheet is imported in view.ts so that @wordpress/scripts
+// bundles it into the view-side CSS asset rather than the editor stylesheet.
 
 .kntnt-gpx-blocks-map {
 	// Layout baseline; overridden inline by core's `dimensions` block supports
-	// when the editor sets either field.
+	// when the editor sets either field, and additionally overridden by the
+	// render path's always-on inline `min-height` default (issue #115).
 	display: block;
 	width: 100%;
 	aspect-ratio: 3 / 1;
-	min-height: 240px;
+	min-height: 30vh;
 
 	// Anchor descendants that need to fill the wrapper's box (the editor
 	// preview's inner host, the absolute Leaflet panes) without depending on
