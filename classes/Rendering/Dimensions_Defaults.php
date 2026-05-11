@@ -102,11 +102,15 @@ final class Dimensions_Defaults {
 		// Read both fields and ask the predicate whether each is blank.
 		// `aspectRatio` blocks the injection when it carries any meaningful
 		// value — the container then has a definite height and adding a
-		// min-height on top would fight that constraint.
+		// min-height on top would fight that constraint. The CSS keyword
+		// `'auto'` is the value WordPress writes when the user picks the
+		// "Original" option in the aspect-ratio dropdown *after* having
+		// selected another ratio — semantically equivalent to "no ratio",
+		// so the aspect-ratio check treats it as blank too.
 		if ( ! self::is_blank( $dimensions['minHeight'] ?? null ) ) {
 			return $parsed_block;
 		}
-		if ( ! self::is_blank( $dimensions['aspectRatio'] ?? null ) ) {
+		if ( ! self::is_blank_aspect_ratio( $dimensions['aspectRatio'] ?? null ) ) {
 			return $parsed_block;
 		}
 
@@ -140,6 +144,27 @@ final class Dimensions_Defaults {
 	 */
 	private static function is_blank( mixed $value ): bool {
 		return $value === null || $value === '';
+	}
+
+	/**
+	 * Decides whether a `style.dimensions.aspectRatio` value counts as
+	 * "no ratio set".
+	 *
+	 * Extends `is_blank()` with the CSS keyword `'auto'`. WordPress writes
+	 * `'auto'` to `style.dimensions.aspectRatio` when the user picks the
+	 * "Original" option in the aspect-ratio dropdown after having selected
+	 * another ratio first. Semantically `'auto'` means "no aspect-ratio
+	 * constraint" — the same end-state as a blank or missing value — so
+	 * the per-block default `min-height` should still apply.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $value The raw value read from
+	 *                     `attrs.style.dimensions.aspectRatio`.
+	 * @return bool True when the value should be treated as no ratio set.
+	 */
+	private static function is_blank_aspect_ratio( mixed $value ): bool {
+		return self::is_blank( $value ) || $value === 'auto';
 	}
 
 }

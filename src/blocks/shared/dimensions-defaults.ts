@@ -71,6 +71,26 @@ function isBlank( value: unknown ): boolean {
 }
 
 /**
+ * Decides whether a saved `aspectRatio` value should be treated as
+ * "no ratio set".
+ *
+ * Extends `isBlank` with the CSS keyword `'auto'`. WordPress writes
+ * `'auto'` to `attrs.style.dimensions.aspectRatio` when the user picks
+ * the "Original" option in the aspect-ratio dropdown after having
+ * selected another ratio first. Semantically `'auto'` means "no
+ * aspect-ratio constraint" — the same end-state as a blank or missing
+ * value — so the per-block default `min-height` should still apply.
+ *
+ * @since 1.0.0
+ *
+ * @param value Raw value pulled from `attrs.style.dimensions.aspectRatio`.
+ * @return `true` when the value should be treated as no ratio set.
+ */
+function isBlankAspectRatio( value: unknown ): boolean {
+	return isBlank( value ) || value === 'auto';
+}
+
+/**
  * Reads `attributes.style.dimensions.{minHeight,aspectRatio}` without
  * coercing missing path segments into existence.
  *
@@ -126,7 +146,7 @@ export function getDefaultMinHeight(
 	}
 
 	const { minHeight, aspectRatio } = readDimensions( attributes );
-	if ( ! isBlank( minHeight ) || ! isBlank( aspectRatio ) ) {
+	if ( ! isBlank( minHeight ) || ! isBlankAspectRatio( aspectRatio ) ) {
 		return undefined;
 	}
 
