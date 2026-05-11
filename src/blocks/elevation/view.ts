@@ -44,7 +44,6 @@ import { getContext, getElement, store } from '@wordpress/interactivity';
 import { interpolateSample, sampleToSvg, type ChartBounds } from './geometry';
 import {
 	applyCursorPosition,
-	clamp,
 	formatDistance,
 	formatElevation,
 	hideCursor,
@@ -52,6 +51,11 @@ import {
 	showCursor,
 	type CursorOverlayElements,
 } from './cursor';
+import {
+	bindPointerHandlers,
+	bindPointerHandlersWhenVisible,
+	findCursorElements,
+} from './mount';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,31 +153,6 @@ interface ElevationEntry {
  */
 const mountedElevations = new WeakMap< Element, ElevationEntry >();
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Convert a client-space pointer x-coordinate to a fraction [0, 1] relative
- * to the SVG chart's plot area.
- *
- * Uses the SVG element's bounding rect to map client pixels to the plot
- * rectangle's horizontal range. Under the wrapper-as-image layout
- * (issue #135) the SVG fills the plot rectangle exactly, so the SVG's
- * bounding rect *is* the plot rectangle in CSS pixels.
- *
- * @since 1.0.0
- *
- * @param clientX - Pointer x in client (viewport) pixels.
- * @param svg     - The SVG element.
- * @return Fraction in [0, 1], already clamped.
- */
-function clientXToFraction( clientX: number, svg: SVGSVGElement ): number {
-	const rect = svg.getBoundingClientRect();
-	if ( rect.width === 0 ) {
-		return 0;
-	}
-	return clamp( ( clientX - rect.left ) / rect.width, 0, 1 );
-}
-
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
@@ -209,46 +188,16 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Locate the SVG and the cursor LINE inside it.
-			const svg = wrapper.querySelector< SVGSVGElement >( 'svg' );
-			if ( ! svg ) {
+			// Locate the server-rendered SVG, the cursor LINE inside it, and
+			// the HTML cursor overlays alongside it (issue #136 — moved out
+			// of the SVG so they are immune to the wrapper-as-image layout's
+			// non-uniform stretch). `null` means a required node is missing
+			// and the block ships uninteractive rather than half-wired.
+			const elements = findCursorElements( wrapper );
+			if ( ! elements ) {
 				return;
 			}
-			const cursorLine = svg.querySelector< SVGLineElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-line'
-			);
-			if ( ! cursorLine ) {
-				return;
-			}
-
-			// Locate the HTML cursor overlays (issue #136 — moved out of the
-			// SVG so they are immune to the wrapper-as-image layout's
-			// non-uniform stretch).
-			const cursorOverlay = wrapper.querySelector< HTMLElement >(
-				'.kntnt-gpx-blocks-elevation-cursor'
-			);
-			const cursorDot = wrapper.querySelector< HTMLElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-dot'
-			);
-			const tooltip = wrapper.querySelector< HTMLElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-tooltip'
-			);
-			const tooltipDistance = wrapper.querySelector< HTMLElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-tooltip-distance'
-			);
-			const tooltipElevation = wrapper.querySelector< HTMLElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-tooltip-elevation'
-			);
-
-			if (
-				! cursorOverlay ||
-				! cursorDot ||
-				! tooltip ||
-				! tooltipDistance ||
-				! tooltipElevation
-			) {
-				return;
-			}
+			const { svg, cursorLine } = elements;
 
 			// Derive SVG-space chart bounds from the viewBox. Under the
 			// wrapper-as-image layout (issue #135) `PLOT_INSET = 0`, so the
@@ -295,127 +244,25 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				wrapper,
 				svg,
 				cursorLine,
-				cursorOverlay,
-				cursorDot,
-				tooltip,
-				tooltipDistance,
-				tooltipElevation,
+				cursorOverlay: elements.cursorOverlay,
+				cursorDot: elements.cursorDot,
+				tooltip: elements.tooltip,
+				tooltipDistance: elements.tooltipDistance,
+				tooltipElevation: elements.tooltipElevation,
 				chart,
 			} );
 
-			// Defer pointer-event handler binding until the chart is in (or near)
-			// the viewport. This mirrors the Map block's IntersectionObserver
-			// pattern: heavy DOM listeners are attached lazily, but the cursor-sync
-			// watch (onElevationCursorChange) is already live because mountedElevations is
-			// set above.
-			const bindPointerHandlers = () => {
-				let scrubbing = false;
-
-				svg.addEventListener(
-					'pointerdown',
-					( event: PointerEvent ) => {
-						// Ignore secondary pointers during an active scrub so a
-						// stray second finger cannot hijack capture mid-gesture.
-						if ( scrubbing ) {
-							return;
-						}
-
-						event.preventDefault();
-						scrubbing = true;
-						svg.setPointerCapture( event.pointerId );
-						state[ mapId ].fraction = clientXToFraction(
-							event.clientX,
-							svg
-						);
-					}
-				);
-
-				svg.addEventListener(
-					'pointermove',
-					( event: PointerEvent ) => {
-						// Capture during a scrub keeps this firing even when the
-						// pointer is off the SVG; for plain mouse hover the event
-						// also fires when the mouse is over the chart. Touch has
-						// no hover, so the `mouse` branch is a no-op for touch.
-						if ( scrubbing || event.pointerType === 'mouse' ) {
-							state[ mapId ].fraction = clientXToFraction(
-								event.clientX,
-								svg
-							);
-						}
-					}
-				);
-
-				const endScrub = ( event: PointerEvent ) => {
-					if ( ! scrubbing ) {
-						return;
-					}
-					scrubbing = false;
-					if ( svg.hasPointerCapture( event.pointerId ) ) {
-						svg.releasePointerCapture( event.pointerId );
-					}
-				};
-
-				svg.addEventListener( 'pointerup', endScrub );
-				svg.addEventListener( 'pointercancel', endScrub );
-
-				// Belt-and-suspenders against browsers (and touch emulators
-				// like Firefox responsive design mode) where `touch-action:
-				// none` on SVG elements is partially honoured. While
-				// scrubbing, every touchmove on the SVG is preventDefault'd
-				// to guarantee the page does not scroll. `passive: false` is
-				// required for preventDefault to take effect.
-				svg.addEventListener(
-					'touchmove',
-					( event: TouchEvent ) => {
-						if ( scrubbing ) {
-							event.preventDefault();
-						}
+			// Defer pointer-event handler binding until the chart is in (or
+			// near) the viewport. The cursor-sync watch (onElevationCursorChange)
+			// is already live because the mount entry is set above; only the
+			// heavy DOM listeners wait for the IntersectionObserver to fire.
+			bindPointerHandlersWhenVisible( ref, () => {
+				bindPointerHandlers( svg, wrapper, {
+					setFraction: ( value ) => {
+						state[ mapId ].fraction = value;
 					},
-					{ passive: false }
-				);
-
-				// Mouse leaves the block — null the fraction so the cursor
-				// disappears. Skip while scrubbing so brief excursions out
-				// of the block during a fast mouse scrub do not flicker the
-				// cursor off. Skip on touch entirely: a finger lift fires
-				// `pointerleave` automatically (the touch pointer ceases),
-				// and we want the cursor to stay at its last position so
-				// the user can read it (and the corresponding map cursor)
-				// after pointing.
-				wrapper.addEventListener( 'pointerleave', ( (
-					event: PointerEvent
-				) => {
-					if ( scrubbing || event.pointerType === 'touch' ) {
-						return;
-					}
-					state[ mapId ].fraction = null;
-				} ) as EventListener );
-			};
-
-			// Use IntersectionObserver when available (all evergreen browsers).
-			// Fall back to immediate binding when the API is absent.
-			if ( typeof IntersectionObserver !== 'undefined' ) {
-				const observer = new IntersectionObserver(
-					( entries, obs ) => {
-						if ( ! entries[ 0 ]?.isIntersecting ) {
-							return;
-						}
-
-						// Disconnect after first intersection — one-shot pattern.
-						obs.disconnect();
-						bindPointerHandlers();
-					},
-					// rootMargin pre-triggers 200 px before the SVG enters view,
-					// matching the Map block's lazy-mount margin.
-					{ rootMargin: '200px 0px', threshold: 0 }
-				);
-				observer.observe( ref );
-			} else {
-				// IntersectionObserver unavailable — bind immediately so the block
-				// is still interactive.
-				bindPointerHandlers();
-			}
+				} );
+			} );
 		},
 
 		/**

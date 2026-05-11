@@ -10,10 +10,15 @@
  * are injected as inline CSS variables on the wrapper div so the editor
  * preview updates instantly without a round-trip to ServerSideRender.
  *
+ * The component is intentionally thin: the page's map-tree walk, the
+ * single-map auto-binding, and the SSR-error tracking each live behind a
+ * dedicated hook in this folder. `ElevationEdit` itself is the orchestrator
+ * — it reads attributes, calls the hooks in order, assembles inline styles,
+ * and renders the inspector + preview tree.
+ *
  * @since 1.0.0
  */
 
-import { useRef, useState, useEffect } from '@wordpress/element';
 import {
 	InspectorControls,
 	PanelColorSettings,
@@ -22,11 +27,13 @@ import {
 import type { BlockEditProps } from '@wordpress/blocks';
 import { Notice, PanelBody, SelectControl } from '@wordpress/components';
 import ServerSideRender from '@wordpress/server-side-render';
-import { useSelect } from '@wordpress/data';
-import { store as coreStore } from '@wordpress/core-data';
 import { __ } from '@wordpress/i18n';
 
 import { useAutoPickMapId } from './use-auto-pick-map-id';
+import { useMapBlocks } from './use-map-blocks';
+import { useBindSingleMap } from './use-bind-single-map';
+import { useSsrErrorMessage } from './use-ssr-error-message';
+import { buildColorSettings } from './color-settings';
 import { getDefaultMinHeight } from '../shared/dimensions-defaults';
 
 /**
@@ -43,51 +50,6 @@ interface ElevationAttributes {
 	tooltipBackground: string;
 	tooltipColor: string;
 	[ key: string ]: unknown;
-}
-
-/**
- * Shape of a parsed Gutenberg block returned by getBlocks().
- *
- * Only the fields the edit component reads are declared.
- *
- * @since 1.0.0
- */
-interface EditorBlock {
-	name: string;
-	attributes: {
-		attachmentId?: number;
-		mapId?: string;
-		[ key: string ]: unknown;
-	};
-	innerBlocks: EditorBlock[];
-}
-
-/**
- * Recursively collects all GPX Map blocks from a block tree.
- *
- * Walks the entire tree (including innerBlocks at every depth) so the picker
- * finds maps inside groups, columns, or other container blocks.
- *
- * @since 1.0.0
- *
- * @param {EditorBlock[]} blocks Flat or nested block array from getBlocks().
- *
- * @return {EditorBlock[]} All blocks whose name is 'kntnt-gpx-blocks/map'.
- */
-function collectMapBlocks( blocks: EditorBlock[] ): EditorBlock[] {
-	const result: EditorBlock[] = [];
-
-	for ( const block of blocks ) {
-		// Recurse first so document order is preserved when maps are nested.
-		if ( block.innerBlocks.length > 0 ) {
-			result.push( ...collectMapBlocks( block.innerBlocks ) );
-		}
-		if ( block.name === 'kntnt-gpx-blocks/map' ) {
-			result.push( block );
-		}
-	}
-
-	return result;
 }
 
 /**
@@ -129,6 +91,20 @@ export const ElevationEdit = ( {
 	// the default `'auto'` and the existing single-map resolution path takes
 	// over downstream.
 	useAutoPickMapId( clientId, mapId, ( next ) => setAttributes( next ) );
+
+	// Walk the page's block tree once and expose the configured map list,
+	// the picker option entries, and the SSR snapshot in one shot.
+	const { configuredMapBlocks, mapOptions, editorBlockSnapshot } =
+		useMapBlocks();
+
+	// Keep the attribute aligned with the single configured map on the page
+	// (no-op for zero or two-plus configured maps — picker or fallback owns
+	// the binding in those cases).
+	useBindSingleMap( configuredMapBlocks, mapId, setAttributes );
+
+	// Lift any Render_Elevation-emitted error message into React state so
+	// the Inspector sidebar can mirror it as a Notice.
+	const { errorMessage, ssrWrapperRef } = useSsrErrorMessage();
 
 	// Build a style object carrying every non-empty colour attribute as a CSS
 	// custom property so the editor preview updates instantly.
@@ -174,86 +150,6 @@ export const ElevationEdit = ( {
 		style: inlineStyle as React.CSSProperties,
 	} );
 
-	// Track any error message surfaced by the server-rendered output so the
-	// InspectorControls Notice can repeat it for discoverability.
-	const [ errorMessage, setErrorMessage ] = useState< string >( '' );
-	const ssrWrapperRef = useRef< HTMLDivElement >( null );
-	const prevErrorRef = useRef< string >( '' );
-
-	// Inspect the SSR output after each render; look for the error notice.
-	// No dependency array: we want to re-read the DOM whenever React renders,
-	// because ServerSideRender may have swapped in new HTML. prevErrorRef guards
-	// the setErrorMessage call so it only fires when the DOM actually changes,
-	// which prevents the infinite update loop the linter is guarding against.
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	useEffect( () => {
-		if ( ! ssrWrapperRef.current ) {
-			return;
-		}
-		const errorEl = ssrWrapperRef.current.querySelector< HTMLElement >(
-			'.kntnt-gpx-blocks-error'
-		);
-		const next = errorEl ? errorEl.textContent ?? '' : '';
-		if ( next !== prevErrorRef.current ) {
-			prevErrorRef.current = next;
-			setErrorMessage( next );
-		}
-	} );
-
-	// Collect every GPX Map block from the page's block tree.
-	const allBlocks = useSelect( ( select ) => {
-		const { getBlocks } = select( 'core/block-editor' ) as {
-			getBlocks: () => EditorBlock[];
-		};
-		return getBlocks();
-	}, [] );
-
-	// Collect media objects so the picker can show the GPX filename.
-	const getMedia = useSelect( ( select ) => {
-		const { getMedia: coreGetMedia } = select( coreStore ) as ReturnType<
-			typeof select
-		>;
-		return coreGetMedia as (
-			id: number
-		) => { source_url?: string; slug?: string } | undefined;
-	}, [] );
-
-	// Build picker options: one entry per configured GPX Map block.
-	const mapBlocks = collectMapBlocks( allBlocks );
-	const configuredMapBlocks = mapBlocks.filter(
-		( b ) => ( b.attributes.attachmentId ?? 0 ) > 0
-	);
-	const mapOptions = configuredMapBlocks.map( ( b, index ) => {
-		const attachmentId = b.attributes.attachmentId as number;
-		const blockMapId = b.attributes.mapId as string | undefined;
-		const media = getMedia( attachmentId );
-
-		// Use the media slug (filename without extension) when available.
-		const filename = media?.slug ?? String( attachmentId );
-		const label =
-			__( 'Karta', 'kntnt-gpx-blocks' ) +
-			` ${ index + 1 }: ${ filename }`;
-
-		return { label, value: blockMapId ?? '' };
-	} );
-
-	// Build the snapshot of configured Map blocks that ServerSideRender
-	// forwards to the PHP renderer. Without it, Render_Elevation falls back
-	// to parse_blocks(post_content) which only sees the last save — so a
-	// freshly inserted Map (or a freshly auto-generated mapId) would resolve
-	// to no-map / map-not-found in the editor preview. The snapshot mirrors
-	// the parse_blocks() shape so Resolve_Map_Id::resolve_from_blocks()
-	// consumes it without translation. The attribute is registered with
-	// role:local in block.json so it never reaches saved post_content.
-	const editorBlockSnapshot = configuredMapBlocks.map( ( b ) => ( {
-		blockName: 'kntnt-gpx-blocks/map',
-		attrs: {
-			mapId: ( b.attributes.mapId as string | undefined ) ?? '',
-			attachmentId: b.attributes.attachmentId as number,
-		},
-		innerBlocks: [],
-	} ) );
-
 	// Build the picker option list. With two or more configured maps the
 	// "Auto" entry is omitted: it cannot resolve, so surfacing it as a
 	// selectable value would only invite an error state. With zero or one
@@ -272,31 +168,6 @@ export const ElevationEdit = ( {
 				},
 				...mapOptions,
 		  ];
-
-	// Auto-bind to the single configured map. When exactly one Map block is
-	// configured on the page the picker is hidden and the user has no way to
-	// pick anything else, so the attribute is kept aligned with that map's
-	// id. The check is symmetric: we only write when the current value would
-	// produce a different resolution (different id, or the "auto"/"" sentinel
-	// that resolves the same way only by accident of count === 1).
-	const singleMapId =
-		configuredMapBlocks.length === 1
-			? ( configuredMapBlocks[ 0 ].attributes.mapId as
-					| string
-					| undefined ) ?? ''
-			: '';
-	useEffect( () => {
-		if ( configuredMapBlocks.length !== 1 ) {
-			return;
-		}
-		if ( singleMapId === '' ) {
-			return;
-		}
-		if ( mapId === singleMapId ) {
-			return;
-		}
-		setAttributes( { mapId: singleMapId } );
-	}, [ configuredMapBlocks.length, singleMapId, mapId, setAttributes ] );
 
 	return (
 		<>
@@ -327,51 +198,17 @@ export const ElevationEdit = ( {
 				<PanelColorSettings
 					title={ __( 'Color', 'kntnt-gpx-blocks' ) }
 					enableAlpha
-					colorSettings={ [
+					colorSettings={ buildColorSettings(
 						{
-							value: axisColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( { axisColor: value ?? '' } ),
-							label: __( 'Axis lines', 'kntnt-gpx-blocks' ),
+							axisColor,
+							axisLabelColor,
+							lineColor,
+							cursorColor,
+							tooltipBackground,
+							tooltipColor,
 						},
-						{
-							value: axisLabelColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									axisLabelColor: value ?? '',
-								} ),
-							label: __( 'Axis labels', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: lineColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( { lineColor: value ?? '' } ),
-							label: __( 'Elevation line', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: cursorColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( { cursorColor: value ?? '' } ),
-							label: __( 'Cursor', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: tooltipBackground,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									tooltipBackground: value ?? '',
-								} ),
-							label: __(
-								'Tooltip background',
-								'kntnt-gpx-blocks'
-							),
-						},
-						{
-							value: tooltipColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( { tooltipColor: value ?? '' } ),
-							label: __( 'Tooltip text', 'kntnt-gpx-blocks' ),
-						},
-					] }
+						setAttributes
+					) }
 				/>
 			</InspectorControls>
 

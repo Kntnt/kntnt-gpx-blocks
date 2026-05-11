@@ -42,8 +42,16 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.fullscreen';
 import 'leaflet.fullscreen/Control.FullScreen.css';
-import { applyMaxBoundsIfSafe, paddedBoundsFromBox } from './bounds';
 import { clickToFraction, fractionToLatLng, type LatLng } from './geometry';
+import {
+	addMapControls,
+	addWaypointMarkers,
+	applyInteractionSettings,
+	createCursorMarker,
+	createLeafletMap,
+	fitAndConstrainBounds,
+	renderTrackLayers,
+} from './mount';
 import {
 	addTiles,
 	createEmptyTileRefs,
@@ -236,32 +244,6 @@ const CONSENT_CATEGORY = 'external_media';
 const mountedMaps = new WeakMap< Element, MapEntry >();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Read a CSS custom property from an element's computed style.
- *
- * Returns the fallback when the property is not set or resolves to an empty
- * string. CSS variables cannot be applied directly to canvas-rendered Leaflet
- * shapes (polyline, CircleMarker), so we read them once at mount time and pass
- * the resolved value through Leaflet's path options.
- *
- * @since 1.0.0
- *
- * @param element  - The element whose computed style is queried.
- * @param property - CSS custom property name, e.g. `'--kntnt-gpx-blocks-track-color'`.
- * @param fallback - Value returned when the property resolves to empty.
- * @return Resolved value or fallback.
- */
-function getCssVar(
-	element: Element,
-	property: string,
-	fallback: string
-): string {
-	return (
-		getComputedStyle( element ).getPropertyValue( property ).trim() ||
-		fallback
-	);
-}
 
 /**
  * Extract a flat [[lat, lng], ...] array from a GeoJSON FeatureCollection's
@@ -624,223 +606,41 @@ function bootMount(
 				return;
 			}
 
-			// Build the Leaflet map with canvas renderer for performance.
-			// Suppress Leaflet's own scrollWheelZoom (replaced by a custom
-			// wheel handler below) and boxZoom (removed entirely — see
-			// docs/architecture.md). The default zoomControl is also off
-			// because the settings-driven path adds it conditionally.
-			// `maxBoundsViscosity: 1.0` makes the eventual `setMaxBounds`
-			// call (further down, once the polyline gives us the track
-			// bbox) a rigid constraint — viscosity 1.0 means a drag past
-			// the computed corners snaps back instantly. The option has
-			// no effect until `maxBounds` is actually set, so it is safe
-			// to include unconditionally here.
-			const map = L.map( blockEl, {
-				renderer: L.canvas(),
-				zoomControl: false,
-				attributionControl: true,
-				scrollWheelZoom: false,
-				boxZoom: false,
-				maxBoundsViscosity: 1.0,
-			} );
+			// Build the Leaflet map. Tile layers are NOT added here —
+			// `initMap` calls `addTiles` after mount when consent permits
+			// and the resolved provider has a usable URL. Keeping tile
+			// lifecycle out of `bootMount` means the polyline et al. always
+			// mount regardless of consent state.
+			const map = createLeafletMap( blockEl );
 
-			// Tile layers are NOT added here — `initMap` calls `addTiles`
-			// after mount when consent permits and the resolved provider has
-			// a usable URL. Keeping tile lifecycle out of `bootMount` means
-			// the polyline et al. always mount regardless of consent state.
-
-			// Read the track colour CSS variables once at mount time.
-			// Leaflet canvas-rendered shapes receive their colour through JS
-			// options — they cannot be styled via CSS — so we resolve the
-			// computed value here and pass it through the style callback.
-			const trackColor = getCssVar(
-				blockEl,
-				'--kntnt-gpx-blocks-track-color',
-				'#0073aa'
+			// Render the visible polyline plus the invisible fat hit-layer
+			// on a shared SVG renderer; the waypoint markers further down
+			// reuse the same renderer so DOM order alone decides stacking.
+			const { layer, hitLayer, svgRenderer } = renderTrackLayers(
+				map,
+				mapState.geojson,
+				blockEl
 			);
 
-			// Render the simplified track from the hydrated GeoJSON, using
-			// the resolved track colour for the polyline.
-			const layer = L.geoJSON( mapState.geojson, {
-				style: () => ( {
-					color: trackColor,
-					weight: 4,
-					opacity: 1,
-				} ),
-			} );
-			layer.addTo( map );
+			// Fit the viewport to the track bounds and constrain panning.
+			// `invalidateSize` runs first so Leaflet re-measures the
+			// container after the IntersectionObserver-driven visibility
+			// transition — without that, `fitBounds` would see zero
+			// dimensions and compute a NaN center / NaN zoom (#116, #117).
+			fitAndConstrainBounds( map, layer );
 
-			// Shared SVG renderer used by every interactive overlay that
-			// needs a real DOM element: the hit-layer below and the waypoint
-			// markers further down. Sharing one renderer keeps everything
-			// in a single `<svg>` so DOM order alone decides stacking and
-			// pointer-event priority — later additions sit on top. Canvas
-			// would force routing through Leaflet's mouse-event emulation
-			// (slow on touch — see the hit-layer commit) and would split
-			// the overlays across two stacked elements, where the SVG would
-			// then steal pointer events from canvas-rendered markers below.
-			const svgRenderer = L.svg();
-
-			// Invisible fat overlay sharing the visible polyline's geometry.
-			// Stacking a transparent weight: 30 layer above the visible 4 px
-			// stroke widens the pointer hit zone to ~15 px on each side without
-			// changing the visible appearance.
-			const hitLayer = L.geoJSON( mapState.geojson, {
-				style: () => ( {
-					weight: 30,
-					opacity: 0,
-					fillOpacity: 0,
-					className: 'kntnt-gpx-blocks-track-hit',
-				} ),
-				interactive: true,
-				renderer: svgRenderer,
-			} );
-			hitLayer.addTo( map );
-
-			// Force Leaflet to re-measure the container before fitting the
-			// view. The block became visible just before mount (a consent
-			// transition from denying to granting, an editor SSR re-render
-			// mid-iframe-layout, or any parent layout — flex/grid — that
-			// hadn't assigned the wrapper its definite width yet). Running
-			// `invalidateSize` first makes `fitBounds` see real dimensions,
-			// which is what prevents the `(NaN, NaN)` center that crashed
-			// `setMaxBounds` in issue #116.
-			map.invalidateSize( false );
-
-			// Fit the viewport to the track bounds with small padding so
-			// the polyline never touches the container edge.
-			const bounds = layer.getBounds();
-			if ( bounds.isValid() ) {
-				map.fitBounds( bounds, { padding: [ 16, 16 ] } );
-
-				// Constrain panning so at least part of the track stays in
-				// view (issue #110). The padded bbox plus the rigid
-				// `maxBoundsViscosity: 1.0` set on the map options above keep
-				// the viewport centre inside a comfortable margin around the
-				// track without stopping the user from zooming out to the
-				// configured minimum zoom. `paddedBoundsFromBox` handles
-				// degenerate single-point tracks by inflating the bbox to a
-				// minimum span before padding; structurally invalid input
-				// returns `null` and is skipped.
-				//
-				// The post-`fitBounds` state is also guarded: if the
-				// container still has zero width at this point (some flex
-				// or grid parents hold off width assignment past the
-				// IntersectionObserver callback), Leaflet's fitBounds math
-				// goes to `scale = -Infinity` and produces a NaN center
-				// or a NaN zoom (and sometimes both — issue #116 first
-				// surfaced the center half, issue #117 the zoom half).
-				// Calling `setMaxBounds` while either is non-finite trips
-				// Leaflet's internal `_panInsideMaxBounds`, which
-				// unprojects the bad value and throws "Invalid LatLng
-				// object: (NaN, NaN)". This guard is the backstop —
-				// `Dimensions_Defaults` already prevents the zero-size
-				// state from arising during a normal page render — and
-				// should never fire on a healthy page. Skipping the
-				// constraint in the rare bad-state branch keeps the
-				// polyline visible at the cost of unconstrained panning,
-				// which is the pre-#110 behaviour.
-				const sw = bounds.getSouthWest();
-				const ne = bounds.getNorthEast();
-				const padded = paddedBoundsFromBox( {
-					southWest: [ sw.lat, sw.lng ],
-					northEast: [ ne.lat, ne.lng ],
-				} );
-				if ( padded ) {
-					applyMaxBoundsIfSafe( map, [
-						padded.southWest,
-						padded.northEast,
-					] );
-				}
-			}
-
-			// Add the configured control overlays based on the hydrated settings.
+			// Add the configured control overlays and apply each
+			// interaction handler per the hydrated settings.
 			const settings = mapState.settings;
-			if ( settings.showZoomButtons ) {
-				L.control.zoom( { position: 'topleft' } ).addTo( map );
-			}
-			if ( settings.showScale ) {
-				L.control
-					.scale( {
-						position: 'bottomleft',
-						metric: true,
-						imperial: false,
-					} )
-					.addTo( map );
-			}
-			if ( settings.showFullscreen ) {
-				// leaflet.fullscreen registers L.control.fullscreen as a
-				// side effect of the import at the top of this module.
-				(
-					L.control as Record<
-						string,
-						( opts: Record< string, unknown > ) => L.Control
-					>
-				 )
-					.fullscreen( { position: 'topleft' } )
-					.addTo( map );
-			}
-			if ( settings.showDownload && mapState.gpxFileUrl ) {
-				const gpxUrl = mapState.gpxFileUrl;
+			addMapControls( map, settings, mapState.gpxFileUrl );
+			applyInteractionSettings( map, settings );
 
-				// Derive a download filename from the URL's last path segment.
-				const filename = gpxUrl.split( '/' ).pop() ?? 'track.gpx';
-
-				// Build a custom Leaflet control with a download anchor.
-				const DownloadControl = L.Control.extend( {
-					onAdd() {
-						const container = L.DomUtil.create(
-							'div',
-							'leaflet-bar leaflet-control kntnt-gpx-blocks-map-download-control'
-						);
-						const anchor = L.DomUtil.create(
-							'a',
-							'',
-							container
-						) as HTMLAnchorElement;
-						anchor.href = gpxUrl;
-						anchor.download = filename;
-						anchor.title = 'Download GPX';
-						anchor.setAttribute( 'aria-label', 'Download GPX' );
-						anchor.innerHTML =
-							'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 2v8m-4-4l4 4l4-4M3 13h10"/></svg>';
-						L.DomEvent.disableClickPropagation( container );
-						return container;
-					},
-				} );
-				new DownloadControl( { position: 'topleft' } ).addTo( map );
-			}
-
-			// Apply each interaction handler per the hydrated settings.
-			// Using explicit enable/disable calls rather than L.map init
-			// options keeps the settings as the single source of truth.
-			if ( settings.enableDrag ) {
-				map.dragging.enable();
-			} else {
-				map.dragging.disable();
-			}
-			if ( settings.enablePinchZoom ) {
-				map.touchZoom.enable();
-			} else {
-				map.touchZoom.disable();
-			}
-			if ( settings.enableDoubleClickZoom ) {
-				map.doubleClickZoom.enable();
-			} else {
-				map.doubleClickZoom.disable();
-			}
-			if ( settings.enableKeyboard ) {
-				map.keyboard.enable();
-			} else {
-				map.keyboard.disable();
-			}
-
-			// AbortController carrying every document-level listener attached
-			// below so a future block-detach path can release them in one
-			// call. Stored on the MapEntry so the cleanup contract is
-			// mechanical when needed. Consent transitions do not abort the
-			// disposer — they only add or remove tile layers via the helpers
-			// below.
+			// AbortController carrying every document-level listener
+			// attached below so a future block-detach path can release them
+			// in one call. Stored on the MapEntry so the cleanup contract
+			// is mechanical when needed. Consent transitions do not abort
+			// the disposer — they only add or remove tile layers via the
+			// helpers below.
 			const disposer = new AbortController();
 
 			// Replace Leaflet's scrollWheelZoom with a wheel handler that
@@ -858,178 +658,35 @@ function bootMount(
 			);
 
 			// Pre-compute the flat [lat, lng] coordinate array for
-			// fraction→position resolution in onMapCursorChange.
+			// fraction→position resolution in onMapCursorChange. The
+			// per-vertex cumulative-distance array and total distance
+			// PHP put on state are snapshotted into the MapEntry so the
+			// scrub handlers and the cursor watch avoid re-reading state.
 			const coords = extractCoords( mapState.geojson );
-
-			// Snapshot the per-vertex cumulative-distance array and total
-			// distance PHP put on state. Both are consumed by
-			// onMapCursorChange and the scrub handlers below; keeping them
-			// on the MapEntry avoids re-reading state during every
-			// pointermove.
 			const { trackCumDist, totalDistance } = mapState;
-
-			// Read the remaining colour CSS variables once at mount time.
-			const trackCursorColor = getCssVar(
-				blockEl,
-				'--kntnt-gpx-blocks-track-cursor-color',
-				'#d63638'
-			);
-			const waypointColor = getCssVar(
-				blockEl,
-				'--kntnt-gpx-blocks-waypoint-color',
-				'#d63638'
-			);
 
 			// Create the cursor marker at the track midpoint, initially
 			// invisible. Opacity is set to 1 on the first non-null fraction.
-			const midLatLng = fractionToLatLng(
-				coords as ReadonlyArray< LatLng >,
+			const cursor = createCursorMarker(
+				map,
+				coords,
 				trackCumDist,
 				totalDistance,
-				0.5
-			) ?? [ 0, 0 ];
-			const cursor = L.circleMarker( midLatLng, {
-				radius: 6,
-				color: trackCursorColor,
-				weight: 2,
-				fillColor: trackCursorColor,
-				fillOpacity: 1,
-				interactive: false,
-				opacity: 0,
-			} );
-			cursor.addTo( map );
+				blockEl
+			);
 
-			// Sticky-tooltip state shared across all waypoint markers in this
-			// map. At most one marker is sticky at a time. `closeSticky`
-			// nulls the reference *before* calling `closeTooltip`, so the
-			// `tooltipclose` handler below sees no sticky and skips its
-			// auto-reopen path. The same helper is also handed to
-			// `attachScrubHandlers` so a tap on the track or on empty map
-			// area dismisses any open sticky.
-			let stickyMarker: L.CircleMarker | null = null;
-			const closeSticky = (): void => {
-				if ( stickyMarker ) {
-					const previous = stickyMarker;
-					stickyMarker = null;
-					previous.closeTooltip();
-				}
-			};
-
-			// Add a circleMarker for each waypoint from the hydrated GeoJSON.
-			// Markers go through `svgRenderer` (the same instance as the
-			// hit-layer) so they sit later in the SVG than the 30 px
-			// hit-zone path and therefore receive pointer events first.
-			// `bubblingMouseEvents: false` keeps a click on a marker from
-			// also firing `map.on('click')`, which would otherwise dismiss
-			// the tooltip we just opened.
-			const waypointsData = mapState.waypoints as GeoJSON.GeoJsonObject;
-			if ( waypointsData?.type === 'FeatureCollection' ) {
-				const wfc = waypointsData as GeoJSON.FeatureCollection;
-				for ( const feature of wfc.features ) {
-					if ( feature.geometry?.type !== 'Point' ) {
-						continue;
-					}
-
-					// GeoJSON stores Point coordinates as [lon, lat, ele?].
-					const pt = feature.geometry as GeoJSON.Point;
-					const lon = pt.coordinates[ 0 ];
-					const lat = pt.coordinates[ 1 ];
-					if ( lon === undefined || lat === undefined ) {
-						continue;
-					}
-
-					const marker = L.circleMarker( [ lat, lon ], {
-						radius: 6,
-						color: waypointColor,
-						fillColor: waypointColor,
-						fillOpacity: 1,
-						weight: 2,
-						interactive: true,
-						bubblingMouseEvents: false,
-						renderer: svgRenderer,
-					} );
-
-					// Build the tooltip body from name and optional desc, gated
-					// by the per-line toggles. Each surviving line lives in its
-					// own `<div>` so the stylesheet can address it via the
-					// `kntnt-gpx-blocks-tooltip-{name,desc}` class. The `name`
-					// and `desc` strings come from GPX content and are inserted
-					// via `textContent`, so no markup in the source ever
-					// reaches the DOM as HTML.
-					const props = feature.properties ?? {};
-					const rawName =
-						typeof props.name === 'string' ? props.name : '';
-					const rawDesc =
-						typeof props.desc === 'string' ? props.desc : '';
-					const name = settings.tooltipShowName ? rawName : '';
-					const desc = settings.tooltipShowDesc ? rawDesc : '';
-
-					if ( name || desc ) {
-						const tooltipEl = document.createElement( 'div' );
-						if ( name ) {
-							const nameEl = document.createElement( 'div' );
-							nameEl.className = 'kntnt-gpx-blocks-tooltip-name';
-							nameEl.textContent = name;
-							tooltipEl.appendChild( nameEl );
-						}
-						if ( desc ) {
-							const descEl = document.createElement( 'div' );
-							descEl.className = 'kntnt-gpx-blocks-tooltip-desc';
-							descEl.textContent = desc;
-							tooltipEl.appendChild( descEl );
-						}
-
-						// Bind with `permanent: false` so Leaflet's built-in
-						// hover handlers drive the transient open-on-mouseover
-						// / close-on-mouseout behaviour. Sticky mode is
-						// layered on top by intercepting `tooltipclose` and
-						// re-opening when this marker is the sticky one.
-						marker.bindTooltip( tooltipEl, {
-							direction: 'top',
-							permanent: false,
-							sticky: false,
-							opacity: 1,
-						} );
-
-						// Click toggles sticky on this marker, swapping out
-						// any sticky on a different marker. The transient
-						// hover tooltip is already open at this point (a
-						// click implies the pointer is over the marker), so
-						// `openTooltip()` is idempotent on the open case
-						// and is only doing real work after a swap.
-						marker.on( 'click', () => {
-							if ( stickyMarker === marker ) {
-								closeSticky();
-								return;
-							}
-
-							closeSticky();
-							stickyMarker = marker;
-							marker.openTooltip();
-						} );
-
-						// Leaflet auto-closes the tooltip on `mouseout`. When
-						// this marker is the sticky one, re-open in a
-						// microtask so Leaflet finishes its close cleanup
-						// first and the recursive close→open→close chain
-						// breaks cleanly. The reference check inside the
-						// microtask guards against the user dismissing
-						// before the microtask runs.
-						marker.on( 'tooltipclose', () => {
-							if ( stickyMarker !== marker ) {
-								return;
-							}
-							queueMicrotask( () => {
-								if ( stickyMarker === marker ) {
-									marker.openTooltip();
-								}
-							} );
-						} );
-					}
-
-					marker.addTo( map );
-				}
-			}
+			// Add waypoint markers and wire the sticky-tooltip behaviour.
+			// The returned `closeSticky` callback is handed to the scrub
+			// handlers so a tap on the track or on empty map area dismisses
+			// any open sticky tooltip — "tap outside to close" extended to
+			// the two outside surfaces this map exposes.
+			const closeSticky = addWaypointMarkers(
+				map,
+				mapState.waypoints,
+				settings,
+				svgRenderer,
+				blockEl
+			);
 
 			// Record the instance so subsequent init calls are no-ops and
 			// onMapCursorChange can access the cursor, coords, and the
