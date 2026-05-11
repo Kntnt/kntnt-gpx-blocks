@@ -591,42 +591,6 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
-	 * Returns the PHP-supplied API key for an overlay provider, or `null`
-	 * when the PHP path is not engaged for that provider.
-	 *
-	 * Presence of the `apiKey` field on the validated overlay-provider
-	 * record engages the PHP path (per the `kntnt_gpx_blocks_tile_overlays`
-	 * contract — see `docs/hooks.md`). The returned string carries the
-	 * normalised (trimmed) value; an empty string means the site builder
-	 * engaged the path but supplied no usable key, which the caller
-	 * treats as fail-closed (the affected layer is dropped from the
-	 * resolved overlay stack — the base map and other overlays still
-	 * render). An unknown overlay-provider id returns `null`.
-	 *
-	 * Mirrors `php_supplied_api_key()` for the base side; the two stay
-	 * in lock-step so callers can branch identically on either half of
-	 * the registry.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param string $provider_id Overlay-provider id (typically from a
-	 *                            `tileOverlays[i].provider` attribute).
-	 *
-	 * @return string|null The normalised PHP-supplied key when engaged,
-	 *                     `null` when the overlay provider does not carry one.
-	 */
-	public function php_supplied_overlay_api_key( string $provider_id ): ?string {
-
-		$provider = $this->get_overlays()[ $provider_id ] ?? null;
-		if ( $provider === null ) {
-			return null;
-		}
-
-		return $provider['apiKey'] ?? null;
-
-	}
-
-	/**
 	 * Validates a raw provider set as supplied by the filter.
 	 *
 	 * Walks the input, drops every record that fails the validator, and

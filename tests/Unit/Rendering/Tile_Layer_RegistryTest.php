@@ -2004,41 +2004,6 @@ test( 'overlay validator drops non-string apiKey silently (treated as absent)', 
 
 } );
 
-test( 'php_supplied_overlay_api_key returns null when the overlay provider has no apiKey field', function (): void {
-
-	$registry = new Tile_Layer_Registry();
-
-	expect( $registry->php_supplied_overlay_api_key( 'openweathermap' ) )->toBeNull();
-	expect( $registry->php_supplied_overlay_api_key( 'openseamap' ) )->toBeNull();
-	expect( $registry->php_supplied_overlay_api_key( 'does-not-exist' ) )->toBeNull();
-
-} );
-
-test( 'php_supplied_overlay_api_key returns the validated string when the PHP path is engaged', function (): void {
-
-	tlr_filter_returns(
-		'kntnt_gpx_blocks_tile_overlays',
-		[
-			'paid-overlay' => tlr_overlay_provider_record(
-				[
-					'requiresKey' => true,
-					'apiKey'      => 'PHP-SUPPLIED-OVERLAY-VALUE',
-				],
-				[
-					'main' => tlr_overlay_layer_record( [
-						'url' => 'https://overlay.example.com/{z}/{x}/{y}.png?key={KEY}',
-					] ),
-				]
-			),
-		]
-	);
-
-	$registry = new Tile_Layer_Registry();
-
-	expect( $registry->php_supplied_overlay_api_key( 'paid-overlay' ) )->toBe( 'PHP-SUPPLIED-OVERLAY-VALUE' );
-
-} );
-
 test( 'resolve_overlays uses the PHP-supplied apiKey and ignores the attribute-path map when engaged', function (): void {
 
 	tlr_filter_returns(
