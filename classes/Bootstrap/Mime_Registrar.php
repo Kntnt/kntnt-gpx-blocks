@@ -34,10 +34,36 @@ final class Mime_Registrar {
 	/**
 	 * The MIME type for GPX files as registered in the upload allowlist.
 	 *
+	 * Public because other components (e.g. Conversion_Hooks) classify
+	 * attachments against the same constant — defining it twice would let
+	 * the two copies drift out of sync.
+	 *
 	 * @since 1.0.0
 	 * @var string
 	 */
-	private const GPX_MIME_TYPE = 'application/gpx+xml';
+	public const GPX_MIME_TYPE = 'application/gpx+xml';
+
+	/**
+	 * Returns true when the given name ends with the case-insensitive `.gpx`
+	 * suffix.
+	 *
+	 * Centralises the suffix test shared by Upload_Guard, Conversion_Hooks,
+	 * and override_check(): each previously implemented the same comparison
+	 * with slightly different null-handling. The parameter is nullable so
+	 * callers do not have to coerce missing values themselves — null, empty
+	 * string, and a string without the suffix all return false.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string|null $name Filename, file path, or any string the caller
+	 *                          wants to classify. May be null when the
+	 *                          upstream source did not supply a value.
+	 * @return bool True when $name is a non-empty string ending in `.gpx`
+	 *              (case-insensitive); false otherwise.
+	 */
+	public static function is_gpx_filename( ?string $name ): bool {
+		return $name !== null && str_ends_with( strtolower( $name ), '.gpx' );
+	}
 
 	/**
 	 * Adds 'gpx => application/gpx+xml' to WordPress's allowed-upload MIME map.
@@ -95,13 +121,9 @@ final class Mime_Registrar {
 		string|false $real_mime = false
 	): array {
 
-		// Cannot decide without a filename — pass through unchanged.
-		if ( $filename === null ) {
-			return $data;
-		}
-
-		// Only override when the original filename says this is a GPX file.
-		if ( ! str_ends_with( strtolower( $filename ), '.gpx' ) ) {
+		// Only override when the original filename says this is a GPX file;
+		// the helper folds the null check into the suffix test.
+		if ( ! self::is_gpx_filename( $filename ) ) {
 			return $data;
 		}
 

@@ -17,6 +17,43 @@ declare( strict_types = 1 );
 use Kntnt\Gpx_Blocks\Bootstrap\Mime_Registrar;
 
 // ---------------------------------------------------------------------------
+// is_gpx_filename() — shared helper used by Upload_Guard, Conversion_Hooks,
+// and override_check(). Covers null, empty, mixed case, no-suffix, and suffix.
+// ---------------------------------------------------------------------------
+
+test( 'is_gpx_filename returns false for null', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( null ) )->toBeFalse();
+} );
+
+test( 'is_gpx_filename returns false for empty string', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( '' ) )->toBeFalse();
+} );
+
+test( 'is_gpx_filename returns false for a name without the suffix', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( 'photo.jpg' ) )->toBeFalse();
+} );
+
+test( 'is_gpx_filename returns false for the bare suffix in the middle', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( 'track.gpx.bak' ) )->toBeFalse();
+} );
+
+test( 'is_gpx_filename returns true for lowercase .gpx', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( 'track.gpx' ) )->toBeTrue();
+} );
+
+test( 'is_gpx_filename returns true for uppercase .GPX', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( 'TRACK.GPX' ) )->toBeTrue();
+} );
+
+test( 'is_gpx_filename returns true for mixed-case .Gpx', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( 'Ride.Gpx' ) )->toBeTrue();
+} );
+
+test( 'is_gpx_filename returns true for an absolute path ending in .gpx', function (): void {
+	expect( Mime_Registrar::is_gpx_filename( '/var/www/uploads/2026/05/route.gpx' ) )->toBeTrue();
+} );
+
+// ---------------------------------------------------------------------------
 // add_gpx() — upload_mimes filter
 // ---------------------------------------------------------------------------
 

@@ -36,14 +36,6 @@ use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
 final class Conversion_Hooks {
 
 	/**
-	 * The MIME type this hook reacts to.
-	 *
-	 * @since 1.0.0
-	 * @var string
-	 */
-	private const GPX_MIME_TYPE = 'application/gpx+xml';
-
-	/**
 	 * Constructs the hook adapter with its cache collaborator.
 	 *
 	 * @since 1.0.0
@@ -122,18 +114,15 @@ final class Conversion_Hooks {
 
 		// MIME check first — cheaper than touching the filesystem.
 		$mime = get_post_mime_type( $attachment_id );
-		if ( is_string( $mime ) && self::GPX_MIME_TYPE === $mime ) {
+		if ( is_string( $mime ) && Mime_Registrar::GPX_MIME_TYPE === $mime ) {
 			return true;
 		}
 
 		// Filename suffix as the fallback — covers attachments whose MIME slot
 		// is missing or set to a generic XML type by a third-party importer.
 		$file = get_attached_file( $attachment_id );
-		if ( ! is_string( $file ) || '' === $file ) {
-			return false;
-		}
 
-		return str_ends_with( strtolower( $file ), '.gpx' );
+		return Mime_Registrar::is_gpx_filename( is_string( $file ) ? $file : null );
 
 	}
 

@@ -55,7 +55,8 @@ final class Upload_Guard {
 	public function enforce_size_cap( array $file ): array {
 
 		// Only inspect .gpx uploads; all other types pass through unchanged.
-		if ( ! str_ends_with( strtolower( (string) ( $file['name'] ?? '' ) ), '.gpx' ) ) {
+		$name = $file['name'] ?? null;
+		if ( ! Mime_Registrar::is_gpx_filename( is_string( $name ) ? $name : null ) ) {
 			return $file;
 		}
 
