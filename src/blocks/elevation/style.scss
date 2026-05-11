@@ -184,24 +184,80 @@
 		fill: none;
 	}
 
-	// ─── Cursor group ─────────────────────────────────────────────────────
-	// The cursor group is server-rendered and toggled by view.ts.
+	// ─── Cursor (line in SVG; dot + tooltip in HTML overlays) ─────────────
+	// Issue #136 — the cursor dot and tooltip moved out of the SVG into
+	// HTML overlays so they are immune to the wrapper-as-image layout's
+	// non-uniform stretch. The cursor *line* stays inside the SVG and
+	// continues to update `x1` / `x2` via view.ts.
+	//
+	// The dot is sized in `em` so it stays perfectly circular at every
+	// aspect ratio and grows with the block's chosen font-size. The
+	// tooltip's intrinsic size flows from its text content; both rows
+	// inherit the block-level typography so the editor's Typography
+	// panel drives one consistent look across axis labels and cursor
+	// tooltip.
+
+	// Per-block CSS variable for the cursor dot diameter. Editors who
+	// need a larger or smaller dot can override the variable on a parent
+	// container; the SCSS-side default is `0.6em` so the dot remains
+	// visible without dominating the line.
+	--kntnt-gpx-blocks-elevation-cursor-dot-size: 0.6em;
 
 	.kntnt-gpx-blocks-elevation-cursor-line {
 		stroke: var(--kntnt-gpx-blocks-cursor-color);
 		stroke-width: 1;
 	}
 
+	// Cursor overlay wrapper. The dot and the tooltip are absolutely
+	// positioned relative to this container which itself spans the plot
+	// rectangle's full extent — mirroring the y-labels / x-labels overlay
+	// positioning so the percentage-based `left` / `top` values that
+	// PHP server-renders and view.ts writes resolve against the same
+	// rectangle.
+	.kntnt-gpx-blocks-elevation-cursor {
+		position: absolute;
+		top: var(--kntnt-gpx-blocks-elev-pad-top);
+		bottom: var(--kntnt-gpx-blocks-elev-pad-bottom);
+		left: var(--kntnt-gpx-blocks-elev-pad-x);
+		right: var(--kntnt-gpx-blocks-elev-pad-x);
+		pointer-events: none;
+	}
+
+	// Cursor dot — fixed em-size so it stays circular regardless of the
+	// wrapper's aspect ratio. The `transform` recentres the dot on the
+	// `(left, top)` anchor written by view.ts (or by PHP in editor
+	// preview mode), so the data point sits at the centre of the dot.
 	.kntnt-gpx-blocks-elevation-cursor-dot {
-		fill: var(--kntnt-gpx-blocks-cursor-color);
+		position: absolute;
+		width: var(--kntnt-gpx-blocks-elevation-cursor-dot-size);
+		height: var(--kntnt-gpx-blocks-elevation-cursor-dot-size);
+		border-radius: 50%;
+		background: var(--kntnt-gpx-blocks-cursor-color);
+		transform: translate(-50%, -50%);
+		// Default origin keeps a server-rendered overlay with no inline
+		// position (which never happens on the frontend — the wrapper is
+		// `display:none` then — but does happen for the editor preview
+		// before view.ts writes new coordinates) from collapsing to (0,0).
+		left: 0;
+		top: 0;
 	}
 
-	.kntnt-gpx-blocks-elevation-cursor-tooltip-bg {
-		fill: var(--kntnt-gpx-blocks-tooltip-background);
-	}
-
-	.kntnt-gpx-blocks-elevation-cursor-tooltip-text {
-		fill: var(--kntnt-gpx-blocks-tooltip-color);
+	// Cursor tooltip — absolutely positioned with the `left` anchor
+	// written by view.ts pointing at its horizontal centre; the
+	// `translateX(-50%)` recentres the box on that anchor. Sticks to the
+	// top of the plot rectangle (`top: 0`) by default so the tooltip
+	// never occludes the polyline's lower portion. `max-width` keeps
+	// long localised labels from running off the chart.
+	.kntnt-gpx-blocks-elevation-cursor-tooltip {
+		position: absolute;
+		top: 0;
+		left: 0;
+		transform: translateX(-50%);
+		display: inline-block;
+		padding: 0.25em 0.5em;
+		border-radius: 3px;
+		background: var(--kntnt-gpx-blocks-tooltip-background);
+		color: var(--kntnt-gpx-blocks-tooltip-color);
 		font-family: inherit;
 		font-size: inherit;
 		font-weight: inherit;
@@ -210,6 +266,13 @@
 		letter-spacing: inherit;
 		text-transform: inherit;
 		text-decoration: inherit;
+		white-space: nowrap;
+		text-align: center;
+	}
+
+	.kntnt-gpx-blocks-elevation-cursor-tooltip-distance,
+	.kntnt-gpx-blocks-elevation-cursor-tooltip-elevation {
+		display: block;
 	}
 
 	// ─── Empty state ──────────────────────────────────────────────────────

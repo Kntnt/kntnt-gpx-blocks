@@ -684,7 +684,7 @@ test( 'wrapper div carries the data-wp-watch cursor-change directive', function 
 
 } );
 
-test( 'svg contains the server-rendered cursor group with plot data attributes', function (): void {
+test( 'wrapper contains the server-rendered cursor line in SVG and HTML overlays alongside it (issue #136)', function (): void {
 
 	$coords = elev_synthetic_coords_3d( 200 );
 	$stats  = [
@@ -704,14 +704,28 @@ test( 'svg contains the server-rendered cursor group with plot data attributes',
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 11 ) );
 
+	// Issue #136 — the cursor dot and tooltip moved out of the SVG into
+	// HTML overlays so they are immune to the wrapper-as-image layout's
+	// non-uniform stretch. The cursor LINE stays inside the SVG.
 	expect( $html )
-		->toContain( 'kntnt-gpx-blocks-elevation-cursor' )
-		->toContain( 'data-plot-left=' )
-		->toContain( 'data-plot-right=' )
-		->toContain( 'kntnt-gpx-blocks-elevation-cursor-line' )
-		->toContain( 'kntnt-gpx-blocks-elevation-cursor-dot' )
-		->toContain( 'kntnt-gpx-blocks-elevation-cursor-tooltip-bg' )
-		->toContain( 'kntnt-gpx-blocks-elevation-cursor-tooltip-text' );
+		->toContain( '<line class="kntnt-gpx-blocks-elevation-cursor-line"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-dot"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"' );
+
+	// The pre-#136 SVG-only markup is gone: no more `<circle>` dot, no more
+	// `<rect>` tooltip background, no more `<text>`/`<tspan>` tooltip.
+	expect( $html )
+		->not->toContain( 'class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"' )
+		->not->toContain( 'class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"' )
+		->not->toMatch( '#<circle\b[^>]*kntnt-gpx-blocks-elevation-cursor-dot#' )
+		->not->toMatch( '#<tspan\b[^>]*kntnt-gpx-blocks-elevation-cursor-tooltip-#' )
+		->not->toContain( 'data-plot-left=' )
+		->not->toContain( 'data-plot-right=' )
+		->not->toContain( 'data-tooltip-width=' )
+		->not->toContain( 'data-tooltip-height=' );
 
 } );
 
@@ -1479,23 +1493,36 @@ test( 'empty-state wrapper carries the user-supplied additional CSS class', func
 // current_user_can per test to keep the implication local.
 // ---------------------------------------------------------------------------
 
-test( 'frontend cursor group keeps style="display:none"', function (): void {
+test( 'frontend cursor overlay wrapper keeps style="display:none" (issue #136)', function (): void {
 
 	elev_setup_normal_path( 300, 200, 'map-front-cursor' );
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 200 ) );
 
-	// Isolate the cursor <g> so the assertion targets its attributes only.
-	$matched = preg_match( '#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
+	// Isolate the HTML cursor overlay wrapper. Post-#136 the visibility
+	// toggle lives on a `<div>` sibling of the SVG (the dot and tooltip
+	// are HTML overlays so they stay perfectly circular / text-shaped
+	// regardless of the wrapper's aspect ratio).
+	$matched = preg_match( '#<div class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
 	expect( $matched )->toBe( 1 );
 
 	expect( $g_match[0] )
 		->toContain( 'style="display:none"' )
 		->not->toContain( 'data-preview' );
 
+	// The SVG-side cursor line is also hidden on the frontend so its
+	// stroke does not show through before the first pointermove.
+	$matched_line = preg_match(
+		'#<line class="kntnt-gpx-blocks-elevation-cursor-line"[^>]*>#',
+		$html,
+		$line_match,
+	);
+	expect( $matched_line )->toBe( 1 );
+	expect( $line_match[0] )->toContain( 'style="display:none"' );
+
 } );
 
-test( 'editor preview renders the cursor group visible without display:none', function (): void {
+test( 'editor preview renders the cursor overlay visible without display:none (issue #136)', function (): void {
 
 	if ( ! defined( 'REST_REQUEST' ) ) {
 		define( 'REST_REQUEST', true );
@@ -1508,12 +1535,21 @@ test( 'editor preview renders the cursor group visible without display:none', fu
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 201 ) );
 
-	$matched = preg_match( '#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
+	$matched = preg_match( '#<div class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
 	expect( $matched )->toBe( 1 );
 
 	expect( $g_match[0] )
 		->not->toContain( 'display:none' )
 		->toContain( 'data-preview="1"' );
+
+	// The SVG-side cursor line is visible in editor preview mode too.
+	$matched_line = preg_match(
+		'#<line class="kntnt-gpx-blocks-elevation-cursor-line"[^>]*>#',
+		$html,
+		$line_match,
+	);
+	expect( $matched_line )->toBe( 1 );
+	expect( $line_match[0] )->not->toContain( 'display:none' );
 
 } );
 
@@ -1565,9 +1601,11 @@ test( 'editor preview pre-fills tooltip with formatted distance and elevation', 
 	// The synthetic series has elevation rising linearly from 100 m to 200 m;
 	// the midpoint should be in the 130-170 m band (LTTB sampling can shift
 	// the exact midpoint slightly off 150 m, so the assertion uses a band
-	// instead of a hard equality).
+	// instead of a hard equality). Post-#136 the tooltip rows are HTML
+	// `<div>`s outside the SVG; the elevation row carries the formatted
+	// metres label.
 	$elev_matched = preg_match(
-		'#<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"[^>]*>([0-9]+) m</tspan>#',
+		'#<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"[^>]*>([0-9]+) m</div>#',
 		$html,
 		$elev_match,
 	);
@@ -1579,7 +1617,7 @@ test( 'editor preview pre-fills tooltip with formatted distance and elevation', 
 	// Distance: the synthetic track is ~5.5 km long, so the midpoint is well
 	// above the 1000 m kilometre threshold — expect a "X.Y km" label.
 	$dist_matched = preg_match(
-		'#<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"[^>]*>([^<]+)</tspan>#',
+		'#<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"[^>]*>([^<]+)</div>#',
 		$html,
 		$dist_match,
 	);
@@ -1622,12 +1660,13 @@ test( 'editor preview survives a very short series — single LTTB sample render
 
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 204 ) );
 
-	// The cursor group renders visible with finite coordinates and a tooltip
+	// The cursor renders visible with finite coordinates and a tooltip
 	// matching the midpoint of a 100 m → 110 m series (expect ~105 m).
+	// Post-#136 the tooltip is an HTML `<div>`, not an SVG `<tspan>`.
 	expect( $html )
 		->toContain( 'data-preview="1"' )
 		->toContain( '<svg' )
-		->toMatch( '#<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"[^>]*>105 m</tspan>#' );
+		->toMatch( '#<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"[^>]*>105 m</div>#' );
 
 	// No NaN slipping through into the rendered coordinates.
 	expect( $html )->not->toContain( 'NaN' );
@@ -1646,7 +1685,7 @@ test( 'editor preview is disabled for non-editor users even with REST_REQUEST se
 	// REST callers must not trigger the editor-preview path.
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 205 ) );
 
-	$matched = preg_match( '#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
+	$matched = preg_match( '#<div class="kntnt-gpx-blocks-elevation-cursor"[^>]*>#', $html, $g_match );
 	expect( $matched )->toBe( 1 );
 
 	expect( $g_match[0] )
@@ -2167,24 +2206,34 @@ test( 'plot rectangle spans the full viewBox under wrapper-as-image (issue #135)
 	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 740 ) );
 
 	// PLOT_INSET = 0 → plot rectangle = [0, viewbox_w] × [0, viewbox_h].
-	// data-plot-left == 0 and data-plot-top == 0; data-plot-right and
-	// data-plot-bottom match the viewBox dimensions byte-for-byte.
+	// The axis frame lines and the polyline span the full viewBox in both
+	// dimensions.
 	$matched = preg_match( '#<svg\b[^>]*viewBox="0 0 ([0-9.]+) ([0-9.]+)"#', $html, $vb_match );
 	expect( $matched )->toBe( 1 );
 	$vb_w = (float) $vb_match[1];
 	$vb_h = (float) $vb_match[2];
 
+	// The bottom axis frame line runs along the full bottom edge — y == vb_h,
+	// x from 0 to vb_w. Confirms PLOT_INSET = 0 reaches the SVG-side
+	// coordinates.
 	$matched = preg_match(
-		'#<g class="kntnt-gpx-blocks-elevation-cursor"[^>]*data-plot-left="([0-9.]+)"[^>]*data-plot-right="([0-9.]+)"[^>]*data-plot-top="([0-9.]+)"[^>]*data-plot-bottom="([0-9.]+)"#',
+		'#<line class="kntnt-gpx-blocks-elevation-axis" x1="([0-9.]+)" y1="([0-9.]+)" x2="([0-9.]+)" y2="([0-9.]+)"#',
 		$html,
-		$plot_match,
+		$bottom_match,
 	);
 	expect( $matched )->toBe( 1 );
+	expect( (float) $bottom_match[1] )->toBe( 0.0 );
+	expect( (float) $bottom_match[2] )->toBe( $vb_h );
+	expect( (float) $bottom_match[3] )->toBe( $vb_w );
+	expect( (float) $bottom_match[4] )->toBe( $vb_h );
 
-	expect( (float) $plot_match[1] )->toBe( 0.0 );
-	expect( (float) $plot_match[2] )->toBe( $vb_w );
-	expect( (float) $plot_match[3] )->toBe( 0.0 );
-	expect( (float) $plot_match[4] )->toBe( $vb_h );
+	// Post-#136 the wrapper carries no `data-plot-*` attributes — the JS
+	// derives plot bounds in CSS pixels from the wrapper's resolved padding.
+	expect( $html )
+		->not->toContain( 'data-plot-left=' )
+		->not->toContain( 'data-plot-right=' )
+		->not->toContain( 'data-plot-top=' )
+		->not->toContain( 'data-plot-bottom=' );
 
 } );
 
@@ -2200,5 +2249,132 @@ test( 'wrapper does not carry the obsolete axis-label CSS variables (issue #135)
 	expect( $html )
 		->not->toContain( '--kntnt-gpx-blocks-axis-label-y-width' )
 		->not->toContain( '--kntnt-gpx-blocks-axis-label-x-height' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Issue #136 — cursor dot + tooltip moved from SVG to HTML overlays.
+//
+// The SVG-only dot (`<circle>`) and tooltip (`<rect>` + `<text>`/`<tspan>`)
+// stretched non-uniformly under the wrapper-as-image layout's
+// `preserveAspectRatio="none"`. Moving them out of the SVG into HTML
+// `<div>` siblings keeps the dot perfectly circular and the tooltip text
+// rendered at proportional font size. The cursor LINE stays inside the
+// SVG because `vector-effect="non-scaling-stroke"` already keeps its
+// stroke width visually consistent under the stretch.
+// ---------------------------------------------------------------------------
+
+test( 'cursor dot is an HTML <div> outside the SVG (issue #136)', function (): void {
+
+	elev_setup_normal_path( 900, 800, 'map-html-dot' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 800 ) );
+
+	// The dot lives as an HTML `<div>` outside the SVG. No `<circle>`
+	// element bears the cursor-dot class anywhere in the output.
+	expect( $html )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-dot"' )
+		->not->toMatch( '#<circle\b[^>]*kntnt-gpx-blocks-elevation-cursor-dot#' );
+
+} );
+
+test( 'cursor tooltip is an HTML <div> with two row children outside the SVG (issue #136)', function (): void {
+
+	elev_setup_normal_path( 901, 801, 'map-html-tooltip' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 801 ) );
+
+	// The tooltip is an HTML `<div>` with two row `<div>` children — one
+	// for distance, one for elevation. No SVG `<rect>` / `<text>` / `<tspan>`
+	// tooltip markup remains.
+	expect( $html )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"' )
+		->toContain( '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"' )
+		->not->toContain( 'class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"' )
+		->not->toContain( 'class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"' )
+		->not->toMatch( '#<tspan\b#' );
+
+} );
+
+test( 'cursor LINE stays inside the SVG with vector-effect="non-scaling-stroke" (issue #136)', function (): void {
+
+	elev_setup_normal_path( 902, 802, 'map-line-stays-svg' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 802 ) );
+
+	// Isolate the SVG contents and confirm the cursor LINE is in there.
+	$matched = preg_match( '#<svg\b[^>]*>(.*?)</svg>#s', $html, $svg_match );
+	expect( $matched )->toBe( 1 );
+	$svg_body = $svg_match[1];
+
+	expect( $svg_body )
+		->toContain( 'kntnt-gpx-blocks-elevation-cursor-line' )
+		->toContain( 'vector-effect="non-scaling-stroke"' );
+
+	// The HTML cursor overlays must sit OUTSIDE the SVG so they are immune
+	// to the non-uniform stretch — neither the dot nor the tooltip should
+	// appear inside the SVG body.
+	expect( $svg_body )
+		->not->toContain( 'kntnt-gpx-blocks-elevation-cursor-dot' )
+		->not->toContain( 'kntnt-gpx-blocks-elevation-cursor-tooltip' );
+
+} );
+
+test( 'editor preview emits inline left/top on the HTML cursor overlays (issue #136)', function (): void {
+
+	if ( ! defined( 'REST_REQUEST' ) ) {
+		define( 'REST_REQUEST', true );
+	}
+
+	elev_setup_normal_path( 903, 803, 'map-preview-overlay-pos' );
+	Functions\when( 'current_user_can' )->alias(
+		static fn ( string $cap ): bool => 'edit_posts' === $cap
+	);
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 803 ) );
+
+	// The dot carries inline `left` and `top` percentages so the editor
+	// sees a positioned cursor before any JS runs. The values are derived
+	// from the midpoint sample and converted to fraction-of-plot-rect.
+	$dot_matched = preg_match(
+		'#<div class="kntnt-gpx-blocks-elevation-cursor-dot"\s+style="left:([0-9.]+)%;top:([0-9.]+)%"#',
+		$html,
+		$dot_match,
+	);
+	expect( $dot_matched )->toBe( 1 );
+	$dot_left = (float) $dot_match[1];
+	$dot_top  = (float) $dot_match[2];
+	expect( $dot_left )->toBeGreaterThan( 30.0 );
+	expect( $dot_left )->toBeLessThan( 70.0 );
+	expect( $dot_top )->toBeGreaterThanOrEqual( 0.0 );
+	expect( $dot_top )->toBeLessThanOrEqual( 100.0 );
+
+	// The tooltip carries inline `left` (centred on the dot) and `top: 0`
+	// (anchored to the plot rect's top edge). No JS clamping has run yet,
+	// so the value matches the dot's left exactly.
+	$tip_matched = preg_match(
+		'#<div class="kntnt-gpx-blocks-elevation-cursor-tooltip"\s+style="left:([0-9.]+)%;top:0"#',
+		$html,
+		$tip_match,
+	);
+	expect( $tip_matched )->toBe( 1 );
+	expect( abs( (float) $tip_match[1] - $dot_left ) )->toBeLessThan( 0.0001 );
+
+} );
+
+test( 'frontend cursor overlays carry no inline style attribute (issue #136)', function (): void {
+
+	elev_setup_normal_path( 904, 804, 'map-front-no-overlay-style' );
+
+	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', elev_fake_block( 804 ) );
+
+	// On the frontend the wrapping cursor `<div>` carries `display:none`
+	// but the dot and tooltip themselves get no inline style — view.ts
+	// writes `style.left` / `style.top` on the first real fraction
+	// update.
+	expect( $html )
+		->toMatch( '#<div class="kntnt-gpx-blocks-elevation-cursor-dot"\s*></div>#' )
+		->toMatch( '#<div class="kntnt-gpx-blocks-elevation-cursor-tooltip">#' );
 
 } );

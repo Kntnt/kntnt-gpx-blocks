@@ -4,36 +4,54 @@
  * Registers the `kntnt-gpx-blocks` store (merged with the Map module's
  * registration) and implements:
  *
- * - `callbacks.initElevation` — locates the server-rendered cursor group in
- *   the SVG, reads the chart dimensions from data attributes on that group,
- *   and attaches native Pointer Events on the SVG that write
- *   `state[mapId].fraction` from the pointer's x-position. `pointerdown`
- *   sets the fraction immediately (so a tap pins the cursor) and calls
- *   `setPointerCapture` so a drag keeps updating the fraction even when the
- *   finger drifts off the SVG. The cursor stays at the last position after
- *   the gesture ends; mouse `pointerleave` on the block element nulls the
- *   fraction (skipped on touch — touch has no hover, and lifting the finger
- *   would otherwise dismiss the cursor before the user could read it).
- *   CSS `touch-action: none` on the SVG suppresses the browser's
- *   scroll-on-touch behaviour, which would otherwise translate any slight
- *   vertical jitter during a horizontal scrub into a page scroll.
+ * - `callbacks.initElevation` — locates the server-rendered cursor LINE
+ *   inside the SVG and the cursor DOT plus TOOLTIP HTML overlays alongside
+ *   the SVG (issue #136), reads the SVG-space chart bounds from the SVG's
+ *   own viewBox attribute, and attaches native Pointer Events on the SVG
+ *   that write `state[mapId].fraction` from the pointer's x-position.
+ *   `pointerdown` sets the fraction immediately (so a tap pins the cursor)
+ *   and calls `setPointerCapture` so a drag keeps updating the fraction
+ *   even when the finger drifts off the SVG. The cursor stays at the last
+ *   position after the gesture ends; mouse `pointerleave` on the block
+ *   element nulls the fraction (skipped on touch — touch has no hover, and
+ *   lifting the finger would otherwise dismiss the cursor before the user
+ *   could read it). CSS `touch-action: none` on the SVG suppresses the
+ *   browser's scroll-on-touch behaviour, which would otherwise translate
+ *   any slight vertical jitter during a horizontal scrub into a page
+ *   scroll.
  * - `callbacks.onElevationCursorChange` — reacts to `state[mapId].fraction`
  *   changes (from Elevation itself or from GPX Map) by updating the cursor
- *   group's vertical line, dot, and tooltip text. Does NOT write back to state
- *   (no feedback loop). Namespaced per block so the Map module's own watch
- *   callback is not overwritten when both modules register into the shared
- *   `kntnt-gpx-blocks` store.
+ *   line's `x1`/`x2` attributes (inside the SVG, in viewBox logical units)
+ *   and the HTML overlays' `style.left` / `style.top` (as percentages of
+ *   the plot rectangle, since the overlay container spans the same plot
+ *   rectangle in CSS pixels via shared padding variables). Issue #136
+ *   moved the cursor dot and tooltip out of the SVG so they are immune to
+ *   the wrapper-as-image layout's non-uniform stretch. Does NOT write back
+ *   to state (no feedback loop). Namespaced per block so the Map module's
+ *   own watch callback is not overwritten when both modules register into
+ *   the shared `kntnt-gpx-blocks` store.
  *
- * The SVG and cursor group are fully server-rendered by Render_Elevation.php.
- * The cursor group carries `data-plot-left`, `data-plot-right`, `data-plot-top`,
- * and `data-plot-bottom` attributes matching the PHP constants so this module
- * never has to re-derive the chart margins.
+ * The SVG (with the cursor line inside it) and the HTML cursor overlays are
+ * fully server-rendered by `Render_Elevation.php`. The cursor-update
+ * primitives — fraction-of-plot-rect math, DOM-mutation writes — live in
+ * `./cursor.ts` so they are unit-testable independently of the
+ * Interactivity API store.
  *
  * @since 1.0.0
  */
 
 import { getContext, getElement, store } from '@wordpress/interactivity';
 import { interpolateSample, sampleToSvg, type ChartBounds } from './geometry';
+import {
+	applyCursorPosition,
+	clamp,
+	formatDistance,
+	formatElevation,
+	hideCursor,
+	samplePositionPercent,
+	showCursor,
+	type CursorOverlayElements,
+} from './cursor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,28 +118,24 @@ interface ElevationEntry {
 	yMin: number;
 	/** Padded y-axis upper bound (metres). */
 	yMax: number;
-	/** The server-rendered <g> cursor group element. */
-	cursorGroup: SVGGElement;
-	/** The vertical cursor line inside the group. */
-	cursorLine: SVGLineElement;
-	/** The dot on the elevation polyline. */
-	cursorDot: SVGCircleElement;
-	/** The tooltip rect behind the text. */
-	tooltipRect: SVGRectElement;
-	/** The parent <text> element for the two-line tooltip. */
-	tooltipText: SVGTextElement;
-	/** The first <tspan> child — distance row. */
-	tooltipDistance: SVGTSpanElement;
-	/** The second <tspan> child — elevation row. */
-	tooltipElevation: SVGTSpanElement;
-	/** Chart boundaries in SVG viewBox logical units. */
-	chart: ChartBounds;
-	/** Tooltip rect width in SVG viewBox logical units. */
-	tooltipWidth: number;
-	/** Tooltip rect height in SVG viewBox logical units. */
-	tooltipHeight: number;
-	/** The SVG element itself, used for coordinate conversion. */
+	/** The block wrapper element — the positioning origin for the overlays. */
+	wrapper: HTMLElement;
+	/** The server-rendered SVG element. */
 	svg: SVGSVGElement;
+	/** The vertical cursor line inside the SVG. */
+	cursorLine: SVGLineElement;
+	/** The HTML wrapper element holding the dot and tooltip overlays. */
+	cursorOverlay: HTMLElement;
+	/** The dot on the elevation polyline (HTML element). */
+	cursorDot: HTMLElement;
+	/** The tooltip container element (HTML). */
+	tooltip: HTMLElement;
+	/** The first child of the tooltip — distance row. */
+	tooltipDistance: HTMLElement;
+	/** The second child of the tooltip — elevation row. */
+	tooltipElevation: HTMLElement;
+	/** SVG-space chart bounds — derived from the viewBox post-#135. */
+	chart: ChartBounds;
 }
 
 // ─── Module state ─────────────────────────────────────────────────────────────
@@ -138,88 +152,26 @@ const mountedElevations = new WeakMap< Element, ElevationEntry >();
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Clamp a value to [min, max].
- *
- * @since 1.0.0
- *
- * @param value - Value to clamp.
- * @param min   - Lower bound.
- * @param max   - Upper bound.
- * @return Clamped value.
- */
-function clamp( value: number, min: number, max: number ): number {
-	return Math.max( min, Math.min( max, value ) );
-}
-
-/**
  * Convert a client-space pointer x-coordinate to a fraction [0, 1] relative
  * to the SVG chart's plot area.
  *
- * Uses the SVG element's bounding rect and the viewBox width to map client
- * pixels to logical units, then derives the fraction from the chart margins.
+ * Uses the SVG element's bounding rect to map client pixels to the plot
+ * rectangle's horizontal range. Under the wrapper-as-image layout
+ * (issue #135) the SVG fills the plot rectangle exactly, so the SVG's
+ * bounding rect *is* the plot rectangle in CSS pixels.
  *
  * @since 1.0.0
  *
- * @param clientX   - Pointer x in client (viewport) pixels.
- * @param svg       - The SVG element.
- * @param chart     - Chart boundaries in viewBox logical units.
- * @param viewWidth - ViewBox width (typically 1200).
+ * @param clientX - Pointer x in client (viewport) pixels.
+ * @param svg     - The SVG element.
  * @return Fraction in [0, 1], already clamped.
  */
-function clientXToFraction(
-	clientX: number,
-	svg: SVGSVGElement,
-	chart: ElevationEntry[ 'chart' ],
-	viewWidth: number
-): number {
+function clientXToFraction( clientX: number, svg: SVGSVGElement ): number {
 	const rect = svg.getBoundingClientRect();
 	if ( rect.width === 0 ) {
 		return 0;
 	}
-
-	// Map client x to viewBox logical x.
-	const viewX = ( ( clientX - rect.left ) / rect.width ) * viewWidth;
-
-	// Convert to fraction within the chart area.
-	const chartWidth = chart.right - chart.left;
-	if ( chartWidth <= 0 ) {
-		return 0;
-	}
-
-	return clamp( ( viewX - chart.left ) / chartWidth, 0, 1 );
-}
-
-/**
- * Format a distance value for the tooltip's first row.
- *
- * Switches from metres to kilometres at the 1000 m threshold, matching the
- * x-axis tick labels. Kilometres carry one decimal; metres are rounded to
- * the nearest whole number.
- *
- * @since 1.0.0
- *
- * @param distanceM - Distance in metres.
- * @return Formatted label, e.g. "3.2 km" or "245 m".
- */
-function formatDistance( distanceM: number ): string {
-	return distanceM >= 1000
-		? `${ ( distanceM / 1000 ).toFixed( 1 ) } km`
-		: `${ Math.round( distanceM ) } m`;
-}
-
-/**
- * Format an elevation value for the tooltip's second row.
- *
- * Always rendered in metres rounded to the nearest whole number — the GPX
- * vertical resolution does not justify decimals here.
- *
- * @since 1.0.0
- *
- * @param elevationM - Elevation in metres.
- * @return Formatted label, e.g. "245 m".
- */
-function formatElevation( elevationM: number ): string {
-	return `${ Math.round( elevationM ) } m`;
+	return clamp( ( clientX - rect.left ) / rect.width, 0, 1 );
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -230,8 +182,8 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		/**
 		 * Mount hook for the elevation chart container.
 		 *
-		 * Locates the server-rendered cursor group inside the SVG, reads the chart
-		 * boundaries from its data attributes, and wires `pointermove` /
+		 * Locates the server-rendered SVG, the cursor LINE inside it, and the
+		 * cursor HTML overlays alongside it. Wires `pointermove` /
 		 * `pointerleave` handlers that write `state[mapId].fraction`.
 		 *
 		 * @since 1.0.0
@@ -247,6 +199,8 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
+			const wrapper = ref as HTMLElement;
+
 			const { mapId } = getContext< ElevationContext >();
 			const mapState = state[ mapId ];
 
@@ -255,77 +209,59 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Locate the SVG and the server-rendered cursor group.
-			const svg = ref.querySelector< SVGSVGElement >( 'svg' );
+			// Locate the SVG and the cursor LINE inside it.
+			const svg = wrapper.querySelector< SVGSVGElement >( 'svg' );
 			if ( ! svg ) {
 				return;
 			}
-			const cursorGroup = svg.querySelector< SVGGElement >(
-				'.kntnt-gpx-blocks-elevation-cursor'
+			const cursorLine = svg.querySelector< SVGLineElement >(
+				'.kntnt-gpx-blocks-elevation-cursor-line'
 			);
-			if ( ! cursorGroup ) {
+			if ( ! cursorLine ) {
 				return;
 			}
 
-			const cursorLine = cursorGroup.querySelector< SVGLineElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-line'
+			// Locate the HTML cursor overlays (issue #136 — moved out of the
+			// SVG so they are immune to the wrapper-as-image layout's
+			// non-uniform stretch).
+			const cursorOverlay = wrapper.querySelector< HTMLElement >(
+				'.kntnt-gpx-blocks-elevation-cursor'
 			);
-			const cursorDot = cursorGroup.querySelector< SVGCircleElement >(
+			const cursorDot = wrapper.querySelector< HTMLElement >(
 				'.kntnt-gpx-blocks-elevation-cursor-dot'
 			);
-			const tooltipRect = cursorGroup.querySelector< SVGRectElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-tooltip-bg'
+			const tooltip = wrapper.querySelector< HTMLElement >(
+				'.kntnt-gpx-blocks-elevation-cursor-tooltip'
 			);
-			const tooltipText = cursorGroup.querySelector< SVGTextElement >(
-				'.kntnt-gpx-blocks-elevation-cursor-tooltip-text'
+			const tooltipDistance = wrapper.querySelector< HTMLElement >(
+				'.kntnt-gpx-blocks-elevation-cursor-tooltip-distance'
 			);
-			const tooltipDistance =
-				cursorGroup.querySelector< SVGTSpanElement >(
-					'.kntnt-gpx-blocks-elevation-cursor-tooltip-distance'
-				);
-			const tooltipElevation =
-				cursorGroup.querySelector< SVGTSpanElement >(
-					'.kntnt-gpx-blocks-elevation-cursor-tooltip-elevation'
-				);
+			const tooltipElevation = wrapper.querySelector< HTMLElement >(
+				'.kntnt-gpx-blocks-elevation-cursor-tooltip-elevation'
+			);
 
-			// All cursor children are server-rendered; abort if any are missing.
 			if (
-				! cursorLine ||
+				! cursorOverlay ||
 				! cursorDot ||
-				! tooltipRect ||
-				! tooltipText ||
+				! tooltip ||
 				! tooltipDistance ||
 				! tooltipElevation
 			) {
 				return;
 			}
 
-			// Read chart boundaries from the cursor group's data attributes.
-			// These are written by Render_Elevation::build_chart() and reflect
-			// the dynamic viewBox (sized to the editor-set aspect ratio).
-			// Issue #93: parseFloat — not parseInt — because the renderer now
-			// emits fractional viewBox units when the aspect ratio is not the
-			// default 4/1.
-			const plotLeft = parseFloat( cursorGroup.dataset.plotLeft ?? '8' );
-			const plotRight = parseFloat(
-				cursorGroup.dataset.plotRight ?? '1192'
-			);
-			const plotTop = parseFloat( cursorGroup.dataset.plotTop ?? '8' );
-			const plotBottom = parseFloat(
-				cursorGroup.dataset.plotBottom ?? '292'
-			);
-
-			// Tooltip dimensions are server-rendered so they scale with the
-			// chart's viewBox height (which itself follows the aspect ratio).
-			// The renderer is the source of truth; the client reads back what
-			// PHP wrote so server-rendered preview and live updates stay in
-			// lock-step. Issue #93.
-			const tooltipWidth = parseFloat(
-				cursorGroup.dataset.tooltipWidth ?? '180'
-			);
-			const tooltipHeight = parseFloat(
-				cursorGroup.dataset.tooltipHeight ?? '60'
-			);
+			// Derive SVG-space chart bounds from the viewBox. Under the
+			// wrapper-as-image layout (issue #135) `PLOT_INSET = 0`, so the
+			// chart occupies the full viewBox — `left = 0`, `right =
+			// viewBox.width`, `top = 0`, `bottom = viewBox.height`. These
+			// are the bounds the cursor LINE writes its `x1`/`x2` against.
+			const vb = svg.viewBox.baseVal;
+			const chart: ChartBounds = {
+				left: 0,
+				right: vb.width || 1200,
+				top: 0,
+				bottom: vb.height || 300,
+			};
 
 			// Snapshot the elevation data array at mount time. Reads once from state
 			// so the watch callback can use the stored reference without re-reading.
@@ -349,16 +285,9 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			const yMin = typeof mapState.yMin === 'number' ? mapState.yMin : 0;
 			const yMax = typeof mapState.yMax === 'number' ? mapState.yMax : 1;
 
-			const chart: ChartBounds = {
-				left: plotLeft,
-				right: plotRight,
-				top: plotTop,
-				bottom: plotBottom,
-			};
-
 			// Record the mount entry immediately so onElevationCursorChange can
-			// update the SVG cursor as soon as fraction changes — even before
-			// the pointer handlers are bound. The cursor sync only mutates SVG
+			// update the cursor as soon as fraction changes — even before the
+			// pointer handlers are bound. The cursor sync only mutates DOM
 			// attributes and never needs Leaflet, so it is safe to activate
 			// right away.
 			mountedElevations.set( ref, {
@@ -366,24 +295,16 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				totalDistance,
 				yMin,
 				yMax,
-				cursorGroup,
+				wrapper,
+				svg,
 				cursorLine,
+				cursorOverlay,
 				cursorDot,
-				tooltipRect,
-				tooltipText,
+				tooltip,
 				tooltipDistance,
 				tooltipElevation,
 				chart,
-				tooltipWidth,
-				tooltipHeight,
-				svg,
 			} );
-
-			// ViewBox width — matches the PHP constant VIEWBOX_WIDTH (1200).
-			// The viewBox height now varies with the editor-set aspect ratio
-			// (issue #93), but the width is the load-bearing dimension for
-			// `clientXToFraction` and stays fixed.
-			const viewWidth = svg.viewBox.baseVal.width || 1200;
 
 			// Defer pointer-event handler binding until the chart is in (or near)
 			// the viewport. This mirrors the Map block's IntersectionObserver
@@ -407,9 +328,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 						svg.setPointerCapture( event.pointerId );
 						state[ mapId ].fraction = clientXToFraction(
 							event.clientX,
-							svg,
-							chart,
-							viewWidth
+							svg
 						);
 					}
 				);
@@ -424,9 +343,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 						if ( scrubbing || event.pointerType === 'mouse' ) {
 							state[ mapId ].fraction = clientXToFraction(
 								event.clientX,
-								svg,
-								chart,
-								viewWidth
+								svg
 							);
 						}
 					}
@@ -469,7 +386,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				// and we want the cursor to stay at its last position so
 				// the user can read it (and the corresponding map cursor)
 				// after pointing.
-				ref.addEventListener( 'pointerleave', ( (
+				wrapper.addEventListener( 'pointerleave', ( (
 					event: PointerEvent
 				) => {
 					if ( scrubbing || event.pointerType === 'touch' ) {
@@ -505,7 +422,7 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		},
 
 		/**
-		 * React to changes in state[mapId].fraction and update the cursor group.
+		 * React to changes in state[mapId].fraction and update the cursor.
 		 *
 		 * Called by data-wp-watch whenever fraction changes (written by either
 		 * the Elevation's own pointermove or the Map block). Does NOT write back
@@ -523,6 +440,11 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 		 * the entry is always present here, but the guard-after-read pattern
 		 * is the robust idiom and matches the Map block's `onMapCursorChange`.
 		 *
+		 * Issue #136 — the cursor dot and tooltip live in HTML overlays
+		 * outside the SVG so they are immune to the wrapper-as-image
+		 * layout's non-uniform stretch. The cursor line stays inside the
+		 * SVG and continues to write `x1` / `x2` in viewBox units.
+		 *
 		 * @since 1.0.0
 		 */
 		onElevationCursorChange() {
@@ -539,44 +461,39 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 				return;
 			}
 
-			// Null/undefined fraction — hide the cursor group, unless the server
+			const elements: CursorOverlayElements = {
+				cursorLine: entry.cursorLine,
+				cursorOverlay: entry.cursorOverlay,
+				cursorDot: entry.cursorDot,
+				tooltip: entry.tooltip,
+				tooltipDistance: entry.tooltipDistance,
+				tooltipElevation: entry.tooltipElevation,
+			};
+
+			// Null/undefined fraction — hide the cursor, unless the server
 			// rendered a preview cursor at fraction=0.5 for editor mode. The
 			// preview survives the initial mount-time watch fire (when fraction
 			// is still undefined) and is cleared as soon as a real fraction
 			// arrives, so live scrubbing immediately overrides the preview.
 			if ( fraction === null || fraction === undefined ) {
-				if ( entry.cursorGroup.dataset.preview === '1' ) {
+				if ( entry.cursorOverlay.dataset.preview === '1' ) {
 					return;
 				}
-				entry.cursorGroup.style.display = 'none';
+				hideCursor( elements );
 				return;
 			}
 
 			// First real fraction received — discard the preview flag so future
 			// null transitions hide the cursor like on the frontend.
-			if ( entry.cursorGroup.dataset.preview === '1' ) {
-				delete entry.cursorGroup.dataset.preview;
+			if ( entry.cursorOverlay.dataset.preview === '1' ) {
+				delete entry.cursorOverlay.dataset.preview;
 			}
 
-			const {
-				points,
-				totalDistance,
-				yMin,
-				yMax,
-				cursorLine,
-				cursorDot,
-				tooltipRect,
-				tooltipText,
-				tooltipDistance,
-				tooltipElevation,
-				chart,
-				tooltipWidth,
-				tooltipHeight,
-			} = entry;
+			const { points, totalDistance, yMin, yMax, chart } = entry;
 
 			// Null points or too few to resolve — keep hidden.
 			if ( ! points || points.length < 2 ) {
-				entry.cursorGroup.style.display = 'none';
+				hideCursor( elements );
 				return;
 			}
 
@@ -587,57 +504,44 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			// path to full-fidelity tooltip values.
 			const sample = interpolateSample( points, totalDistance, fraction );
 			if ( ! sample ) {
-				entry.cursorGroup.style.display = 'none';
+				hideCursor( elements );
 				return;
 			}
 
 			// Project the sample into SVG-space using the padded yMin/yMax
 			// PHP also rendered the polyline with, so the cursor sits exactly
-			// on the curve at every fraction.
-			const { cx, cy } = sampleToSvg(
+			// on the curve at every fraction. The cursor LINE writes the
+			// viewBox-x directly; the HTML overlays use the fraction-of-plot-
+			// rect percentages so they resolve against the overlay container,
+			// which spans the same plot rectangle in CSS pixels.
+			const { cx } = sampleToSvg(
 				sample,
 				totalDistance,
 				yMin,
 				yMax,
 				chart
 			);
-
-			// Update the vertical cursor line.
-			cursorLine.setAttribute( 'x1', String( cx ) );
-			cursorLine.setAttribute( 'x2', String( cx ) );
-
-			// Move the dot to the data point.
-			cursorDot.setAttribute( 'cx', String( cx ) );
-			cursorDot.setAttribute( 'cy', String( cy ) );
-
-			// Position the tooltip rect and text, keeping the rect within SVG
-			// bounds. Width and height are read from `data-tooltip-*` data
-			// attributes the renderer wrote on mount — the renderer is the
-			// source of truth (issue #93) so server-rendered preview and live
-			// updates stay in lock-step regardless of aspect ratio.
-			const rectX = clamp(
-				cx - tooltipWidth / 2,
-				chart.left,
-				chart.right - tooltipWidth
+			const { fxPct, fyPct } = samplePositionPercent(
+				sample[ 0 ],
+				sample[ 1 ],
+				totalDistance,
+				yMin,
+				yMax
 			);
-			tooltipRect.setAttribute( 'x', String( rectX ) );
-			tooltipRect.setAttribute( 'y', String( chart.top ) );
-			tooltipRect.setAttribute( 'width', String( tooltipWidth ) );
-			tooltipRect.setAttribute( 'height', String( tooltipHeight ) );
 
-			// Position the parent <text> centred horizontally inside the rect and
-			// re-anchor each <tspan> to the same x so the two-line label stays
-			// centred as the cursor moves. The y on the parent and the dy on the
-			// second tspan are set once by PHP and need no per-frame update.
-			const textX = rectX + tooltipWidth / 2;
-			tooltipText.setAttribute( 'x', String( textX ) );
-			tooltipDistance.setAttribute( 'x', String( textX ) );
-			tooltipElevation.setAttribute( 'x', String( textX ) );
-			tooltipDistance.textContent = formatDistance( sample[ 0 ] );
-			tooltipElevation.textContent = formatElevation( sample[ 1 ] );
+			// Reveal the cursor line and the HTML overlay wrapper before
+			// reading any layout values from the overlay's children — the
+			// tooltip's intrinsic width is `0` while its container is
+			// `display:none`, so we must un-hide first.
+			showCursor( elements );
 
-			// Make the cursor group visible.
-			entry.cursorGroup.style.display = '';
+			applyCursorPosition( elements, {
+				cx,
+				fxPct,
+				fyPct,
+				distanceLabel: formatDistance( sample[ 0 ] ),
+				elevationLabel: formatElevation( sample[ 1 ] ),
+			} );
 		},
 	},
 } );

@@ -522,13 +522,19 @@ final class Render_Elevation {
 	}
 
 	/**
-	 * Builds the SVG chart together with its HTML axis-label overlays.
+	 * Builds the SVG chart together with its HTML axis-label overlays plus
+	 * the HTML cursor-dot and cursor-tooltip overlays.
 	 *
 	 * The SVG carries the polyline, the left + bottom frame lines, and the
-	 * server-rendered cursor group; axis tick labels live in two HTML overlay
-	 * `<div>` siblings of the SVG so they honour real CSS font-size from the
-	 * editor's typography controls and reserve their own layout space outside
-	 * the SVG's plot area.
+	 * vertical cursor line (a `<line>` element whose stroke stays consistent
+	 * under non-uniform stretch via `vector-effect="non-scaling-stroke"`).
+	 * Axis tick labels live in two HTML overlay `<div>` siblings of the SVG
+	 * so they honour real CSS font-size from the editor's typography controls
+	 * and reserve their own layout space outside the SVG's plot area. The
+	 * cursor *dot* and the cursor *tooltip* likewise live in HTML overlays
+	 * outside the SVG (issue #136) so they are immune to the non-uniform
+	 * stretch — a perfectly circular dot stays circular at every aspect
+	 * ratio, and the tooltip's text renders at proportional font size.
 	 *
 	 * Issue #135 — wrapper-as-image layout. The SVG's viewBox dimensions
 	 * follow the editor-set aspect ratio (`style.dimensions.aspectRatio`)
@@ -546,11 +552,13 @@ final class Render_Elevation {
 	 * `aria-labelledby` attribute can reference it — preferred over
 	 * `aria-label` when the label text is already in the DOM.
 	 *
-	 * When `$is_editor_preview` is true, the cursor group is server-rendered
-	 * visible at fraction=0.5 with the corresponding (distance, elevation)
-	 * sample shown in the tooltip. The editor user can then see live feedback
-	 * for the Cursor / Tooltip controls without having to scrub the chart
-	 * first. On the frontend (false), the cursor keeps `style="display:none"`
+	 * When `$is_editor_preview` is true, the cursor overlays are
+	 * server-rendered visible at fraction=0.5 with the corresponding
+	 * (distance, elevation) sample shown in the tooltip and inline
+	 * `style.left` / `style.top` values pre-computed against the wrapper's
+	 * plot rectangle. The editor user can then see live feedback for the
+	 * Cursor / Tooltip controls without having to scrub the chart first. On
+	 * the frontend (false), the cursor wrapper keeps `style="display:none"`
 	 * and `view.ts` reveals it on the first pointermove.
 	 *
 	 * @since 1.0.0
@@ -673,20 +681,25 @@ final class Render_Elevation {
 			$plot_bottom,
 		);
 
-		// Compute the cursor group's initial geometry. On the frontend the
-		// group is invisible (display:none) and JS positions it on the first
-		// pointermove. In the editor preview the group is rendered visible at
-		// the midpoint sample of the LTTB-downsampled series so the editor
-		// user sees live feedback for the Cursor / Tooltip controls without
-		// having to scrub the chart first; the math mirrors view.ts's
-		// `interpolateSample` + `sampleToSvg` so the server-rendered position
-		// is identical to what the JS would produce for fraction=0.5.
+		// Compute the cursor overlays' initial geometry. On the frontend the
+		// wrapping cursor `<div>` is invisible (display:none) and JS positions
+		// the cursor on the first pointermove. In the editor preview the
+		// overlays are rendered visible at the midpoint sample of the LTTB-
+		// downsampled series so the editor user sees live feedback for the
+		// Cursor / Tooltip controls without having to scrub the chart first;
+		// the math mirrors view.ts's `interpolateSample` + `sampleToSvg` so
+		// the server-rendered position is identical to what the JS would
+		// produce for fraction=0.5.
 		//
-		// Tooltip size scales with the viewBox height so the tooltip stays
-		// proportionate to the chart regardless of aspect ratio.
-		$tooltip_width  = min( $viewbox_w * 0.15, 200.0 );
-		$tooltip_height = min( $viewbox_h * 0.22, 60.0 );
-		$tooltip_pad    = $viewbox_h * 0.025;
+		// `$preview_cx` and `$preview_cy` are in SVG viewBox units. The
+		// cursor LINE stays in SVG and is positioned in viewBox units; the
+		// HTML dot and tooltip overlays are positioned in fraction-of-wrapper
+		// units (0..1) because the wrapper's CSS-pixel dimensions are not
+		// known at server-render time. View.ts converts the fractions into
+		// CSS pixels on every cursor update; on the initial editor render
+		// the same fractions live on `style.left` / `style.top` as
+		// percentages so the overlays appear at the right spot before any
+		// JS has run.
 		[ $preview_cx, $preview_cy, $preview_distance_m, $preview_elevation_m ] =
 			self::midpoint_preview_geometry(
 				$series,
@@ -697,110 +710,29 @@ final class Render_Elevation {
 				$plot_top,
 				$plot_bottom,
 			);
-		$preview_rect_x = max(
-			$plot_left,
-			min( $plot_right - $tooltip_width, $preview_cx - $tooltip_width / 2 ),
-		);
-		$preview_text_x = $preview_rect_x + $tooltip_width / 2;
+		$plot_w_for_preview = max( $plot_right - $plot_left, 0.000001 );
+		$plot_h_for_preview = max( $plot_bottom - $plot_top, 0.000001 );
+		$preview_fx_pct     = ( $preview_cx - $plot_left ) / $plot_w_for_preview * 100.0;
+		$preview_fy_pct     = ( $preview_cy - $plot_top ) / $plot_h_for_preview * 100.0;
 
 		// Server-render the cursor line. In editor preview mode `x1`/`x2` are
 		// anchored at the midpoint sample's x; on the frontend they start at 0
-		// and JS updates them on every pointermove.
-		$line_x      = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
-		$cursor_line = sprintf(
+		// and JS updates them on every pointermove. When the cursor wrapper
+		// is hidden, `display:none` on the line keeps the SVG-side cursor in
+		// sync with the HTML-side overlays — `display` is a presentation
+		// attribute on SVG line elements and a CSS property in the
+		// inline-style fallback used by view.ts.
+		$line_x          = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
+		$line_style_attr = $is_editor_preview ? '' : ' style="display:none"';
+		$cursor_line     = sprintf(
 			'<line class="kntnt-gpx-blocks-elevation-cursor-line"'
 			. ' x1="%s" y1="%.2f" x2="%s" y2="%.2f" stroke="currentColor"'
-			. ' vector-effect="non-scaling-stroke" />',
+			. ' vector-effect="non-scaling-stroke"%s />',
 			$line_x,
 			$plot_top,
 			$line_x,
 			$plot_bottom,
-		);
-
-		// Server-render the dot at the midpoint sample's (cx, cy) in preview
-		// mode; at (0, 0) on the frontend until JS positions it.
-		$dot_cx     = $is_editor_preview ? sprintf( '%.2f', $preview_cx ) : '0';
-		$dot_cy     = $is_editor_preview ? sprintf( '%.2f', $preview_cy ) : '0';
-		$dot_radius = max( 3.0, $viewbox_h * 0.018 );
-		$cursor_dot = sprintf(
-			'<circle class="kntnt-gpx-blocks-elevation-cursor-dot" cx="%s" cy="%s" r="%.2f" fill="currentColor" />',
-			$dot_cx,
-			$dot_cy,
-			$dot_radius,
-		);
-
-		// Tooltip rect — the tooltip lives inside the SVG and scales
-		// uniformly with the polyline. The tooltip <text> inherits typography
-		// from the block wrapper via block-level supports.typography (issue
-		// #94); editors who want differentiated styling wrap the block in a
-		// Group with overridden controls.
-		$rect_x              = $is_editor_preview ? sprintf( '%.2f', $preview_rect_x ) : '0';
-		$cursor_tooltip_rect = sprintf(
-			'<rect class="kntnt-gpx-blocks-elevation-cursor-tooltip-bg"'
-			. ' x="%s" y="%.2f" width="%.2f" height="%.2f" rx="3" />',
-			$rect_x,
-			$plot_top,
-			$tooltip_width,
-			$tooltip_height,
-		);
-
-		// Two-line tooltip text built as a parent <text> with two <tspan>
-		// children: one for the distance row, one for the elevation row.
-		// JS sets the textContent of each tspan and re-points their `x`
-		// attributes to the rect's horizontal centre on every cursor update.
-		// `dominant-baseline="hanging"` anchors the first row to the text
-		// element's `y`; `dy="1.2em"` on the second tspan offsets it onto
-		// the next line in proportion to the (possibly user-overridden)
-		// font-size.
-		$text_x              = $is_editor_preview ? sprintf( '%.2f', $preview_text_x ) : '0';
-		$distance_label      = $is_editor_preview ? self::format_distance_label( $preview_distance_m ) : '';
-		$elevation_label     = $is_editor_preview ? self::format_elevation_label( $preview_elevation_m ) : '';
-		$cursor_tooltip_text = sprintf(
-			'<text class="kntnt-gpx-blocks-elevation-cursor-tooltip-text"'
-			. ' x="%s" y="%.2f" text-anchor="middle" dominant-baseline="hanging">'
-			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance"'
-			. ' x="%s" dy="0">%s</tspan>'
-			. '<tspan class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation"'
-			. ' x="%s" dy="1.2em">%s</tspan>'
-			. '</text>',
-			$text_x,
-			$plot_top + $tooltip_pad,
-			$text_x,
-			esc_html( $distance_label ),
-			$text_x,
-			esc_html( $elevation_label ),
-		);
-
-		// In editor preview mode the cursor group is rendered visible and
-		// flagged with `data-preview="1"` so view.ts's watch callback knows
-		// not to hide it on the initial mount-time fire (when `fraction` is
-		// undefined). The first real fraction update — from the user scrubbing
-		// the chart, or from a sibling Map block — clears the data attribute
-		// and the cursor follows live state from that point on.
-		//
-		// The data-plot-* attributes carry the (now dynamic) plot rectangle
-		// so view.ts's pointer math agrees with the server-rendered geometry.
-		// view.ts parses these via parseFloat semantics (parseInt truncates
-		// the fractional part for non-default aspect ratios — acceptable
-		// because the inset is small relative to the chart width).
-		$style_attr   = $is_editor_preview ? '' : ' style="display:none"';
-		$preview_attr = $is_editor_preview ? ' data-preview="1"' : '';
-		$cursor_group = sprintf(
-			'<g class="kntnt-gpx-blocks-elevation-cursor"%s%s'
-			. ' data-plot-left="%.2f" data-plot-right="%.2f" data-plot-top="%.2f" data-plot-bottom="%.2f"'
-			. ' data-tooltip-width="%.2f" data-tooltip-height="%.2f">%s%s%s%s</g>',
-			$style_attr,
-			$preview_attr,
-			$plot_left,
-			$plot_right,
-			$plot_top,
-			$plot_bottom,
-			$tooltip_width,
-			$tooltip_height,
-			$cursor_line,
-			$cursor_dot,
-			$cursor_tooltip_rect,
-			$cursor_tooltip_text,
+			$line_style_attr,
 		);
 
 		// aria-labelledby references the <desc> child element, which is the
@@ -821,13 +753,47 @@ final class Render_Elevation {
 			esc_html( $desc ),
 			$frame,
 			$polyline,
-			$cursor_group,
+			$cursor_line,
 		);
 
-		// Compose the final chart: SVG plus the two HTML axis-label overlays.
-		// The overlays are sibling elements inside the wrapper; their
-		// absolute positioning and sizing live in the stylesheet.
-		return $svg . $y_labels . $x_labels;
+		// Build the HTML cursor overlays (issue #136). The dot is a fixed
+		// em-sized `<div>` so it stays perfectly circular at every aspect
+		// ratio; the tooltip is a `<div>` whose intrinsic size flows from
+		// its text content. Both are absolutely positioned relative to the
+		// block wrapper. The wrapping cursor `<div>` carries the visibility
+		// toggle (`display:none` on the frontend) and the editor-preview
+		// flag (`data-preview="1"`) that view.ts's watch callback reads.
+		$wrapper_style_attr   = $is_editor_preview ? '' : ' style="display:none"';
+		$preview_attr         = $is_editor_preview ? ' data-preview="1"' : '';
+		$dot_style_attr       = $is_editor_preview
+			? sprintf( ' style="left:%.4f%%;top:%.4f%%"', $preview_fx_pct, $preview_fy_pct )
+			: '';
+		$tooltip_style_attr   = $is_editor_preview
+			? sprintf( ' style="left:%.4f%%;top:0"', $preview_fx_pct )
+			: '';
+		$distance_label       = $is_editor_preview ? self::format_distance_label( $preview_distance_m ) : '';
+		$elevation_label      = $is_editor_preview ? self::format_elevation_label( $preview_elevation_m ) : '';
+		$cursor_overlay       = sprintf(
+			'<div class="kntnt-gpx-blocks-elevation-cursor" aria-hidden="true"%s%s>'
+				. '<div class="kntnt-gpx-blocks-elevation-cursor-dot"%s></div>'
+				. '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip"%s>'
+					. '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-distance">%s</div>'
+					. '<div class="kntnt-gpx-blocks-elevation-cursor-tooltip-elevation">%s</div>'
+				. '</div>'
+			. '</div>',
+			$wrapper_style_attr,
+			$preview_attr,
+			$dot_style_attr,
+			$tooltip_style_attr,
+			esc_html( $distance_label ),
+			esc_html( $elevation_label ),
+		);
+
+		// Compose the final chart: SVG (with cursor line inside), the HTML
+		// cursor overlay (dot + tooltip), then the two HTML axis-label
+		// overlays. The overlays are sibling elements inside the wrapper;
+		// their absolute positioning and sizing live in the stylesheet.
+		return $svg . $cursor_overlay . $y_labels . $x_labels;
 
 	}
 
