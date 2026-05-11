@@ -99,10 +99,26 @@ final class Editor_Data_Enqueuer {
 		$registry = $this->registry ?? new Tile_Layer_Registry();
 
 		// Compose the payload from the validated registries. Both lists are
-		// keyed by id; the editor reads `id` and `label` per entry.
+		// keyed by id; the editor reads `id` and `label` per entry. The two
+		// halves share a single shaper parametrised over the nested-collection
+		// key (`styles` vs `layers`), the `default` field (providers only),
+		// and the warning wording that distinguishes the two halves in the
+		// log so a site builder can locate the failure from the log alone.
 		$payload = [
-			'providers' => self::shape_providers( $registry->get_providers() ),
-			'overlays'  => self::shape_overlays( $registry->get_overlays() ),
+			'providers' => self::shape_collection(
+				$registry->get_providers(),
+				'styles',
+				true,
+				'tile provider',
+				'fail closed (polyline-only)',
+			),
+			'overlays'  => self::shape_collection(
+				$registry->get_overlays(),
+				'layers',
+				false,
+				'tile-overlay provider',
+				'drop its layers (base map and other overlays still render)',
+			),
 		];
 
 		// Encode the payload. wp_json_encode() returns false on failure, in
@@ -123,38 +139,36 @@ final class Editor_Data_Enqueuer {
 	}
 
 	/**
-	 * Shapes the provider registry for the editor payload.
+	 * Shapes a registry collection (providers or overlays) for the editor
+	 * payload.
 	 *
-	 * Forwards the nested provider/style hierarchy verbatim into the
-	 * inline payload so the editor's `TilesPanel` can drive its two
-	 * `SelectControl`s plus the conditional API-key field, and so
-	 * `MapEditorPreview` can mount the resolved style's tile layer via
-	 * `L.tileLayer()`. Provider-level fields surfaced: `label`,
-	 * `requiresKey`, `default`, optional `signupUrl`, optional
-	 * `subdomains`, and `apiKeyManagedExternally` (the boolean flag the
-	 * editor reads to decide whether to render the per-provider API-key
-	 * TextControl). Per-style fields surfaced under `styles[ id ]`:
-	 * `label`, `url` (with `{KEY}` left intact for the attribute path;
-	 * pre-substituted server-side when the PHP path is engaged and the
-	 * resolved key is non-empty — see below), `attribution`, `maxZoom`.
+	 * Both halves of the editor payload share the same record structure:
+	 * a provider-level envelope (`label`, `requiresKey`, optional
+	 * `signupUrl`, optional `subdomains`, optional `apiKey`) wrapping a
+	 * nested map of child records keyed by id, each carrying `label`,
+	 * `url`, `attribution`, `maxZoom`. The two halves differ only in
+	 * three mechanical points:
 	 *
-	 * **PHP-supplied key path.** When a provider record carries the
-	 * optional `apiKey` field (engaged via the
-	 * `kntnt_gpx_blocks_tile_providers` filter), the per-block
-	 * `attributes.tileApiKeys[ providerId ]` value is ignored entirely
-	 * and the editor must not render an API-key TextControl for that
-	 * provider. This shaper:
+	 * - the nested-collection key — `styles` for base providers,
+	 *   `layers` for overlay providers;
+	 * - the presence of a `default` field — base providers carry it (the
+	 *   default style id), overlay providers do not;
+	 * - the warning wording in the fail-closed log line — "tile provider"
+	 *   + "fail closed (polyline-only)" for base providers; "tile-overlay
+	 *   provider" + "drop its layers (base map and other overlays still
+	 *   render)" for overlays. The wording distinguishes the two halves
+	 *   so a site builder can locate the failure from the log alone.
 	 *
-	 * - emits `apiKeyManagedExternally: true` per provider so the editor
-	 *   knows to hide the TextControl;
-	 * - pre-substitutes `{KEY}` in every style URL when the resolved key
-	 *   is non-empty, so the preview can mount the URL directly without
-	 *   invoking the client-side `substituteTileApiKey()` helper;
-	 * - leaves `{KEY}` intact and logs a `Plugin::warning()` naming only
-	 *   the provider id (never the key value) when the resolved key is
-	 *   empty or whitespace-only — the editor preview then detects the
-	 *   unsubstituted `{KEY}` and ships polyline-only, mirroring the
-	 *   frontend's fail-closed contract.
+	 * Everything else — validation expectations, key pruning, record
+	 * reconstruction, `apiKey` handling, `subdomains` inheritance, the
+	 * fail-closed `{KEY}`-survives invariant — is identical. The shaper
+	 * surfaces `apiKeyManagedExternally` (the boolean flag the editor
+	 * reads to decide whether to render the per-provider API-key
+	 * TextControl) and pre-substitutes `{KEY}` in every child URL when
+	 * the PHP path is engaged with a non-empty key; when the PHP key is
+	 * empty, `{KEY}` is left intact so the editor preview's fail-closed
+	 * detector (unsubstituted `{KEY}`) ships polyline-only (base
+	 * providers) or drops just the affected layer (overlays).
 	 *
 	 * The `apiKey` itself is **never** part of the editor payload — only
 	 * the boolean flag and the resolved URL ever reach the browser. The
@@ -167,8 +181,14 @@ final class Editor_Data_Enqueuer {
 	 * @param array<string, array{
 	 *     label: string,
 	 *     requiresKey: bool,
-	 *     default: string,
-	 *     styles: array<string, array{
+	 *     default?: string,
+	 *     styles?: array<string, array{
+	 *         label: string,
+	 *         url: string,
+	 *         attribution: string,
+	 *         maxZoom: int,
+	 *     }>,
+	 *     layers?: array<string, array{
 	 *         label: string,
 	 *         url: string,
 	 *         attribution: string,
@@ -177,218 +197,98 @@ final class Editor_Data_Enqueuer {
 	 *     signupUrl?: string,
 	 *     subdomains?: list<string>,
 	 *     apiKey?: string,
-	 * }> $providers Validated provider records keyed by id.
+	 * }>                                          $records             Validated provider/overlay records keyed by id.
+	 * @param 'styles'|'layers'                    $nested_key          Key under which the child collection lives on each
+	 *                                                                  record (`styles` for base providers, `layers` for
+	 *                                                                  overlay providers).
+	 * @param bool                                 $has_default         Whether records carry a `default` field that must
+	 *                                                                  be forwarded into the editor payload (true for base
+	 *                                                                  providers, false for overlay providers).
+	 * @param string                               $kind_for_warning    Human-readable record-kind label spliced into the
+	 *                                                                  fail-closed warning (`'tile provider'` or
+	 *                                                                  `'tile-overlay provider'`).
+	 * @param string                               $consequence_phrase  Trailing phrase spliced into the fail-closed warning
+	 *                                                                  describing the editor-preview consequence
+	 *                                                                  (`'fail closed (polyline-only)'` or
+	 *                                                                  `'drop its layers (base map and other overlays still render)'`).
 	 *
-	 * @return array<string, array{
-	 *     label: string,
-	 *     requiresKey: bool,
-	 *     default: string,
-	 *     apiKeyManagedExternally: bool,
-	 *     styles: array<string, array{
-	 *         label: string,
-	 *         url: string,
-	 *         attribution: string,
-	 *         maxZoom: int,
-	 *     }>,
-	 *     signupUrl?: string,
-	 *     subdomains?: list<string>,
-	 * }>
+	 * @return array<string, array<string, mixed>>
 	 */
-	private static function shape_providers( array $providers ): array {
+	private static function shape_collection(
+		array $records,
+		string $nested_key,
+		bool $has_default,
+		string $kind_for_warning,
+		string $consequence_phrase,
+	): array {
 
 		$out = [];
 
-		foreach ( $providers as $id => $record ) {
+		foreach ( $records as $id => $record ) {
 
 			// Detect PHP-supplied key engagement. Presence of `apiKey` on
 			// the validated record (not its value) is the engagement
 			// signal. An empty PHP key fails closed — the URL is left
 			// with its `{KEY}` placeholder and a warning is logged so
-			// the misconfiguration surfaces in the log.
+			// the misconfiguration surfaces in the log. The base-provider
+			// preview ships polyline-only; the overlay preview drops just
+			// the affected layer (base map and other overlays still
+			// render) — the consequence phrase distinguishes the two so a
+			// site builder can locate the failure from the log alone.
 			$php_path_engaged = array_key_exists( 'apiKey', $record );
 			$php_key          = $php_path_engaged ? $record['apiKey'] : '';
 			$php_key_empty    = $php_path_engaged && '' === $php_key;
 			if ( $php_key_empty ) {
 				Plugin::warning(
 					sprintf(
-						'Editor_Data_Enqueuer: PHP-supplied apiKey for tile provider "%s" is empty; editor preview will fail closed (polyline-only).',
-						$id
+						'Editor_Data_Enqueuer: PHP-supplied apiKey for %s "%s" is empty; editor preview will %s.',
+						$kind_for_warning,
+						$id,
+						$consequence_phrase,
 					)
 				);
 			}
 
-			// Compose the per-style sub-map. The shape mirrors the
-			// validator's typed style record verbatim; the validator has
-			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
-			// When the PHP path is engaged with a non-empty key, the
-			// `{KEY}` placeholder is substituted server-side so the
-			// editor preview never sees the raw key in its props graph;
-			// when the PHP key is empty, `{KEY}` is left intact so the
-			// preview's fail-closed detector (unsubstituted `{KEY}`) ships
-			// polyline-only.
-			$styles = [];
-			foreach ( $record['styles'] as $style_id => $style ) {
-				$url = $style['url'];
-				if ( $php_path_engaged && ! $php_key_empty ) {
-					$url = str_replace( '{KEY}', $php_key, $url );
-				}
-				$styles[ $style_id ] = [
-					'label'       => $style['label'],
-					'url'         => $url,
-					'attribution' => $style['attribution'],
-					'maxZoom'     => $style['maxZoom'],
-				];
-			}
-
-			$entry = [
-				'label'                   => $record['label'],
-				'requiresKey'             => $record['requiresKey'],
-				'default'                 => $record['default'],
-				'apiKeyManagedExternally' => $php_path_engaged,
-				'styles'                  => $styles,
-			];
-			if ( isset( $record['signupUrl'] ) ) {
-				$entry['signupUrl'] = $record['signupUrl'];
-			}
-			if ( isset( $record['subdomains'] ) ) {
-				$entry['subdomains'] = $record['subdomains'];
-			}
-			$out[ $id ] = $entry;
-
-		}
-
-		return $out;
-
-	}
-
-	/**
-	 * Shapes the overlay-provider registry for the editor payload.
-	 *
-	 * Forwards the nested overlay-provider/layer hierarchy verbatim into
-	 * the inline payload so the editor's `OverlaysPanel` can render one
-	 * sub-section per provider — provider label as a header, conditional
-	 * API-key TextControl + signup ExternalLink for `requiresKey === true`
-	 * providers, and one ToggleControl per layer — and so
-	 * `MapEditorPreview` can mount each enabled layer's tile layer via
-	 * `L.tileLayer()`. Provider-level fields surfaced: `label`,
-	 * `requiresKey`, optional `signupUrl`, optional `subdomains`, and
-	 * `apiKeyManagedExternally` (the boolean flag the editor reads to
-	 * decide whether to render the per-provider API-key TextControl).
-	 * Per-layer fields surfaced under `layers[ id ]`: `label`, `url`
-	 * (with `{KEY}` left intact for the attribute path; pre-substituted
-	 * server-side when the PHP path is engaged and the resolved key is
-	 * non-empty — see below), `attribution`, `maxZoom`.
-	 *
-	 * **PHP-supplied key path.** When an overlay-provider record carries
-	 * the optional `apiKey` field (engaged via the
-	 * `kntnt_gpx_blocks_tile_overlays` filter), the per-block
-	 * `attributes.tileOverlayApiKeys[ providerId ]` value is ignored
-	 * entirely and the editor must not render an API-key TextControl
-	 * for that provider. This shaper:
-	 *
-	 * - emits `apiKeyManagedExternally: true` per overlay provider so
-	 *   the editor knows to hide the TextControl;
-	 * - pre-substitutes `{KEY}` in every layer URL when the resolved key
-	 *   is non-empty, so the preview can mount the URL directly without
-	 *   invoking the client-side `substituteTileApiKey()` helper;
-	 * - leaves `{KEY}` intact and logs a `Plugin::warning()` naming only
-	 *   the overlay-provider id (never the key value) when the resolved
-	 *   key is empty or whitespace-only — the editor preview's
-	 *   `resolveOverlaysForPreview()` then detects the unsubstituted
-	 *   `{KEY}` and drops just that layer, mirroring the frontend's
-	 *   asymmetric fail-closed contract for overlays (no polyline-only
-	 *   equivalent; the base map and other overlays still render).
-	 *
-	 * The `apiKey` itself is **never** part of the editor payload — only
-	 * the boolean flag and the resolved URL ever reach the browser. The
-	 * shape is deliberately explicit so a future change to the registry's
-	 * internal record type does not silently leak through the editor
-	 * data; only the fields listed below ever reach the browser.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param array<string, array{
-	 *     label: string,
-	 *     requiresKey: bool,
-	 *     layers: array<string, array{
-	 *         label: string,
-	 *         url: string,
-	 *         attribution: string,
-	 *         maxZoom: int,
-	 *     }>,
-	 *     signupUrl?: string,
-	 *     subdomains?: list<string>,
-	 *     apiKey?: string,
-	 * }> $overlays Validated overlay-provider records keyed by id.
-	 *
-	 * @return array<string, array{
-	 *     label: string,
-	 *     requiresKey: bool,
-	 *     apiKeyManagedExternally: bool,
-	 *     layers: array<string, array{
-	 *         label: string,
-	 *         url: string,
-	 *         attribution: string,
-	 *         maxZoom: int,
-	 *     }>,
-	 *     signupUrl?: string,
-	 *     subdomains?: list<string>,
-	 * }>
-	 */
-	private static function shape_overlays( array $overlays ): array {
-
-		$out = [];
-
-		foreach ( $overlays as $id => $record ) {
-
-			// Detect PHP-supplied key engagement. Presence of `apiKey` on
-			// the validated record (not its value) is the engagement
-			// signal. An empty PHP key fails closed at resolve time (the
-			// affected layer is dropped from the overlay stack) — the
-			// editor preview detects this by spotting `{KEY}` still
-			// present in the URL and skips mounting that layer; the
-			// warning here surfaces the misconfiguration in the log.
-			$php_path_engaged = array_key_exists( 'apiKey', $record );
-			$php_key          = $php_path_engaged ? $record['apiKey'] : '';
-			$php_key_empty    = $php_path_engaged && '' === $php_key;
-			if ( $php_key_empty ) {
-				Plugin::warning(
-					sprintf(
-						'Editor_Data_Enqueuer: PHP-supplied apiKey for tile-overlay provider "%s" is empty; editor preview will drop its layers (base map and other overlays still render).',
-						$id
-					)
-				);
-			}
-
-			// Compose the per-layer sub-map. The shape mirrors the
-			// validator's typed layer record verbatim; the validator has
+			// Compose the nested child sub-map. The shape mirrors the
+			// validator's typed child record verbatim; the validator has
 			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
 			// When the PHP path is engaged with a non-empty key, the
 			// `{KEY}` placeholder is substituted server-side so the
 			// editor preview never sees the raw key in its props graph;
 			// when the PHP key is empty, `{KEY}` is left intact so the
 			// preview's fail-closed detector (unsubstituted `{KEY}`)
-			// drops just the affected layer.
-			$layers = [];
-			foreach ( $record['layers'] as $layer_id => $layer ) {
-				$url = $layer['url'];
+			// ships polyline-only (base providers) or drops just the
+			// affected layer (overlays).
+			$nested = $record[ $nested_key ] ?? [];
+			$children = [];
+			foreach ( $nested as $child_id => $child ) {
+				$url = $child['url'];
 				if ( $php_path_engaged && ! $php_key_empty ) {
 					$url = str_replace( '{KEY}', $php_key, $url );
 				}
-				$layers[ $layer_id ] = [
-					'label'       => $layer['label'],
+				$children[ $child_id ] = [
+					'label'       => $child['label'],
 					'url'         => $url,
-					'attribution' => $layer['attribution'],
-					'maxZoom'     => $layer['maxZoom'],
+					'attribution' => $child['attribution'],
+					'maxZoom'     => $child['maxZoom'],
 				];
 			}
 
+			// Compose the per-record entry. The optional `default` field
+			// is forwarded only for record kinds that carry it (base
+			// providers), sitting between `requiresKey` and
+			// `apiKeyManagedExternally` to mirror its position on the
+			// validated input record; optional `signupUrl` and `subdomains`
+			// are forwarded whenever present.
 			$entry = [
-				'label'                   => $record['label'],
-				'requiresKey'             => $record['requiresKey'],
-				'apiKeyManagedExternally' => $php_path_engaged,
-				'layers'                  => $layers,
+				'label'       => $record['label'],
+				'requiresKey' => $record['requiresKey'],
 			];
+			if ( $has_default && isset( $record['default'] ) ) {
+				$entry['default'] = $record['default'];
+			}
+			$entry['apiKeyManagedExternally'] = $php_path_engaged;
+			$entry[ $nested_key ] = $children;
 			if ( isset( $record['signupUrl'] ) ) {
 				$entry['signupUrl'] = $record['signupUrl'];
 			}
