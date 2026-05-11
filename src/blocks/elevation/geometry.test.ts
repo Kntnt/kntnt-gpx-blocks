@@ -6,31 +6,10 @@
 
 import {
 	interpolateSample,
-	lowerBoundIndex,
 	sampleToSvg,
 	type ChartBounds,
 	type DistanceElevation,
 } from './geometry';
-
-describe( 'lowerBoundIndex', () => {
-	it( 'returns 0 for an empty array', () => {
-		expect( lowerBoundIndex( [], 5 ) ).toBe( 0 );
-	} );
-
-	it( 'returns 0 for a target below the first entry', () => {
-		expect( lowerBoundIndex( [ 0, 100, 200 ], -5 ) ).toBe( 0 );
-	} );
-
-	it( 'returns the last index for a target at or above the final entry', () => {
-		expect( lowerBoundIndex( [ 0, 100, 200 ], 200 ) ).toBe( 2 );
-		expect( lowerBoundIndex( [ 0, 100, 200 ], 999 ) ).toBe( 2 );
-	} );
-
-	it( 'returns the predecessor index for an interior target', () => {
-		expect( lowerBoundIndex( [ 0, 100, 200 ], 50 ) ).toBe( 0 );
-		expect( lowerBoundIndex( [ 0, 100, 200 ], 150 ) ).toBe( 1 );
-	} );
-} );
 
 describe( 'interpolateSample', () => {
 	const series: ReadonlyArray< DistanceElevation > = [

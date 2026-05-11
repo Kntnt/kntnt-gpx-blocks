@@ -9,31 +9,7 @@
  * @since 0.2.0
  */
 
-import { clickToFraction, fractionToLatLng, lowerBoundIndex } from './geometry';
-
-describe( 'lowerBoundIndex', () => {
-	it( 'returns 0 for an empty array', () => {
-		expect( lowerBoundIndex( [], 5 ) ).toBe( 0 );
-	} );
-
-	it( 'returns 0 when the target is below the first entry', () => {
-		expect( lowerBoundIndex( [ 10, 20, 30 ], 5 ) ).toBe( 0 );
-	} );
-
-	it( 'returns the last index when the target equals or exceeds the final entry', () => {
-		expect( lowerBoundIndex( [ 10, 20, 30 ], 30 ) ).toBe( 2 );
-		expect( lowerBoundIndex( [ 10, 20, 30 ], 99 ) ).toBe( 2 );
-	} );
-
-	it( 'returns the predecessor index for a value strictly between two entries', () => {
-		expect( lowerBoundIndex( [ 10, 20, 30 ], 15 ) ).toBe( 0 );
-		expect( lowerBoundIndex( [ 10, 20, 30 ], 25 ) ).toBe( 1 );
-	} );
-
-	it( 'returns the matching index when the target equals an interior entry', () => {
-		expect( lowerBoundIndex( [ 10, 20, 30 ], 20 ) ).toBe( 1 );
-	} );
-} );
+import { clickToFraction, fractionToLatLng } from './geometry';
 
 describe( 'fractionToLatLng', () => {
 	const vertices: ReadonlyArray< readonly [ number, number ] > = [

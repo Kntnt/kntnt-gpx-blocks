@@ -25,8 +25,14 @@
  * - `formatFraction` is shared between Map and Elevation tests for parity
  *   checks; production callers do not currently use it.
  *
+ * The two cross-block primitives — `lowerBoundIndex` and `clamp01` — live in
+ * `../shared/geometry.ts` and are imported here. See `docs/architecture.md`
+ * for the data-flow context.
+ *
  * @since 0.2.0
  */
+
+import { clamp01, lowerBoundIndex } from '../shared/geometry';
 
 /**
  * A `[lat, lng]` tuple in WGS84 decimal degrees.
@@ -51,45 +57,6 @@ export type LatLng = readonly [ number, number ];
 export interface ProjectedClick {
 	readonly fraction: number;
 	readonly latLng: LatLng;
-}
-
-/**
- * Find the largest index `i` such that `arr[i] <= target`.
- *
- * Returns `0` when `target` precedes `arr[0]`, and `arr.length - 1` when
- * `target` exceeds the final entry. Assumes `arr` is monotonically
- * non-decreasing — `trackCumDist` is, by construction.
- *
- * @since 0.2.0
- *
- * @param arr    - Monotone non-decreasing array.
- * @param target - Value to bracket.
- * @return Index of the predecessor entry.
- */
-export function lowerBoundIndex(
-	arr: readonly number[],
-	target: number
-): number {
-	if ( arr.length === 0 ) {
-		return 0;
-	}
-	let lo = 0;
-	let hi = arr.length - 1;
-	if ( target <= ( arr[ 0 ] as number ) ) {
-		return 0;
-	}
-	if ( target >= ( arr[ hi ] as number ) ) {
-		return hi;
-	}
-	while ( lo + 1 < hi ) {
-		const mid = Math.floor( ( lo + hi ) / 2 );
-		if ( ( arr[ mid ] as number ) <= target ) {
-			lo = mid;
-		} else {
-			hi = mid;
-		}
-	}
-	return lo;
 }
 
 /**
@@ -273,25 +240,4 @@ export function clickToFraction(
  */
 export function formatFraction( fraction: number, decimals = 6 ): string {
 	return clamp01( fraction ).toFixed( decimals );
-}
-
-/**
- * Clamp to the closed interval `[0, 1]`.
- *
- * Local helper because both `fractionToLatLng` and `clickToFraction` need
- * the same idiom and exporting it would clutter the module's surface.
- *
- * @since 0.2.0
- *
- * @param v - Value to clamp.
- * @return Clamped value in `[0, 1]`.
- */
-function clamp01( v: number ): number {
-	if ( v < 0 ) {
-		return 0;
-	}
-	if ( v > 1 ) {
-		return 1;
-	}
-	return v;
 }

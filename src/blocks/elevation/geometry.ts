@@ -7,8 +7,14 @@
  * downsampled points, then to an SVG `(cx, cy)` pair using the padded
  * `[yMin, yMax]` bounds PHP also rendered the polyline with.
  *
+ * The two cross-block primitives — `lowerBoundIndex` and `clamp01` — live in
+ * `../shared/geometry.ts` and are imported here. See `docs/architecture.md`
+ * for the data-flow context.
+ *
  * @since 0.2.0
  */
+
+import { clamp01, lowerBoundIndex } from '../shared/geometry';
 
 /**
  * A `(distance, elevation)` pair as emitted by `Render_Elevation` in metres.
@@ -29,45 +35,6 @@ export interface ChartBounds {
 	readonly right: number;
 	readonly top: number;
 	readonly bottom: number;
-}
-
-/**
- * Find the largest index `i` such that `arr[i] <= target`.
- *
- * Same idiom as the Map block's `lowerBoundIndex`; duplicated here so the
- * Elevation tests do not have to import across block boundaries. Assumes
- * `arr` is monotonically non-decreasing.
- *
- * @since 0.2.0
- *
- * @param arr    - Monotone non-decreasing array of distances.
- * @param target - Distance value to bracket.
- * @return Predecessor index.
- */
-export function lowerBoundIndex(
-	arr: readonly number[],
-	target: number
-): number {
-	if ( arr.length === 0 ) {
-		return 0;
-	}
-	let lo = 0;
-	let hi = arr.length - 1;
-	if ( target <= ( arr[ 0 ] as number ) ) {
-		return 0;
-	}
-	if ( target >= ( arr[ hi ] as number ) ) {
-		return hi;
-	}
-	while ( lo + 1 < hi ) {
-		const mid = Math.floor( ( lo + hi ) / 2 );
-		if ( ( arr[ mid ] as number ) <= target ) {
-			lo = mid;
-		} else {
-			hi = mid;
-		}
-	}
-	return lo;
 }
 
 /**
@@ -165,24 +132,4 @@ export function sampleToSvg(
 			: chart.bottom;
 
 	return { cx, cy };
-}
-
-/**
- * Clamp to the closed interval `[0, 1]`.
- *
- * Local helper kept private so the module's public surface stays small.
- *
- * @since 0.2.0
- *
- * @param v - Value to clamp.
- * @return Clamped value in `[0, 1]`.
- */
-function clamp01( v: number ): number {
-	if ( v < 0 ) {
-		return 0;
-	}
-	if ( v > 1 ) {
-		return 1;
-	}
-	return v;
 }
