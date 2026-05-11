@@ -164,6 +164,21 @@ final class Plugin {
 	private ?Bootstrap\Theme_Json_Border_Optin $theme_json_border_optin = null;
 
 	/**
+	 * The Border_Radius_Normalizer instance bound to render_block_data.
+	 *
+	 * Held as a property so the array callable passed to add_filter() keeps a
+	 * strong reference to the object for the lifetime of the request. Issue
+	 * #109: collapses the per-corner border-radius object form to the unified
+	 * shorthand string when all non-empty corners agree, so the frontend
+	 * wrapper matches the editor preview when one corner is stored as the
+	 * empty string.
+	 *
+	 * @since 1.0.0
+	 * @var Bootstrap\Border_Radius_Normalizer|null
+	 */
+	private ?Bootstrap\Border_Radius_Normalizer $border_radius_normalizer = null;
+
+	/**
 	 * Returns (and on first call, creates) the singleton instance.
 	 *
 	 * Stores the path to the main plugin file so that get_plugin_file() and
@@ -432,6 +447,17 @@ final class Plugin {
 		// the panel regardless of the active theme.
 		$this->theme_json_border_optin = new Bootstrap\Theme_Json_Border_Optin();
 		add_filter( 'wp_theme_json_data_theme', [ $this->theme_json_border_optin, 'filter' ] );
+
+		// Normalise the per-corner `style.border.radius` shape on the two
+		// blocks before the wrapper is rendered (issue #109). Gutenberg
+		// occasionally saves the object form with one corner stored as the
+		// empty string while the editor preview still shows all four corners
+		// rounded; the style engine then drops that corner on the frontend.
+		// Collapsing the object to the unified string when every non-empty
+		// corner agrees produces the four-rounded-corner output the editor
+		// preview promised.
+		$this->border_radius_normalizer = new Bootstrap\Border_Radius_Normalizer();
+		add_filter( 'render_block_data', [ $this->border_radius_normalizer, 'filter' ] );
 
 	}
 
