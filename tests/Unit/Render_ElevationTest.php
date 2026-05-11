@@ -287,13 +287,21 @@ beforeEach( function (): void {
 	// get_block_wrapper_attributes mock that mirrors core's behaviour for the
 	// fields the production code passes in (class + style) and additionally
 	// honours the editor-UI fields the wrapper-contract tests inject via
-	// $GLOBALS['kntnt_elev_test_attrs'].
-	$GLOBALS['kntnt_elev_test_attrs'] = [];
+	// $GLOBALS['kntnt_elev_test_attrs']. $GLOBALS['kntnt_elev_test_core_style']
+	// lets a test simulate core's habit of appending block-supports CSS
+	// declarations (border, shadow, dimensions, …) onto the supplied `style`
+	// attribute with a *space* separator — the concatenation shape that
+	// motivates the trailing-semicolon fix in issue #109.
+	$GLOBALS['kntnt_elev_test_attrs']      = [];
+	$GLOBALS['kntnt_elev_test_core_style'] = '';
 	Functions\when( 'get_block_wrapper_attributes' )->alias(
 		static function ( array $extras = [] ): string {
 			$attrs       = is_array( $GLOBALS['kntnt_elev_test_attrs'] ?? null )
 				? $GLOBALS['kntnt_elev_test_attrs']
 				: [];
+			$core_style  = is_string( $GLOBALS['kntnt_elev_test_core_style'] ?? null )
+				? $GLOBALS['kntnt_elev_test_core_style']
+				: '';
 			$class_parts = [ 'wp-block-kntnt-gpx-blocks-elevation' ];
 			if ( isset( $extras['class'] ) && '' !== $extras['class'] ) {
 				$class_parts[] = $extras['class'];
@@ -307,9 +315,20 @@ beforeEach( function (): void {
 				$class_parts[] = $class_name;
 			}
 			$out = sprintf( 'class="%s"', implode( ' ', $class_parts ) );
-			if ( isset( $extras['style'] ) && '' !== $extras['style'] ) {
-				$out .= sprintf( ' style="%s"', $extras['style'] );
+
+			// Compose the final style attribute. Core concatenates the
+			// supplied `style` with its own declarations using a single
+			// space as separator — not a semicolon — so the plugin must
+			// terminate its own declarations with `;` or the first core
+			// declaration runs into the plugin's last.
+			$style_value = $extras['style'] ?? '';
+			if ( '' !== $core_style ) {
+				$style_value = '' !== $style_value ? $style_value . ' ' . $core_style : $core_style;
 			}
+			if ( '' !== $style_value ) {
+				$out .= sprintf( ' style="%s"', $style_value );
+			}
+
 			$anchor = $attrs['anchor'] ?? '';
 			if ( is_string( $anchor ) && '' !== $anchor ) {
 				$out .= sprintf( ' id="%s"', $anchor );
@@ -1736,6 +1755,96 @@ test( 'svg drops the non-uniform preserveAspectRatio for wrapper-fill (issue #21
 	expect( $matched )->toBe( 1 );
 
 	expect( $svg_match[0] )->not->toContain( 'preserveAspectRatio="none"' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Issue #109 — the plugin's inline style must terminate with `;` so core's
+// appended border-/shadow-/dimensions-supports declarations never run into
+// the plugin's last declaration. WordPress concatenates the
+// caller-supplied style and its own declarations with a *space*, not a
+// semicolon, so the boundary character has to come from the plugin side.
+// Mirrors the Map block's regression test for the same bug: with per-corner
+// radii (which Border_Radius_Normalizer correctly leaves as four separate
+// declarations), core appends them and the first one would otherwise be
+// folded into the value of the plugin's last custom property.
+// ---------------------------------------------------------------------------
+
+test( 'inline style is terminated so core-appended per-corner border-radius survives (issue #109)', function (): void {
+
+	$coords = elev_synthetic_coords_3d( 200 );
+	$stats  = [
+		'distance'      => 5500.0,
+		'min_elevation' => 100.0,
+		'max_elevation' => 200.0,
+		'ascent'        => 100.0,
+		'descent'       => 0.0,
+	];
+
+	$store = elev_seeded_store( 500, $coords, $stats );
+	elev_bind_meta( $store );
+	elev_stub_get_post( 500 );
+	elev_stub_parse_blocks( [ elev_map_block( 500, 'map-issue-109' ) ] );
+	elev_stub_attached_file( 500, elev_fixture_path( 'happy-path.gpx' ) );
+	Functions\when( 'get_the_ID' )->justReturn( 500 );
+
+	// Simulate core's per-corner border-radius emission. With non-equal
+	// per-corner values, Border_Radius_Normalizer correctly leaves the
+	// four declarations as-is, and core's style engine appends them onto
+	// the wrapper's `style` attribute with a leading space.
+	$GLOBALS['kntnt_elev_test_core_style'] =
+		'border-top-left-radius:3rem;'
+		. 'border-top-right-radius:var(--wp--preset--border-radius--md);'
+		. 'border-bottom-left-radius:0.75rem;'
+		. 'border-bottom-right-radius:3rem;';
+
+	$html = Render_Elevation::render(
+		[
+			'mapId'         => 'auto',
+			'axisColor'     => '#111111',
+			'lineColor'     => '#0073aa',
+			'tooltipColor'  => '#222222',
+		],
+		'',
+		elev_fake_block( 500 ),
+	);
+
+	// Extract the wrapper's style attribute. The block emits the wrapper
+	// element as the first element in the output; restricting the regex
+	// to the first `<div ...>` keeps it from matching inline-style
+	// attributes inside SVG children (e.g. the cursor group's
+	// `style="display:none"`).
+	$matched = preg_match( '#<div\b[^>]*\sstyle="([^"]*)"#', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	$style_attr = $style_match[1];
+
+	// Parse the style attribute into a (property → value) declaration
+	// list the way a CSS parser would: split on `;`, trim each piece,
+	// drop the empty trailing slot, then split each non-empty piece on
+	// the first `:`.
+	$declarations = [];
+	foreach ( explode( ';', $style_attr ) as $piece ) {
+		$piece = trim( $piece );
+		if ( '' === $piece ) {
+			continue;
+		}
+		[ $name, $value ] = array_pad( explode( ':', $piece, 2 ), 2, '' );
+		$declarations[ trim( $name ) ] = trim( $value );
+	}
+
+	// border-top-left-radius must survive as a standalone declaration
+	// with its expected value — not absorbed into a preceding custom
+	// property.
+	expect( $declarations )->toHaveKey( 'border-top-left-radius' );
+	expect( $declarations['border-top-left-radius'] )->toBe( '3rem' );
+
+	// And the plugin's last custom property must not have absorbed the
+	// border declaration into its value. tooltipColor is the last item
+	// in the renderer's `$style_parts` list and therefore the one whose
+	// trailing value would otherwise glue to the first appended border
+	// declaration.
+	expect( $declarations )->toHaveKey( '--kntnt-gpx-blocks-tooltip-color' );
+	expect( $declarations['--kntnt-gpx-blocks-tooltip-color'] )->toBe( '#222222' );
 
 } );
 

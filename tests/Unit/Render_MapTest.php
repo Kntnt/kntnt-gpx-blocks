@@ -203,13 +203,21 @@ beforeEach( function (): void {
 	// get_block_wrapper_attributes mock that mirrors core's behaviour for the
 	// fields the production code passes in (class + style) and additionally
 	// honours the editor-UI fields the wrapper-contract tests inject via
-	// $GLOBALS['kntnt_map_test_attrs'].
-	$GLOBALS['kntnt_map_test_attrs'] = [];
+	// $GLOBALS['kntnt_map_test_attrs']. $GLOBALS['kntnt_map_test_core_style']
+	// lets a test simulate core's habit of appending block-supports CSS
+	// declarations (border, shadow, dimensions, …) onto the supplied `style`
+	// attribute with a *space* separator — the concatenation shape that
+	// motivates the trailing-semicolon fix in issue #109.
+	$GLOBALS['kntnt_map_test_attrs']      = [];
+	$GLOBALS['kntnt_map_test_core_style'] = '';
 	Functions\when( 'get_block_wrapper_attributes' )->alias(
 		static function ( array $extras = [] ): string {
 			$attrs       = is_array( $GLOBALS['kntnt_map_test_attrs'] ?? null )
 				? $GLOBALS['kntnt_map_test_attrs']
 				: [];
+			$core_style  = is_string( $GLOBALS['kntnt_map_test_core_style'] ?? null )
+				? $GLOBALS['kntnt_map_test_core_style']
+				: '';
 			$class_parts = [ 'wp-block-kntnt-gpx-blocks-map' ];
 			if ( isset( $extras['class'] ) && '' !== $extras['class'] ) {
 				$class_parts[] = $extras['class'];
@@ -223,9 +231,20 @@ beforeEach( function (): void {
 				$class_parts[] = $class_name;
 			}
 			$out = sprintf( 'class="%s"', implode( ' ', $class_parts ) );
-			if ( isset( $extras['style'] ) && '' !== $extras['style'] ) {
-				$out .= sprintf( ' style="%s"', $extras['style'] );
+
+			// Compose the final style attribute. Core concatenates the
+			// supplied `style` with its own declarations using a single
+			// space as separator — not a semicolon — so the plugin must
+			// terminate its own declarations with `;` or the first core
+			// declaration runs into the plugin's last.
+			$style_value = $extras['style'] ?? '';
+			if ( '' !== $core_style ) {
+				$style_value = '' !== $style_value ? $style_value . ' ' . $core_style : $core_style;
 			}
+			if ( '' !== $style_value ) {
+				$out .= sprintf( ' style="%s"', $style_value );
+			}
+
 			$anchor = $attrs['anchor'] ?? '';
 			if ( is_string( $anchor ) && '' !== $anchor ) {
 				$out .= sprintf( ' id="%s"', $anchor );
@@ -2217,5 +2236,109 @@ test( 'render output preserves a hex8 tooltipBackground end-to-end (issue #84 al
 	);
 
 	expect( $html )->toContain( '--kntnt-gpx-blocks-tooltip-bg: #000000cc' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Issue #109 — the plugin's inline style must terminate with `;` so core's
+// appended border-/shadow-/dimensions-supports declarations never run into
+// the plugin's last declaration. WordPress concatenates the
+// caller-supplied style and its own declarations with a *space*, not a
+// semicolon, so the boundary character has to come from the plugin side.
+// The user-reported symptom is `border-top-left-radius:3rem` being folded
+// into the value of the preceding custom property (`tooltipDescFontStyle:
+// italic`) and the top-left corner rendering square.
+// ---------------------------------------------------------------------------
+
+test( 'inline style is terminated so core-appended per-corner border-radius survives (issue #109)', function (): void {
+
+	// Seed a renderable Map with the user-reported attribute shape: a
+	// tooltipDescFontStyle attribute on top of per-corner radii. The
+	// font-style value sits at the end of the joined declaration string,
+	// so any missing terminator absorbs the next declaration.
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 400, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 400, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_interactivity_state' )->justReturn( null );
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	// Simulate core's per-corner border-radius emission. With non-equal
+	// per-corner values, Border_Radius_Normalizer correctly leaves the
+	// four declarations as-is, and core's style engine appends them onto
+	// the wrapper's `style` attribute with a leading space.
+	$GLOBALS['kntnt_map_test_core_style'] =
+		'border-top-left-radius:3rem;'
+		. 'border-top-right-radius:var(--wp--preset--border-radius--md);'
+		. 'border-bottom-left-radius:0.75rem;'
+		. 'border-bottom-right-radius:3rem;';
+
+	$html = Render_Map::render(
+		[
+			'attachmentId'          => 400,
+			'mapId'                 => 'map-issue-109',
+			'tooltipNameFontWeight' => 'bold',
+			'tooltipDescFontStyle'  => 'italic',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	// Extract the wrapper's style attribute. The pattern is greedy-safe
+	// because the style attribute is double-quoted and the source never
+	// embeds a literal double-quote inside it.
+	$matched = preg_match( '/\sstyle="([^"]*)"/', $html, $style_match );
+	expect( $matched )->toBe( 1 );
+	$style_attr = $style_match[1];
+
+	// Parse the style attribute into a (property → value) declaration
+	// list the way a CSS parser would: split on `;`, trim each piece,
+	// drop the empty trailing slot, then split each non-empty piece on
+	// the first `:`.
+	$declarations = [];
+	foreach ( explode( ';', $style_attr ) as $piece ) {
+		$piece = trim( $piece );
+		if ( '' === $piece ) {
+			continue;
+		}
+		[ $name, $value ] = array_pad( explode( ':', $piece, 2 ), 2, '' );
+		$declarations[ trim( $name ) ] = trim( $value );
+	}
+
+	// border-top-left-radius must survive as a standalone declaration
+	// with its expected value — not absorbed into a preceding custom
+	// property.
+	expect( $declarations )->toHaveKey( 'border-top-left-radius' );
+	expect( $declarations['border-top-left-radius'] )->toBe( '3rem' );
+
+	// And the plugin's last custom property must not have absorbed the
+	// border declaration into its value.
+	expect( $declarations )->toHaveKey( '--kntnt-gpx-blocks-tooltip-desc-font-style' );
+	expect( $declarations['--kntnt-gpx-blocks-tooltip-desc-font-style'] )->toBe( 'italic' );
+
+	// Defence in depth: no plugin custom property must contain a
+	// border-*-radius substring in its value (the malformed-decl shape
+	// the bug produces).
+	foreach ( $declarations as $name => $value ) {
+		if ( str_starts_with( (string) $name, '--kntnt-gpx-blocks-' ) ) {
+			expect( $value )->not->toContain(
+				'border-top-left-radius',
+				sprintf( 'Expected %s value not to absorb a border-radius declaration', $name ),
+			);
+			expect( $value )->not->toContain(
+				'border-top-right-radius',
+				sprintf( 'Expected %s value not to absorb a border-radius declaration', $name ),
+			);
+			expect( $value )->not->toContain(
+				'border-bottom-left-radius',
+				sprintf( 'Expected %s value not to absorb a border-radius declaration', $name ),
+			);
+			expect( $value )->not->toContain(
+				'border-bottom-right-radius',
+				sprintf( 'Expected %s value not to absorb a border-radius declaration', $name ),
+			);
+		}
+	}
 
 } );

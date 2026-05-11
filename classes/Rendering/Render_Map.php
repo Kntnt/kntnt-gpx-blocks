@@ -441,7 +441,15 @@ final class Render_Map {
 			$style_parts[] = '--kntnt-gpx-blocks-tooltip-desc-text-transform: ' . esc_attr( $tooltip_desc_text_transform );
 		}
 
-		$style = implode( '; ', $style_parts );
+		// Append a trailing `;` so the joined declarations always end on a
+		// terminator. `get_block_wrapper_attributes()` concatenates any
+		// core-supplied declarations (border, shadow, dimensions, …) onto the
+		// end with a space rather than a semicolon, so the first core
+		// declaration would otherwise run into this string's last declaration
+		// and the CSS parser would fold it into the preceding value — the
+		// canonical symptom is a square `border-top-left-radius` corner with
+		// per-corner radii (issue #109).
+		$style = count( $style_parts ) > 0 ? implode( '; ', $style_parts ) . ';' : '';
 
 		// Encode the data-wp-context payload as a JSON string.
 		$context = wp_json_encode( [ 'mapId' => $map_id ] );
