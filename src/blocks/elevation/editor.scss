@@ -1,0 +1,9 @@
+// Editor-only style overrides for the GPX Elevation block.
+//
+// Step 3 of docs/elevation-rebuild.md needs none beyond what
+// `style.scss` already supplies — the chart SVG mounts under the
+// same selector in both the editor and the frontend, and the inline
+// styles emitted by `ElevationEdit` keep the editor wrapper in
+// lock-step with the rendered frontend. Later steps (Step 4 ticks +
+// labels, Step 6 cursor, Step 7 tooltip) will land their editor-only
+// affordances here.

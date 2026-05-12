@@ -1,8 +1,9 @@
 /**
- * GPX Elevation block edit component — Step 2 of the rebuild.
+ * GPX Elevation block edit component.
  *
- * Orchestrates the binding model fixed by Step 2 of
- * `docs/elevation-rebuild.md`:
+ * Orchestrates the binding model from Step 2 of
+ * `docs/elevation-rebuild.md` plus the chart-rendering surface from
+ * Step 3:
  *
  *   1. Walks the editor block tree via `useMapBlocks()` to find every
  *      GPX Map block on the page.
@@ -10,17 +11,19 @@
  *      the literal sentinel `"auto"` (via `useAutoPickMapId`).
  *   3. Fetches the bound Map's cached payload through the editor-only
  *      REST endpoint via `useBoundMapPayload`.
- *   4. Renders either the Data Source panel (when ≥ 2 configured Maps,
- *      or the binding is broken AND ≥ 1 configured Map remains) or
- *      keeps it hidden.
- *   5. Renders one of six preview states inside the block wrapper:
- *      `no-map`, `bound-deleted`, `bound-unconfigured`, `loading`,
- *      `error`, or `healthy`.
- *
- * The Step-1 surface (Tooltip info toggles + Color panel + three
- * Typography panels) is preserved verbatim — Step 2 adds binding
- * orchestration and the preview body without modifying anything Step 1
- * established.
+ *   4. Renders the Data Source panel when the picker has a real
+ *      choice to surface (≥ 2 configured Maps, or a broken binding
+ *      with ≥ 1 configured Map remaining).
+ *   5. Routes the resolved binding state into {@link ElevationPreview},
+ *      which renders either a warning box, nothing (loading), or the
+ *      Step 3 `<Chart>` for the healthy state.
+ *   6. Injects the Step 3 wrapper baseline (`min-height: 15vh` when
+ *      the user has not set their own minHeight) inline on
+ *      `useBlockProps().style` so the editor preview wrapper agrees
+ *      with the frontend wrapper byte-for-byte.
+ *   7. Routes the eight Color attributes to inline CSS custom
+ *      properties on the wrapper so the chart and the future tooltip
+ *      surfaces pick the user's colours up via the standard cascade.
  *
  * @since 1.0.0
  */
@@ -33,6 +36,7 @@ import type { BlockEditProps } from '@wordpress/blocks';
 import { usefulValue } from './useful-value';
 import { InspectorColorPanel } from './inspector-color';
 import { TypographyToolsPanel } from '../shared/typography-tools-panel';
+import { getDefaultMinHeight } from '../shared/dimensions-defaults';
 import { useMapBlocks, type EditorBlock } from './use-map-blocks';
 import { isAutoMapId, useAutoPickMapId } from './use-auto-pick-map-id';
 import {
@@ -40,50 +44,106 @@ import {
 	type BoundMapPayload,
 	type BoundMapPayloadError,
 } from './use-bound-map-payload';
-import { pickerLabel, type PickerLabelAttributes } from './picker-label';
 import {
 	InspectorDataSource,
 	shouldShowDataSourcePanel,
 } from './inspector-data-source';
 import { ElevationPreview, type PreviewState } from './preview';
+import type { TypographyAttributes } from './geometry/measure';
 
 /**
  * Resolved binding outcome for one render of the Elevation block.
  *
  * Carries the {@link PreviewState} the {@link ElevationPreview} consumes
  * plus a `bindingBroken` flag the Data Source panel's visibility logic
- * needs. The bound block (when one was matched) is surfaced too so the
- * caller can reuse it without re-walking the block tree.
+ * needs.
  *
  * @since 1.0.0
  */
 interface BindingResolution {
 	readonly state: PreviewState;
 	readonly bindingBroken: boolean;
-	readonly boundBlock: EditorBlock | null;
 }
 
 /**
- * Maps the live editor binding inputs (current `mapId`, the block tree,
- * the REST payload state) to the preview-state union the
- * {@link ElevationPreview} component renders.
+ * Block name as declared in `block.json`. Hoisted as a constant so the
+ * `getDefaultMinHeight` call site cannot drift out of sync.
  *
- * Pure function — exported indirectly via the orchestrator below; the
- * unit-test coverage sits in the per-module tests (`picker-label.test.ts`,
- * `use-map-blocks.test.ts`, `preview.test.tsx`).
+ * @since 1.0.0
+ */
+const BLOCK_NAME = 'kntnt-gpx-blocks/elevation';
+
+/**
+ * Reads a single string attribute or returns the empty string when it
+ * is missing or non-string.
  *
  * @since 1.0.0
  *
- * @param mapId               Current `mapId` attribute value.
- * @param mapBlocks           Every Map block on the page (configured or
- *                            not).
- * @param configuredMapBlocks Subset of `mapBlocks` that is eligible to
- *                            be bound (configured and has a `mapId`).
- * @param payload             Cached payload from the REST endpoint, or
- *                            `null` while loading / on error.
+ * @param attributes Block attribute bag.
+ * @param key        Attribute name.
+ * @return The string value, or `''`.
+ */
+function readString(
+	attributes: Record< string, unknown >,
+	key: string
+): string {
+	const value = attributes[ key ];
+	return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Extracts the eight Tick-labels typography attributes into the
+ * {@link TypographyAttributes} shape the chart's measurer consumes.
+ *
+ * Only non-empty values are forwarded. Empty values fall through to
+ * the SVG's inherited typography (which is the wrapper's resolved
+ * typography from theme + Settings tab).
+ *
+ * @since 1.0.0
+ *
+ * @param attributes Block attribute bag.
+ * @return The typography bundle, with empty fields omitted.
+ */
+function readTickLabelTypography(
+	attributes: Record< string, unknown >
+): TypographyAttributes {
+	const mapping: Record< keyof TypographyAttributes, string > = {
+		fontFamily: 'tickLabelFontFamily',
+		fontSize: 'tickLabelFontSize',
+		fontWeight: 'tickLabelFontWeight',
+		fontStyle: 'tickLabelFontStyle',
+		lineHeight: 'tickLabelLineHeight',
+		letterSpacing: 'tickLabelLetterSpacing',
+		textTransform: 'tickLabelTextTransform',
+		textDecoration: 'tickLabelTextDecoration',
+	};
+	const result: Record< string, string > = {};
+	for ( const [ field, key ] of Object.entries( mapping ) ) {
+		const value = readString( attributes, key );
+		if ( value !== '' ) {
+			result[ field ] = value;
+		}
+	}
+	return result as TypographyAttributes;
+}
+
+/**
+ * Maps the live editor binding inputs to the preview-state union.
+ *
+ * Pure function. Distinguishes Step 3's Case A (no elevation data) and
+ * Case C (zero distance) from the generic REST-error state so the
+ * editor surfaces the same dedicated warning as the frontend.
+ *
+ * @since 1.0.0
+ *
+ * @param mapId               Current `mapId` attribute.
+ * @param mapBlocks           Every Map block on the page.
+ * @param configuredMapBlocks Configured subset of `mapBlocks`.
+ * @param payload             Cached payload from the REST endpoint.
  * @param isLoading           Whether the REST fetch is in flight.
  * @param error               REST error object, or `null`.
- * @return Discriminated binding resolution; see {@link BindingResolution}.
+ * @param typography          Tick-labels typography forwarded into the
+ *                            healthy state.
  */
 function resolveBinding(
 	mapId: string,
@@ -91,7 +151,8 @@ function resolveBinding(
 	configuredMapBlocks: readonly EditorBlock[],
 	payload: BoundMapPayload | null,
 	isLoading: boolean,
-	error: BoundMapPayloadError | null
+	error: BoundMapPayloadError | null,
+	typography: TypographyAttributes
 ): BindingResolution {
 	// The "auto" sentinel or an empty mapId is the pre-auto-pick state.
 	// With 0 configured Maps no candidate exists; render the no-map
@@ -102,13 +163,11 @@ function resolveBinding(
 			return {
 				state: { kind: 'no-map' },
 				bindingBroken: false,
-				boundBlock: null,
 			};
 		}
 		return {
 			state: { kind: 'loading' },
 			bindingBroken: false,
-			boundBlock: null,
 		};
 	}
 
@@ -120,7 +179,6 @@ function resolveBinding(
 		return {
 			state: { kind: 'bound-deleted' },
 			bindingBroken: true,
-			boundBlock: null,
 		};
 	}
 
@@ -132,68 +190,64 @@ function resolveBinding(
 		return {
 			state: { kind: 'bound-unconfigured' },
 			bindingBroken: true,
-			boundBlock: matched,
 		};
 	}
 
-	// Loading and error states sit between "binding healthy" and "data
-	// available" — they are not broken bindings.
+	// In-flight + missing-payload are the same transient "no data yet"
+	// state; both render nothing and let the wrapper hold the slot.
 	if ( isLoading ) {
 		return {
 			state: { kind: 'loading' },
 			bindingBroken: false,
-			boundBlock: matched,
 		};
 	}
 	if ( error ) {
+		// Surface the underlying error to DevTools — payload-error
+		// strips the technical message from the visible UI so editors
+		// see one consistent localised string regardless of cause.
+		// eslint-disable-next-line no-console
+		console.error( 'Elevation: REST payload error', error );
 		return {
-			state: { kind: 'error', message: error.message },
+			state: { kind: 'payload-error' },
 			bindingBroken: false,
-			boundBlock: matched,
 		};
 	}
 	if ( ! payload ) {
 		return {
 			state: { kind: 'loading' },
 			bindingBroken: false,
-			boundBlock: matched,
 		};
 	}
 
-	// Healthy state. The label uses the same three-tier rule + all-map
-	// index as the picker entries; min/max come from the cached stats
-	// rounded to integers. A track without elevation data lands as the
-	// error state — the message is translatable so the editor still
-	// shows useful feedback.
+	// Healthy candidate; check the Step 3 degenerate cases before
+	// dispatching to the chart.
 	const minRaw = payload.statistics.min_elevation;
 	const maxRaw = payload.statistics.max_elevation;
+	const distanceRaw = payload.statistics.distance;
 	if ( minRaw === null || maxRaw === null ) {
 		return {
-			state: {
-				kind: 'error',
-				message: __(
-					'The bound GPX file has no elevation data.',
-					'kntnt-gpx-blocks'
-				),
-			},
+			state: { kind: 'no-elevation-data' },
 			bindingBroken: false,
-			boundBlock: matched,
 		};
 	}
-	const indexInAll = mapBlocks.indexOf( matched ) + 1;
-	const labelAttrs: PickerLabelAttributes = {
-		metadata: matched.attributes.metadata,
-		anchor: matched.attributes.anchor,
-	};
+	if ( distanceRaw === null || distanceRaw <= 0 ) {
+		return {
+			state: { kind: 'zero-distance' },
+			bindingBroken: false,
+		};
+	}
+
 	return {
 		state: {
 			kind: 'healthy',
-			label: pickerLabel( labelAttrs, indexInAll ),
-			min: Math.round( minRaw ),
-			max: Math.round( maxRaw ),
+			data: {
+				minElevation: minRaw,
+				maxElevation: maxRaw,
+				distance: distanceRaw,
+			},
+			typography,
 		},
 		bindingBroken: false,
-		boundBlock: matched,
 	};
 }
 
@@ -213,15 +267,21 @@ export function ElevationEdit( {
 	setAttributes,
 	clientId,
 }: BlockEditProps< Record< string, unknown > > ): JSX.Element {
-	// Wire the only Color attribute Step 1 actually renders. The wrapper
-	// emits the CSS custom property `--kntnt-gpx-blocks-elevation-background`
-	// for parity with `render.php`'s contract; the direct inline
-	// `backgroundColor` ensures the editor preview repaints without a
-	// server round-trip.
+	// Wire the Background colour and the Axis colour to inline CSS
+	// custom properties on the wrapper. The chart's two axis lines
+	// reference `--kntnt-gpx-blocks-elevation-axis`; future tick marks,
+	// tick labels, curve, cursor, and tooltip surfaces follow the same
+	// pattern in later steps.
 	const bg = usefulValue< string >(
 		attributes,
 		setAttributes,
 		'backgroundColor',
+		''
+	);
+	const axis = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'axisColor',
 		''
 	);
 	const inlineStyle: Record< string, string > = {};
@@ -229,11 +289,19 @@ export function ElevationEdit( {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-background' ] = bg.resolved;
 		inlineStyle.backgroundColor = bg.resolved;
 	}
+	if ( axis.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-axis' ] = axis.resolved;
+	}
 
-	// Inject the project class so any future `style.scss` rules attach.
-	// The outer wrapper is otherwise managed by core: Dimensions, Border,
-	// Box Shadow, and Margin all reach the wrapper through the standard
-	// block-supports pipeline merged into `useBlockProps()`.
+	// Inject the Step 3 default min-height (15vh) only when the user
+	// has not set their own. The condition is centralised in
+	// `getDefaultMinHeight()` so editor and PHP stay in lock-step.
+	const defaultMinHeight = getDefaultMinHeight( BLOCK_NAME, attributes );
+	if ( defaultMinHeight ) {
+		inlineStyle.minHeight = defaultMinHeight;
+	}
+
+	// Inject the project class so the SCSS rules attach.
 	const blockProps = useBlockProps( {
 		className: 'kntnt-gpx-blocks-elevation',
 		style: inlineStyle as React.CSSProperties,
@@ -251,14 +319,11 @@ export function ElevationEdit( {
 		typeof attributes.mapId === 'string' ? attributes.mapId : 'auto';
 
 	// Walk the editor block tree to surface configured Map blocks and
-	// the picker option list. The hook re-subscribes whenever a Map
-	// block is added, removed, configured, or has its `mapId` set.
+	// the picker option list.
 	const { mapBlocks, configuredMapBlocks, mapOptions } = useMapBlocks();
 
 	// Auto-pick the topmost configured Map when the binding is still
-	// in its pre-pick state. The effect re-fires on every render where
-	// `mapId` is empty / `"auto"`, so the binding lands at the moment a
-	// candidate becomes available — no manual user action required.
+	// in its pre-pick state.
 	useAutoPickMapId(
 		mapId,
 		configuredMapBlocks,
@@ -276,13 +341,15 @@ export function ElevationEdit( {
 			: 0;
 	const { data, isLoading, error } = useBoundMapPayload( boundAttachmentId );
 
+	const typography = readTickLabelTypography( attributes );
 	const resolution = resolveBinding(
 		mapId,
 		mapBlocks,
 		configuredMapBlocks,
 		data,
 		isLoading,
-		error
+		error,
+		typography
 	);
 
 	const showPanel = shouldShowDataSourcePanel(

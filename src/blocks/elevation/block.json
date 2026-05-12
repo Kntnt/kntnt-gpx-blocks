@@ -8,6 +8,9 @@
 	"keywords": [ "gpx", "elevation", "profile", "chart" ],
 	"textdomain": "kntnt-gpx-blocks",
 	"editorScript": "file:./index.tsx",
+	"viewScriptModule": "file:./view.ts",
+	"style": "file:./style-index.css",
+	"editorStyle": "file:./index.css",
 	"render": "file:./render.php",
 	"supports": {
 		"align": [ "wide", "full" ],

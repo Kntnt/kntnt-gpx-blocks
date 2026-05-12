@@ -1,0 +1,250 @@
+/**
+ * Editor preview chart component for the Elevation block.
+ *
+ * Pure React. Mounts an SVG, runs the Step 3 margin algorithm against
+ * the bound Map's data, and draws the two axis lines inside the
+ * measured rectangle. No ticks, no labels, no curve — Step 4 and Step 5
+ * layer those on top of the same SVG host.
+ *
+ * Architecture (Step 3 *Rendering architecture*):
+ *
+ *   - `useRef` holds the SVG node so the measurer can attach hidden
+ *     `<text>` nodes to it.
+ *   - `useLayoutEffect` runs the margin computation. Its deps are
+ *     `data`, `typography`, and `fontsReady` — none of them changes
+ *     when the wrapper resizes, so resize does not retrigger margin
+ *     work.
+ *   - A separate `useEffect` attaches `ResizeObserver` to the SVG.
+ *     Resize updates the cached `width` / `height` used to position
+ *     the axis lines but does not invalidate the margins themselves.
+ *   - Font loading is gated by `document.fonts.ready` plus a
+ *     `loadingdone` listener so late-loaded webfonts re-measure
+ *     correctly.
+ *
+ * The fronted's `view.ts` consumes the same geometry helpers but
+ * builds the SVG imperatively under the Interactivity API runtime.
+ * The duplication is intentional and small — the chart geometry
+ * helpers under `./geometry/` carry the math, and each host
+ * instantiates the result in its native idiom.
+ *
+ * @since 1.0.0
+ */
+
+import {
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
+import { __ } from '@wordpress/i18n';
+
+import {
+	computeMargins,
+	type Margins,
+	type MarginsInput,
+} from './geometry/margins';
+import {
+	createTextMeasurer,
+	type TypographyAttributes,
+} from './geometry/measure';
+
+/**
+ * Props for {@link Chart}.
+ *
+ * @since 1.0.0
+ */
+export interface ChartProps {
+	readonly data: MarginsInput;
+	readonly typography: TypographyAttributes;
+}
+
+/**
+ * Cached SVG dimensions. Initialised to zero so the first frame
+ * renders an empty viewBox; the ResizeObserver effect rewrites both
+ * fields once the SVG has been laid out.
+ *
+ * @since 1.0.0
+ */
+interface Dimensions {
+	readonly w: number;
+	readonly h: number;
+}
+
+/**
+ * Returns the SVG rendered dimensions from its `getBoundingClientRect`.
+ *
+ * Reading the BCR rather than `clientWidth/clientHeight` keeps the
+ * code agnostic of border/padding details — the rect is the content
+ * box by virtue of the SVG sitting as a normal-flow child of the
+ * wrapper with `width: 100%; height: 100%;`.
+ *
+ * @since 1.0.0
+ *
+ * @param svg The SVG element to inspect.
+ * @return The measured dimensions, both clamped to non-negative.
+ */
+function readDimensions( svg: SVGSVGElement ): Dimensions {
+	const rect = svg.getBoundingClientRect();
+	return {
+		w: rect.width < 0 ? 0 : rect.width,
+		h: rect.height < 0 ? 0 : rect.height,
+	};
+}
+
+/**
+ * Renders the editor preview chart.
+ *
+ * Returns an SVG host that fills its parent. Two `<line>` axes appear
+ * inside the SVG once both the margin algorithm and the resize observer
+ * have produced their first results; on the first paint either may be
+ * pending and the SVG is empty.
+ *
+ * @since 1.0.0
+ *
+ * @param props            See {@link ChartProps}.
+ * @param props.data       Chart data (elevation range + distance).
+ * @param props.typography Tick-labels typography bundle.
+ */
+export function Chart( { data, typography }: ChartProps ): JSX.Element {
+	const svgRef = useRef< SVGSVGElement | null >( null );
+	const [ margins, setMargins ] = useState< Margins | null >( null );
+	const [ dims, setDims ] = useState< Dimensions >( { w: 0, h: 0 } );
+	const [ fontsReady, setFontsReady ] = useState< boolean >(
+		() =>
+			typeof document === 'undefined' ||
+			typeof document.fonts === 'undefined' ||
+			document.fonts.status === 'loaded'
+	);
+
+	// Wait for fonts.ready before the first measurement; re-measure
+	// on later loadingdone events so late-loaded webfonts replace
+	// fallback-font metrics rather than leaving the chart with
+	// permanently wrong margins.
+	useEffect( () => {
+		if ( typeof document === 'undefined' ) {
+			return undefined;
+		}
+		const { fonts } = document;
+		if ( typeof fonts === 'undefined' ) {
+			setFontsReady( true );
+			return undefined;
+		}
+
+		let cancelled = false;
+		fonts.ready.then( () => {
+			if ( ! cancelled ) {
+				setFontsReady( true );
+			}
+		} );
+
+		const onLoadingDone = (): void => {
+			if ( cancelled ) {
+				return;
+			}
+			// Force a re-measure by clearing margins; the next
+			// useLayoutEffect tick rebuilds them under the now-final
+			// font metrics.
+			setMargins( null );
+			setFontsReady( true );
+		};
+		fonts.addEventListener( 'loadingdone', onLoadingDone );
+
+		return () => {
+			cancelled = true;
+			fonts.removeEventListener( 'loadingdone', onLoadingDone );
+		};
+	}, [] );
+
+	// Compute margins after fonts are ready, on data/typography
+	// change. Margins do not depend on wrapper dimensions, so they are
+	// not invalidated by ResizeObserver. The dep list reads each
+	// primitive separately so a fresh-object prop from a parent
+	// re-render does not trigger an unnecessary remeasure loop.
+	useLayoutEffect( () => {
+		if ( ! fontsReady ) {
+			return;
+		}
+		const svg = svgRef.current;
+		if ( ! svg ) {
+			return;
+		}
+		const measure = createTextMeasurer( svg );
+		setMargins( computeMargins( data, typography, measure ) );
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [
+		data.minElevation,
+		data.maxElevation,
+		data.distance,
+		typography.fontFamily,
+		typography.fontSize,
+		typography.fontWeight,
+		typography.fontStyle,
+		typography.lineHeight,
+		typography.letterSpacing,
+		typography.textTransform,
+		typography.textDecoration,
+		fontsReady,
+	] );
+
+	// Cache SVG dimensions for axis drawing; ResizeObserver triggers
+	// redraw without re-running margin work.
+	useEffect( () => {
+		const svg = svgRef.current;
+		if ( ! svg ) {
+			return undefined;
+		}
+
+		setDims( readDimensions( svg ) );
+
+		if ( typeof ResizeObserver === 'undefined' ) {
+			return undefined;
+		}
+		const ro = new ResizeObserver( () => {
+			setDims( readDimensions( svg ) );
+		} );
+		ro.observe( svg );
+		return () => ro.disconnect();
+	}, [] );
+
+	const { w, h } = dims;
+	const ready = margins !== null && w > 0 && h > 0;
+	const ariaLabel = __(
+		'Elevation profile of GPX track',
+		'kntnt-gpx-blocks'
+	);
+
+	return (
+		<svg
+			ref={ svgRef }
+			className="kntnt-gpx-blocks-elevation-chart-svg"
+			width="100%"
+			height="100%"
+			viewBox={ `0 0 ${ w } ${ h }` }
+			role="img"
+			aria-label={ ariaLabel }
+		>
+			{ ready && margins && (
+				<>
+					<line
+						className="kntnt-gpx-blocks-elevation-axis-x"
+						x1={ margins.wLeft }
+						y1={ h - margins.h }
+						x2={ w - margins.wRight }
+						y2={ h - margins.h }
+						stroke="var(--kntnt-gpx-blocks-elevation-axis)"
+						strokeWidth={ 1 }
+					/>
+					<line
+						className="kntnt-gpx-blocks-elevation-axis-y"
+						x1={ margins.wLeft }
+						y1={ h - margins.h }
+						x2={ margins.wLeft }
+						y2={ 0 }
+						stroke="var(--kntnt-gpx-blocks-elevation-axis)"
+						strokeWidth={ 1 }
+					/>
+				</>
+			) }
+		</svg>
+	);
+}

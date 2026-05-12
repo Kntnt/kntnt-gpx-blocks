@@ -1,0 +1,60 @@
+// Styles shared between the editor and the frontend for the GPX Elevation
+// block. Step 3 of docs/elevation-rebuild.md introduces the wrapper baseline
+// — `min-height: 15vh`, no aspect-ratio default — and the chart SVG host
+// that view.ts / chart.tsx mount inside it.
+//
+// The render path (PHP `Render_Elevation::render_chart_wrapper()` and editor
+// `ElevationEdit`) injects the same `min-height: 15vh` inline iff the user
+// has not set their own `style.dimensions.minHeight`, normalised at the
+// attribute source through `Rendering\Dimensions_Defaults` so the editor
+// preview and the rendered frontend agree byte-for-byte.
+
+.kntnt-gpx-blocks-elevation {
+	// Wrapper baseline. Overridden inline by core's `dimensions` block
+	// supports when the editor sets a value, and additionally
+	// overridden by the render path's always-on inline `min-height`
+	// default when both fields are blank — see `Dimensions_Defaults`
+	// for the normalisation rule.
+	display: block;
+	width: 100%;
+	min-height: 15vh;
+
+	// Anchor descendants that need to fill the wrapper's box (the
+	// chart SVG with `width: 100%; height: 100%`) without depending
+	// on percentage-height resolution against an indefinite parent.
+	position: relative;
+
+	// Clip the chart SVG to the block's rounded corners when the
+	// editor sets a border-radius via the core Border panel. The
+	// `box-shadow` block support is unaffected by `overflow` on the
+	// same element.
+	overflow: hidden;
+
+	// Background fallback. The wrapper's background colour falls
+	// through to `transparent` so the theme's content background
+	// shows through unless the editor sets a colour on this block.
+	background-color: var(
+		--kntnt-gpx-blocks-elevation-background,
+		transparent
+	);
+
+	// Axis stroke colour default. The two `<line>` elements drawn by
+	// view.ts and chart.tsx reference this custom property directly
+	// in their `stroke` attribute so the editor's Color → Axis picker
+	// repaints them live (the property is written onto the wrapper's
+	// inline style by `useBlockProps()` / `Render_Elevation`).
+	--kntnt-gpx-blocks-elevation-axis: #1e1e1e;
+
+	// The chart SVG fills the wrapper's content box. `display: block`
+	// removes the inline-element baseline gap; `width/height: 100%`
+	// + the wrapper's relative positioning gives the SVG a definite
+	// size for `getBoundingClientRect()` to read. The font-* family
+	// inheritance feeds the measurer's hidden <text> nodes so they
+	// measure under the same typography pipeline that Step 4 will
+	// use for the visible labels.
+	.kntnt-gpx-blocks-elevation-chart-svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+}

@@ -13,6 +13,9 @@
   ],
   "textdomain": "kntnt-gpx-blocks",
   "editorScript": "file:./index.js",
+  "viewScriptModule": "file:./view.js",
+  "style": "file:./style-index.css",
+  "editorStyle": "file:./index.css",
   "render": "file:./render.php",
   "supports": {
     "align": [

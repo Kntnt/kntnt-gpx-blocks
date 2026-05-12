@@ -2,14 +2,15 @@
  * Editor-side normaliser for the plugin's per-block `min-height` default.
  *
  * Mirrors `Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults` on the editor
- * side. Both surfaces apply the same rule: when both
- * `style.dimensions.minHeight` and `style.dimensions.aspectRatio` are
- * blank or missing on a Map or Elevation block, treat
- * `style.dimensions.minHeight` as the per-block default value before
- * any downstream consumer (`useBlockProps()`, the SCSS baseline, the
- * editor preview wrapper) reads it. The editor never writes back to
- * the attribute store — the user still sees a blank Minimum height
- * field in the Dimensions panel.
+ * side. Both surfaces apply per-block rules: Map's default fires only
+ * when both `style.dimensions.minHeight` *and* `style.dimensions
+ * .aspectRatio` are blank or missing (so an explicit aspect ratio is
+ * not fought by a hidden min-height); Elevation's default fires
+ * whenever `style.dimensions.minHeight` is blank, regardless of
+ * `aspectRatio` (the Step 3 wrapper has no aspect-ratio baseline of
+ * its own, so the default acts as a harmless floor). The editor never
+ * writes back to the attribute store — the user still sees a blank
+ * Minimum height field in the Dimensions panel.
  *
  * Issue #117. Replaces the per-component inline `minHeightDefault`
  * spread / conditional that used to live in `src/blocks/map/edit.tsx`
@@ -27,21 +28,45 @@
  */
 
 /**
- * Per-block default `min-height` value applied when both `minHeight`
- * and `aspectRatio` are blank or missing on the saved attributes.
+ * Per-block default `min-height` configuration.
  *
- * Kept in lock-step with `Dimensions_Defaults::DEFAULTS` on the PHP
- * side. Drifting from the PHP map would let the editor preview render
- * at one size while the frontend renders at another.
+ * `value` is the CSS string injected onto `style.dimensions.minHeight`
+ * when the block's gate condition holds. `requireBlankAspectRatio`
+ * controls the gate: when `true`, the default applies only when both
+ * `minHeight` and `aspectRatio` are blank — the legacy Map condition
+ * that protects against fighting an explicit aspect ratio. When
+ * `false`, the default applies whenever `minHeight` is blank,
+ * regardless of `aspectRatio` — the simpler Elevation rule introduced
+ * in Step 3 of `docs/elevation-rebuild.md`, where the wrapper's
+ * baseline is `min-height: 15vh` with no aspect-ratio of its own, so
+ * the default acts as a floor that coexists harmlessly with any
+ * user-set aspect ratio.
  *
- * Only the Map block carries a default — the Elevation block's
- * wrapper-as-image layout (issue #135) is sized by `aspect-ratio` alone
- * from the SCSS baseline and needs no `min-height` baseline.
+ * Kept in lock-step with `Dimensions_Defaults` on the PHP side.
  *
  * @since 1.0.0
  */
-const DEFAULTS: Readonly< Record< string, string > > = {
-	'kntnt-gpx-blocks/map': '30vh',
+interface BlockDefault {
+	readonly value: string;
+	readonly requireBlankAspectRatio: boolean;
+}
+
+/**
+ * Per-block default table. Drifting from
+ * `Dimensions_Defaults::DEFAULTS` on the PHP side would make the
+ * editor preview and the frontend wrapper render at different sizes.
+ *
+ * @since 1.0.0
+ */
+const DEFAULTS: Readonly< Record< string, BlockDefault > > = {
+	'kntnt-gpx-blocks/map': {
+		value: '30vh',
+		requireBlankAspectRatio: true,
+	},
+	'kntnt-gpx-blocks/elevation': {
+		value: '15vh',
+		requireBlankAspectRatio: false,
+	},
 };
 
 /**
@@ -114,11 +139,11 @@ function readDimensions( attributes: Record< string, unknown > ): {
  * when the block is unknown or the default does not apply to the
  * saved attribute shape.
  *
- * The rule fires only when both `style.dimensions.minHeight` and
- * `style.dimensions.aspectRatio` are blank or missing. The two-field
- * gate matches the server-side `Dimensions_Defaults` filter exactly,
- * so the editor preview and the frontend wrapper always agree on
- * which path is taken.
+ * The rule fires per-block: Map gates on both `minHeight` *and*
+ * `aspectRatio` being blank or missing; Elevation gates on
+ * `minHeight` alone. Both gates match the server-side
+ * `Dimensions_Defaults` filter exactly, so the editor preview and the
+ * frontend wrapper always agree on which path is taken.
  *
  * @since 1.0.0
  *
@@ -131,15 +156,21 @@ export function getDefaultMinHeight(
 	blockName: string,
 	attributes: Record< string, unknown >
 ): string | undefined {
-	const defaultMinHeight = DEFAULTS[ blockName ];
-	if ( defaultMinHeight === undefined ) {
+	const entry = DEFAULTS[ blockName ];
+	if ( entry === undefined ) {
 		return undefined;
 	}
 
 	const { minHeight, aspectRatio } = readDimensions( attributes );
-	if ( ! isBlank( minHeight ) || ! isBlankAspectRatio( aspectRatio ) ) {
+	if ( ! isBlank( minHeight ) ) {
+		return undefined;
+	}
+	if (
+		entry.requireBlankAspectRatio &&
+		! isBlankAspectRatio( aspectRatio )
+	) {
 		return undefined;
 	}
 
-	return defaultMinHeight;
+	return entry.value;
 }

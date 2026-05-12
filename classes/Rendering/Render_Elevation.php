@@ -2,24 +2,24 @@
 /**
  * Server-side render handler for the GPX Elevation block.
  *
- * Step 2 home for the Elevation block's frontend HTML. The class never
- * emits `<svg>` markup — chart geometry is rendered client-side from
- * Step 3 onward (see the *Rendering architecture* section at the top of
- * `docs/elevation-rebuild.md`). In Step 2 it carries two
- * responsibilities:
+ * Step 3 of `docs/elevation-rebuild.md` — the chart geometry (axes,
+ * ticks, labels, curve, cursor, tooltip) is rendered client-side via
+ * the Interactivity API. This class is responsible for two surfaces:
  *
- *   - `render()` dispatches to either the warning placeholder or the
- *     info placeholder after walking the block tree (via
- *     `Resolve_Map_Id::resolve()`) and reading the cache (via
- *     `Cache\Attachment_Cache::get()`).
- *   - `render_warning()` / `render_info()` produce the small coloured
- *     boxes the frontend shows in place of the chart.
+ *   - The chart wrapper. In the healthy state it emits the
+ *     Interactivity-bound `<div>` (the JS view module mounts the SVG
+ *     inside) plus the per-`mapId` state slice carrying
+ *     `min_elevation`, `max_elevation`, and `distance` for the
+ *     margin algorithm.
+ *   - The warning placeholders. One of five reasons replaces the
+ *     chart wrapper whenever the block cannot render meaningfully:
+ *     `no-map`, `bound-deleted`, `bound-unconfigured`,
+ *     `no-elevation-data`, `zero-distance`.
  *
- * `render_info()` is temporary — it disappears in Step 3 when the SVG
- * lands. `render_warning()` survives as the no-data fallback. This
- * class is **not** a revival of v0.12.0's SVG-rendering
- * `Render_Elevation` (removed in commit aeb367f); it occupies the same
- * name in a different role.
+ * The class never emits `<svg>` markup itself — see
+ * `docs/elevation-rebuild.md` § *Rendering architecture* for the
+ * cross-cutting decision that JS owns every part of the chart from
+ * Step 3 onward.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -43,18 +43,12 @@ final class Render_Elevation {
 	/**
 	 * Returns the rendered HTML for a single Elevation block instance.
 	 *
-	 * Resolves the bound `mapId` server-side via `Resolve_Map_Id` and
-	 * either reads the cached statistics for the info-box or composes
-	 * the appropriate warning-box string. The block wrapper is emitted
-	 * through `get_block_wrapper_attributes()` so align, anchor, custom
-	 * class, dimensions, border, and box-shadow block-supports propagate
-	 * exactly as in Step 1.
-	 *
-	 * Visitors without `edit_posts` capability would normally see
-	 * nothing on a broken binding, but the Step 2 placeholders are
-	 * harmless plain text so we emit them unconditionally — Step 3
-	 * tightens the no-data fallback to mirror Map's error-renderer
-	 * pattern.
+	 * Resolves the bound `mapId` server-side, reads the cached
+	 * statistics, then dispatches to either the chart wrapper or one
+	 * of the five warning placeholders. The block wrapper is emitted
+	 * through `get_block_wrapper_attributes()` so align, anchor,
+	 * custom class, dimensions, border, and shadow block-supports
+	 * propagate exactly as in earlier steps.
 	 *
 	 * @since 1.0.0
 	 *
@@ -70,18 +64,16 @@ final class Render_Elevation {
 	public static function render( array $attributes, string $content, object $block ): string {
 
 		// Resolve the bound `mapId` against the host post's block tree.
-		// The Elevation block is always rendered inside a host post; the
-		// resolver returns a `Render_Error` when no post context exists.
-		$map_id = is_string( $attributes['mapId'] ?? null ) ? (string) $attributes['mapId'] : 'auto';
+		$map_id  = is_string( $attributes['mapId'] ?? null ) ? (string) $attributes['mapId'] : 'auto';
 		$post_id = get_the_ID();
 		$resolver = new Resolve_Map_Id();
 		$resolved = $resolver->resolve( $map_id, is_int( $post_id ) ? $post_id : 0 );
 
-		// Translate the resolver's error codes into the three Step 2
-		// warning reasons. The map-not-found code covers both the
-		// "deleted" and "deconfigured" subcases — `Resolve_Map_Id`
-		// itself only sees configured Map blocks, so an unconfigured
-		// bound Map looks like map-not-found from its perspective.
+		// Translate the resolver's error codes into the warning
+		// reasons the placeholder system surfaces. `map-not-found`
+		// covers both deleted and deconfigured subcases —
+		// `Resolve_Map_Id` only sees configured Map blocks, so an
+		// unconfigured bound Map looks like map-not-found from there.
 		if ( $resolved instanceof Render_Error ) {
 			$reason = match ( $resolved->code ) {
 				'no-map'        => 'no-map',
@@ -89,49 +81,75 @@ final class Render_Elevation {
 				'map-not-found' => 'bound-deleted',
 				default         => 'no-map',
 			};
-			return self::wrap( $attributes, self::render_warning( $reason ) );
+			return self::wrap_warning( $attributes, self::render_warning( $reason ) );
 		}
 
-		// Read the cached statistics for the bound attachment.
+		// Read the cached statistics for the bound attachment. A
+		// cache error is logged but surfaced visually as
+		// `bound-deleted` — the user-facing remedy is the same
+		// (re-bind to a different Map).
 		$cache   = new Attachment_Cache();
 		$payload = $cache->get( $resolved['attachment_id'] );
 		if ( $payload instanceof Render_Error ) {
 			Plugin::error(
 				sprintf( 'Render_Elevation: cache error for attachment %d, code=%s', $resolved['attachment_id'], $payload->code )
 			);
-			return self::wrap( $attributes, self::render_warning( 'bound-deleted' ) );
+			return self::wrap_warning( $attributes, self::render_warning( 'bound-deleted' ) );
 		}
 
-		$min_raw = $payload['statistics']['min_elevation'] ?? null;
-		$max_raw = $payload['statistics']['max_elevation'] ?? null;
+		// Step 3 Case A — the bound track has no elevation samples
+		// (Statistics_Calculator reports null for min/max when no
+		// `<ele>` tag appears in the GPX). The chart cannot render
+		// meaningfully; surface the dedicated warning instead.
+		$statistics   = is_array( $payload['statistics'] ?? null ) ? $payload['statistics'] : [];
+		$min_raw      = $statistics['min_elevation'] ?? null;
+		$max_raw      = $statistics['max_elevation'] ?? null;
+		$distance_raw = $statistics['distance'] ?? null;
 		if ( null === $min_raw || null === $max_raw ) {
-			return self::wrap( $attributes, self::render_warning( 'bound-deleted' ) );
+			return self::wrap_warning( $attributes, self::render_warning( 'no-elevation-data' ) );
 		}
 
-		// Compose the healthy-state info-box. The Step 2 label uses the
-		// same three-tier rule as the editor picker; server-side we can
-		// only read the metadata/anchor that survives `parse_blocks()`,
-		// which is the published shape.
-		$label = self::resolve_label( $resolved['map_id'], $post_id );
-		$min   = (int) round( (float) $min_raw );
-		$max   = (int) round( (float) $max_raw );
+		// Step 3 Case C — single-point track or all points at the
+		// same coordinate. No track to render.
+		if ( null === $distance_raw || (float) $distance_raw <= 0 ) {
+			return self::wrap_warning( $attributes, self::render_warning( 'zero-distance' ) );
+		}
 
-		return self::wrap( $attributes, self::render_info( $label, $min, $max ) );
+		// Healthy state. Emit the per-mapId state slice carrying the
+		// statistics the JS view module reads, then render the chart
+		// wrapper. The state is merged onto whatever the Map block's
+		// own `Render_Map` has already written under the same key, so
+		// both `geojson` (Map) and `statistics` (Elevation) live on
+		// `state[mapId]` for the JS to consume.
+		$min      = (float) $min_raw;
+		$max      = (float) $max_raw;
+		$distance = (float) $distance_raw;
+		wp_interactivity_state( 'kntnt-gpx-blocks', [
+			$resolved['map_id'] => [
+				'statistics' => [
+					'min_elevation' => $min,
+					'max_elevation' => $max,
+					'distance'      => $distance,
+				],
+			],
+		] );
+
+		return self::render_chart_wrapper( $attributes, $resolved['map_id'] );
 
 	}
 
 	/**
-	 * Returns the warning-box HTML for one of the three error reasons.
+	 * Returns the warning-box HTML for one of the five warning reasons.
 	 *
-	 * The reasons mirror the editor preview's discriminated union:
-	 * `'no-map'`, `'bound-deleted'`, `'bound-unconfigured'`. Any other
-	 * input falls back to the generic no-map message so a future
-	 * extension does not produce an empty placeholder.
+	 * Unknown reasons fall back to the `no-map` message so a future
+	 * extension never produces an empty placeholder.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $reason One of the documented warning reasons.
-	 *
+	 * @param string $reason `'no-map'`, `'bound-deleted'`,
+	 *                      `'bound-unconfigured'`, `'no-elevation-data'`,
+	 *                      or `'zero-distance'`. Any other input
+	 *                      falls back to the `no-map` message.
 	 * @return string The warning-box HTML, escaped and ready for output.
 	 */
 	public static function render_warning( string $reason ): string {
@@ -149,6 +167,14 @@ final class Render_Elevation {
 				'The GPX Map block this block is bound to has no GPX file selected.',
 				'kntnt-gpx-blocks'
 			),
+			'no-elevation-data' => __(
+				'The bound GPX track has no elevation data. The elevation profile cannot be rendered.',
+				'kntnt-gpx-blocks'
+			),
+			'zero-distance' => __(
+				'The bound GPX track has no distance (all points are at the same location).',
+				'kntnt-gpx-blocks'
+			),
 			default => __(
 				'There is no GPX Map block with a selected GPX file on this page. Add a GPX Map block before this one.',
 				'kntnt-gpx-blocks'
@@ -163,175 +189,132 @@ final class Render_Elevation {
 	}
 
 	/**
-	 * Returns the info-box HTML for the healthy state.
+	 * Renders the healthy-state chart wrapper.
+	 *
+	 * Emits the Interactivity-bound `<div>` with the documented
+	 * directives + `<noscript>` fallback. The JS view module
+	 * (`view.ts`'s `callbacks.initElevation`) creates the chart's SVG
+	 * inside this wrapper at runtime.
+	 *
+	 * The wrapper carries:
+	 *
+	 *   - `class="kntnt-gpx-blocks-elevation"`
+	 *   - `role="img"`
+	 *   - localised `aria-label`
+	 *   - `data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'`
+	 *   - `data-wp-context='{"mapId":"…"}'`
+	 *   - `data-wp-init="callbacks.initElevation"`
+	 *
+	 * `data-wp-watch--cursor` arrives in Step 6 (cursor sync), not
+	 * here. Step 6 will also upgrade `role` to `"application"`.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string $label Bound Map's user-facing label (already
-	 *                      resolved through the three-tier rule).
-	 * @param int    $min   Minimum elevation in metres, rounded.
-	 * @param int    $max   Maximum elevation in metres, rounded.
-	 *
-	 * @return string The info-box HTML, escaped and ready for output.
+	 * @param array<string,mixed> $attributes Block attributes.
+	 * @param string              $map_id     Resolved Map ID.
+	 * @return string The chart wrapper HTML.
 	 */
-	public static function render_info( string $label, int $min, int $max ): string {
+	public static function render_chart_wrapper( array $attributes, string $map_id ): string {
 
-		$message = sprintf(
-			/* translators: 1: bound Map label, 2: minimum elevation in metres, 3: maximum elevation in metres. */
-			__( 'Bound to %1$s. Min: %2$d m, Max: %3$d m.', 'kntnt-gpx-blocks' ),
-			$label,
-			$min,
-			$max
-		);
+		$wrapper_attributes = get_block_wrapper_attributes( [
+			'class' => 'kntnt-gpx-blocks-elevation',
+			'style' => self::build_inline_style( $attributes ),
+		] );
+
+		$aria_label = esc_attr__( 'Elevation profile of GPX track', 'kntnt-gpx-blocks' );
+
+		// phpcs:ignore Generic.Files.LineLength.TooLong -- Translator strings must be a single literal per WordPress.WP.I18n.
+		$noscript_text = esc_html__( 'This elevation profile requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
+
+		$context = wp_json_encode( [ 'mapId' => $map_id ] );
 
 		return sprintf(
-			'<div class="kntnt-gpx-blocks-elevation-preview-info" style="padding:0.75em 1em;background-color:#e8f0fe;border-left:4px solid #1a73e8;color:#0b3d91;">%s</div>',
-			esc_html( $message )
+			'<div %1$s'
+				. ' role="img"'
+				. ' aria-label="%2$s"'
+				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
+				. ' data-wp-context=\'%3$s\''
+				. ' data-wp-init="callbacks.initElevation">'
+				. '<noscript><p class="kntnt-gpx-blocks-elevation-noscript">%4$s</p></noscript>'
+				. '</div>',
+			$wrapper_attributes,
+			$aria_label,
+			esc_attr( (string) $context ),
+			$noscript_text,
 		);
 
 	}
 
 	/**
-	 * Resolves the picker label for a Map block by `mapId` against the
-	 * host post's block tree.
+	 * Wraps a warning fragment in the block's outer `<div>`.
 	 *
-	 * Server-side counterpart of the JS `pickerLabel()` resolver: walks
-	 * the parsed block tree once, collecting every Map block (configured
-	 * or not) so the fallback index counts the way the editor displays
-	 * it. Tier 1 reads `attributes.metadata.name`, tier 2 reads
-	 * `attributes.anchor`, tier 3 yields `GPX Map #N`.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param string $bound_map_id The bound `mapId` to label.
-	 * @param mixed  $post_id      Host post ID. `false` outside the loop
-	 *                              short-circuits to the tier-3 fallback.
-	 *
-	 * @return string The resolved label, already localised.
-	 */
-	private static function resolve_label( string $bound_map_id, mixed $post_id ): string {
-
-		if ( ! is_int( $post_id ) || $post_id <= 0 ) {
-			return self::generic_fallback( 1 );
-		}
-		$post = get_post( $post_id );
-		if ( null === $post ) {
-			return self::generic_fallback( 1 );
-		}
-
-		$blocks = parse_blocks( $post->post_content );
-		$flat   = self::collect_map_blocks( $blocks );
-		foreach ( $flat as $index => $block ) {
-			$attrs = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : [];
-			$id    = is_string( $attrs['mapId'] ?? null ) ? (string) $attrs['mapId'] : '';
-			if ( $id !== $bound_map_id ) {
-				continue;
-			}
-			$metadata_raw = $attrs['metadata'] ?? null;
-			$metadata     = is_array( $metadata_raw ) ? $metadata_raw : [];
-			$name_raw     = $metadata['name'] ?? null;
-			if ( is_string( $name_raw ) && '' !== trim( $name_raw ) ) {
-				return $name_raw;
-			}
-			$anchor_raw = $attrs['anchor'] ?? null;
-			if ( is_string( $anchor_raw ) && '' !== $anchor_raw ) {
-				return $anchor_raw;
-			}
-			return self::generic_fallback( $index + 1 );
-		}
-
-		return self::generic_fallback( 1 );
-
-	}
-
-	/**
-	 * Generic "GPX Map #N" fallback string.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param int $index The 1-based index.
-	 *
-	 * @return string The localised fallback.
-	 */
-	private static function generic_fallback( int $index ): string {
-
-		return sprintf(
-			/* translators: %d is the 1-based index of a GPX Map block on the page. */
-			__( 'GPX Map #%d', 'kntnt-gpx-blocks' ),
-			$index
-		);
-
-	}
-
-	/**
-	 * Recursively walks a parsed block tree and collects every GPX Map
-	 * block, configured or not, in pre-order document traversal.
-	 *
-	 * Mirrors the JS `collectMapBlocks()` walk so editor and frontend
-	 * eligibility for the fallback index agree.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param array<mixed,mixed> $blocks Parsed block array.
-	 *
-	 * @return list<array<mixed,mixed>>
-	 */
-	private static function collect_map_blocks( array $blocks ): array {
-
-		$result = [];
-		foreach ( $blocks as $block ) {
-			if ( ! is_array( $block ) ) {
-				continue;
-			}
-			if ( ( $block['blockName'] ?? null ) === 'kntnt-gpx-blocks/map' ) {
-				$result[] = $block;
-			}
-			$inner = $block['innerBlocks'] ?? null;
-			if ( is_array( $inner ) && count( $inner ) > 0 ) {
-				$result = array_merge( $result, self::collect_map_blocks( $inner ) );
-			}
-		}
-		return $result;
-
-	}
-
-	/**
-	 * Wraps an inner HTML fragment in the block's outer `<div>` via
-	 * `get_block_wrapper_attributes()`.
-	 *
-	 * The Background attribute still drives
-	 * `--kntnt-gpx-blocks-elevation-background` in the same shape Step 1
-	 * established, so the wrapper styling is unchanged from the
-	 * Step-1 baseline. The Step-1 inline `<style>` rule for the
-	 * background fallback is kept here so the wrapper retains visual
-	 * parity with the editor.
+	 * Warnings do not need the Interactivity directives — they are
+	 * static HTML with no client-side mount. They still travel
+	 * through `get_block_wrapper_attributes()` so the block-supports
+	 * pipeline (align, anchor, custom class, dimensions, border,
+	 * shadow, spacing) propagates.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<string,mixed> $attributes Block attributes.
 	 * @param string              $inner_html Pre-escaped HTML to wrap.
-	 *
 	 * @return string Final HTML.
 	 */
-	private static function wrap( array $attributes, string $inner_html ): string {
+	private static function wrap_warning( array $attributes, string $inner_html ): string {
 
-		$background = Color_Sanitizer::sanitize( is_string( $attributes['backgroundColor'] ?? null ) ? (string) $attributes['backgroundColor'] : '' );
-		$inline_style = '' !== $background
-			? '--kntnt-gpx-blocks-elevation-background: ' . $background . ';'
-			: '';
+		$wrapper_attributes = get_block_wrapper_attributes( [
+			'class' => 'kntnt-gpx-blocks-elevation',
+			'style' => self::build_inline_style( $attributes ),
+		] );
 
-		$wrapper_attributes = get_block_wrapper_attributes(
-			[
-				'class' => 'kntnt-gpx-blocks-elevation',
-				'style' => $inline_style,
-			]
+		return sprintf( '<div %s>%s</div>', $wrapper_attributes, $inner_html );
+
+	}
+
+	/**
+	 * Builds the wrapper's inline style string from the block's
+	 * sanitised colour attributes.
+	 *
+	 * Step 3 ships two custom properties:
+	 *
+	 *   - `--kntnt-gpx-blocks-elevation-background` from
+	 *     `attributes.backgroundColor`.
+	 *   - `--kntnt-gpx-blocks-elevation-axis` from
+	 *     `attributes.axisColor`.
+	 *
+	 * Subsequent steps will append the other colour custom properties
+	 * here as their corresponding chart surfaces land.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array<string,mixed> $attributes Block attributes.
+	 * @return string Semicolon-terminated declaration string or `''`
+	 *                when no colour attributes are set.
+	 */
+	private static function build_inline_style( array $attributes ): string {
+
+		$parts = [];
+
+		$background = Color_Sanitizer::sanitize(
+			is_string( $attributes['backgroundColor'] ?? null ) ? (string) $attributes['backgroundColor'] : ''
 		);
+		if ( '' !== $background ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-background: ' . esc_attr( $background );
+		}
 
-		// One-rule inline stylesheet matching the Step-1 contract.
-		// Step 3 introduces `style.scss` and this echo migrates into it.
-		$style_tag = '<style>.kntnt-gpx-blocks-elevation { background-color: var( --kntnt-gpx-blocks-elevation-background, transparent ); }</style>';
+		$axis = Color_Sanitizer::sanitize(
+			is_string( $attributes['axisColor'] ?? null ) ? (string) $attributes['axisColor'] : ''
+		);
+		if ( '' !== $axis ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-axis: ' . esc_attr( $axis );
+		}
 
-		return $style_tag . sprintf( '<div %s>%s</div>', $wrapper_attributes, $inner_html );
+		// Append a trailing `;` so the joined declarations always end
+		// on a terminator. `get_block_wrapper_attributes()` joins any
+		// core-supplied declarations on with a space rather than a
+		// semicolon, so the first core declaration would otherwise run
+		// into the last plugin declaration's value.
+		return count( $parts ) > 0 ? implode( '; ', $parts ) . ';' : '';
 
 	}
 

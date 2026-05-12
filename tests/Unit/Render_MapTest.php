@@ -2563,7 +2563,7 @@ test( 'B1: render emits min-height:30vh via filter-normalised attrs when both mi
 
 } );
 
-test( 'B1 (Elevation): wrapper-as-image — filter does NOT inject a min-height default (issue #135)', function (): void {
+test( 'B1 (Elevation): filter injects min-height=15vh (Step 3 of docs/elevation-rebuild.md)', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 760, $coords );
@@ -2581,13 +2581,12 @@ test( 'B1 (Elevation): wrapper-as-image — filter does NOT inject a min-height 
 		],
 	);
 
-	// Issue #135 (wrapper-as-image): Elevation no longer carries a
-	// `min-height` default. Sizing is driven entirely by `aspect-ratio`
-	// from the SCSS baseline plus the data-driven typographic padding
-	// values emitted by `Render_Elevation::render()`. The filter passes
-	// the parsed block through byte-identical when there is nothing to
-	// mutate.
-	expect( $parsed['attrs']['style']['dimensions'] ?? null )->toBeNull();
+	// Step 3 of docs/elevation-rebuild.md: Elevation's wrapper has a
+	// `min-height: 15vh` default, gated on `minHeight` blank alone
+	// (regardless of `aspectRatio`). The filter writes the default
+	// onto the parsed block's attrs at the attribute source.
+	expect( $parsed['attrs']['style']['dimensions']['minHeight'] ?? null )
+		->toBe( '15vh' );
 
 } );
 
