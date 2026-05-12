@@ -151,10 +151,16 @@ final class Preview_Controller {
 			return new \WP_Error( $payload->code, $payload->message, [ 'status' => 422 ] );
 		}
 
-		// Return the GeoJSON FeatureCollection. The editor splits track and
-		// waypoints client-side so the wire format stays a single payload.
+		// Return the GeoJSON FeatureCollection plus the cached statistics
+		// array. Step 2 of the Elevation rebuild added `statistics` so the
+		// Elevation block's editor preview can read min/max elevation for
+		// its placeholder info-box without a second round-trip. The Map
+		// block's preview ignores the new field; the Elevation block's
+		// `useBoundMapPayload` consumes it. See
+		// `docs/elevation-rebuild.md` § *Editor data fetching (Q8b)*.
 		return new \WP_REST_Response( [
-			'geojson' => $payload['geojson'],
+			'geojson'    => $payload['geojson'],
+			'statistics' => $payload['statistics'],
 		] );
 
 	}

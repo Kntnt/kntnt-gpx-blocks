@@ -296,3 +296,35 @@ test( 'get_preview returns the GeoJSON payload on success', function (): void {
 	}
 
 } );
+
+test( 'get_preview includes the statistics array in the response payload', function (): void {
+
+	$geojson = [
+		'type'     => 'FeatureCollection',
+		'features' => [],
+	];
+
+	Functions\when( 'get_post' )->justReturn(
+		preview_fake_attachment( 42, 'application/gpx+xml' )
+	);
+	$temp = preview_stub_meta_for_happy_path( (string) json_encode( $geojson ) );
+
+	try {
+		$controller = new Preview_Controller( new Attachment_Cache() );
+		$response   = $controller->get_preview( preview_fake_request( 42 ) );
+
+		expect( $response )->toBeInstanceOf( WP_REST_Response::class );
+		$data = $response->get_data();
+		expect( $data )->toHaveKey( 'statistics' );
+		expect( $data['statistics'] )->toBe( [
+			'distance'      => 100.0,
+			'min_elevation' => 0.0,
+			'max_elevation' => 50.0,
+			'ascent'        => 25.0,
+			'descent'       => 25.0,
+		] );
+	} finally {
+		unlink( $temp );
+	}
+
+} );
