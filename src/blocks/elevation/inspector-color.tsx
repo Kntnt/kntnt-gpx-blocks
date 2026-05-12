@@ -1,20 +1,19 @@
 /**
- * Custom Color ToolsPanel for the GPX Elevation block.
+ * Plugin-owned Color panel for the GPX Elevation block.
  *
- * The Elevation block owns the entire colour surface itself instead of
- * delegating to core's Background block-support. The reason is alpha:
- * `supports.color.background` does not expose `enableAlpha`, but every
- * Elevation colour (background, plot line, cursor, axis, axis labels,
- * three tooltip colours) needs alpha support so editors can fade an
- * axis line or sit a tooltip on a translucent backdrop. Routing all
- * eight items through one plugin-owned `ToolsPanel` rendered in
- * `<InspectorControls group="styles">` keeps the surface uniform and
- * the alpha behaviour consistent across every colour the block exposes.
+ * Routes the block's eight colour attributes through a single
+ * `PanelColorSettings` rendered inside `<InspectorControls group="styles">`.
+ * The surface matches GPX Map byte-for-byte: a compact list of swatch
+ * rows that open a popover with the WordPress colour picker on click,
+ * with `enableAlpha` switched on so editors can dial in `#RGBA` /
+ * `#RRGGBBAA` values for every entry — including Background, which is
+ * why this panel owns Background instead of delegating to core's
+ * `supports.color.background` (that surface cannot enable alpha).
  *
  * Only `Background` is wired to actually affect the rendered output in
  * Step 1 (Step 3 picks up Axis, Step 4 Axis labels, Step 5 Plot line,
  * Step 6 Cursor, Step 7 the three Tooltip colours). The other items
- * persist their values so the editor's UI is functionally complete
+ * persist their values so the editor surface is functionally complete
  * from this step on, but their values do not yet reach the SVG.
  *
  * Pinned by `docs/elevation-rebuild.md`, Step 1, Rule 2 + the
@@ -23,17 +22,11 @@
  * @since 1.0.0
  */
 
-import {
-	ColorPicker,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalToolsPanel as ToolsPanel,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalToolsPanelItem as ToolsPanelItem,
-} from '@wordpress/components';
+import { PanelColorSettings } from '@wordpress/block-editor';
 import { __ } from '@wordpress/i18n';
 
 /**
- * One row in the Color ToolsPanel.
+ * One row in the Color panel.
  *
  * `attribute` is the block-attribute key the row reads from and writes
  * to; `label` is the translated row label shown in the editor.
@@ -47,16 +40,17 @@ interface ColorRow {
 
 /**
  * Returns the eight Color panel rows in the order documented in the
- * Step 1 spec table. Order matters — it pins the ResetAll behaviour
- * and is the contract subsequent steps wire into.
+ * Step 1 spec table. Order matters — it is the contract subsequent
+ * steps wire into and the order the editor displays.
  *
- * The function is exported so the Step 1 block.json shape test can
- * lock the attribute names against the spec table without duplicating
- * the list.
+ * The function is exported so future tests (and the Step 8 Map
+ * migration, if it ever consolidates the two surfaces) can lock the
+ * attribute names against the spec table without duplicating the
+ * list.
  *
  * @since 1.0.0
  *
- * @return Eight rows, top-to-bottom, in the order the editor displays.
+ * @return Eight rows, top-to-bottom, in display order.
  */
 export function elevationColorRows(): readonly ColorRow[] {
 	return [
@@ -103,13 +97,13 @@ export function elevationColorRows(): readonly ColorRow[] {
 interface InspectorColorPanelProps {
 	attributes: Record< string, unknown >;
 	setAttributes: ( next: Record< string, unknown > ) => void;
-	panelId: string;
 }
 
 /**
  * Reads a single colour attribute and coerces non-string values to the
  * empty string. The eight Color attributes are all `string` per the
- * Step 1 spec table; this helper keeps the per-row body simple.
+ * Step 1 spec table; this helper keeps the per-row `colorSettings`
+ * entry simple.
  *
  * @since 1.0.0
  *
@@ -126,67 +120,32 @@ function readColor(
 }
 
 /**
- * Renders the eight-row Color ToolsPanel.
- *
- * Each row wraps a `ColorPicker` with `enableAlpha` so editors can
- * dial in `#RGBA` / `#RRGGBBAA` values; the `Color_Sanitizer` accepts
- * the same surface area on the render path. Reset (per-row or
- * ResetAll) writes the empty string, which the renderer treats as
- * "use the CSS default".
+ * Renders the eight-row Color panel.
  *
  * @since 1.0.0
  *
  * @param props               See {@link InspectorColorPanelProps}.
  * @param props.attributes    Saved block attribute bag.
  * @param props.setAttributes Standard Gutenberg attribute setter.
- * @param props.panelId       Stable id used by ToolsPanel to scope its
- *                            per-item ResetAll behaviour.
  */
 export function InspectorColorPanel( {
 	attributes,
 	setAttributes,
-	panelId,
 }: InspectorColorPanelProps ): JSX.Element {
 	const rows = elevationColorRows();
 
 	return (
-		// @ts-ignore — ToolsPanel typings lag the runtime API.
-		<ToolsPanel
-			label={ __( 'Color', 'kntnt-gpx-blocks' ) }
-			panelId={ panelId }
-			resetAll={ () => {
-				const wipe: Record< string, string > = {};
-				for ( const row of rows ) {
-					wipe[ row.attribute ] = '';
-				}
-				setAttributes( wipe );
-			} }
-		>
-			{ rows.map( ( row ) => {
-				const value = readColor( attributes, row.attribute );
-				return (
-					// @ts-ignore — ToolsPanelItem typings lag the runtime API.
-					<ToolsPanelItem
-						key={ row.attribute }
-						panelId={ panelId }
-						hasValue={ () => value !== '' }
-						label={ row.label }
-						onDeselect={ () =>
-							setAttributes( { [ row.attribute ]: '' } )
-						}
-						isShownByDefault
-					>
-						<ColorPicker
-							enableAlpha
-							copyFormat="hex"
-							color={ value || undefined }
-							onChange={ ( next: string ) =>
-								setAttributes( { [ row.attribute ]: next } )
-							}
-						/>
-					</ToolsPanelItem>
-				);
-			} ) }
-		</ToolsPanel>
+		// @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor
+		// but its typings lag the runtime API (no enableAlpha in d.ts).
+		<PanelColorSettings
+			title={ __( 'Color', 'kntnt-gpx-blocks' ) }
+			enableAlpha
+			colorSettings={ rows.map( ( row ) => ( {
+				value: readColor( attributes, row.attribute ),
+				onChange: ( value: string | undefined ) =>
+					setAttributes( { [ row.attribute ]: value ?? '' } ),
+				label: row.label,
+			} ) ) }
+		/>
 	);
 }
