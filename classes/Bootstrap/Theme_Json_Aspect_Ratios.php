@@ -15,8 +15,8 @@
  * (`square`, `wide`, `classic`, …). No other block on the site is affected.
  *
  * The stored value lives in the same `style.dimensions.aspectRatio` slot core
- * uses, so `Render_Elevation::resolve_aspect_ratio()` and the SCSS path need
- * no changes — the new ratios pass through as plain `"W/H"` strings.
+ * uses, so consumers and the SCSS path need no changes — the new ratios pass
+ * through as plain `"W/H"` strings.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

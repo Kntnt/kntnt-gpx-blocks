@@ -2,17 +2,15 @@
 /**
  * Shared predicate for detecting the editor's block-renderer context.
  *
- * Both `Render_Map` and `Render_Elevation` need to know whether their render
- * callback is being invoked by the editor's `<ServerSideRender>` REST endpoint
- * (which proxies the dynamic render under a `REST_REQUEST` with the calling
- * user authenticated and capable of `edit_posts`) so they can emit
- * editor-only behaviour: the Map block sets `bypassConsent: true` in its
- * Interactivity state slice so the JS view module would mount Leaflet without
- * waiting on the consent contract, and the Elevation block server-renders the
- * cursor group visible at fraction = 0.5 with the midpoint sample pre-filled
- * into the tooltip so the editor user gets live feedback for the cursor /
- * tooltip controls. The predicate must pivot in lockstep across both blocks;
- * centralising it here makes that guarantee structural.
+ * `Render_Map` needs to know whether its render callback is being invoked by
+ * the editor's `<ServerSideRender>` REST endpoint (which proxies the dynamic
+ * render under a `REST_REQUEST` with the calling user authenticated and
+ * capable of `edit_posts`) so it can emit editor-only behaviour: the Map
+ * block sets `bypassConsent: true` in its Interactivity state slice so the
+ * JS view module mounts Leaflet without waiting on the consent contract. The
+ * GPX Elevation block will reintroduce its own editor-only emit later in the
+ * rebuild and is expected to consume the same predicate, so it stays
+ * centralised here rather than inlined inside Render_Map.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

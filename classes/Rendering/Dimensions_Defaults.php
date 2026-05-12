@@ -5,16 +5,15 @@
  * at the attribute source.
  *
  * Issue #117 — earlier releases injected the default inline in each
- * consumer (PHP `Render_Map::render()`, PHP `Render_Elevation::render()`,
- * editor `MapEdit` / `ElevationEdit`). That left the default as a
- * per-consumer special case that drifted out of sync with the standard
- * block-supports pipeline. This filter writes the per-block default
- * `min-height` (currently only Map's `30vh`; the GPX Elevation block no
- * longer carries one — see *Wrapper-as-image layout* below) onto the
- * parsed block's `attrs` before WordPress renders the block, so every
- * downstream consumer — `get_block_wrapper_attributes()`, the SCSS
- * baseline, the editor `useBlockProps()` style merge — sees a concrete
- * value through the same path that an explicit user value would take.
+ * consumer (PHP `Render_Map::render()`, editor `MapEdit`). That left the
+ * default as a per-consumer special case that drifted out of sync with the
+ * standard block-supports pipeline. This filter writes the per-block default
+ * `min-height` (currently only Map's `30vh`; the GPX Elevation block carries
+ * no default during the rebuild) onto the parsed block's `attrs` before
+ * WordPress renders the block, so every downstream consumer —
+ * `get_block_wrapper_attributes()`, the SCSS baseline, the editor
+ * `useBlockProps()` style merge — sees a concrete value through the same
+ * path that an explicit user value would take.
  *
  * The narrowed condition matters: the default is applied only when both
  * `minHeight` *and* `aspectRatio` are blank or missing. When the user
@@ -22,14 +21,11 @@
  * height from that, and adding a min-height would fight the aspect-ratio
  * constraint.
  *
- * Wrapper-as-image layout (issue #135). The Elevation block's wrapper
- * sizing is fully driven by `aspect-ratio` (default `4 / 1` from the
- * SCSS baseline) plus the typographic padding values emitted by
- * `Render_Elevation::render()`, so it no longer needs a `min-height`
- * default. The filter still recognises Elevation blocks for the
+ * The filter still recognises Elevation blocks for the
  * `aspectRatio: 'auto'` strip — without that strip core would emit
  * `min-height: unset` and the wrapper would have no height — but the
- * `min-height` injection is gated on a per-block default being present.
+ * `min-height` injection is gated on a per-block default being present, and
+ * the Elevation block carries none during the rebuild.
  *
  * Wired to `render_block_data` from `Plugin` next to the other rendering
  * filters; this is the standard place WordPress lets a plugin mutate

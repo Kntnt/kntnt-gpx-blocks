@@ -3,7 +3,7 @@
  * Resolves a mapId (or 'auto') to the concrete attachment ID and map ID of
  * the single GPX Map block on the post.
  *
- * Used by Render_Elevation and the `[kntnt-gpx <key>]` shortcode handler
+ * Used by the `[kntnt-gpx <key>]` shortcode handler
  * (Bindings\Statistics_Shortcode) to locate the upstream GPX Map when the
  * consumer's mapId is '' or 'auto', and to validate explicit mapId values. The
  * algorithm walks a parsed block tree so it works for any post type and
