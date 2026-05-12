@@ -1,17 +1,14 @@
 <?php
 /**
- * Accessibility tests for Render_Map and Render_Elevation.
+ * Accessibility tests for Render_Map.
  *
  * Verifies that the rendered HTML carries the ARIA attributes and <noscript>
  * fallback text required by issue #22. Brain Monkey stubs all WordPress
- * functions so the classes run without a live WordPress install.
+ * functions so the class runs without a live WordPress install.
  *
  * Coverage:
  * - Render_Map output contains role="application" and an aria-label string.
  * - Render_Map output contains a <noscript> with the translated fallback text.
- * - Render_Elevation output contains role="img" on the SVG element.
- * - Render_Elevation SVG has aria-labelledby pointing to the <desc> element's id.
- * - Render_Elevation output's <noscript> contains the elevation summary text.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -21,7 +18,6 @@ declare( strict_types = 1 );
 
 use Brain\Monkey\Functions;
 use Kntnt\Gpx_Blocks\Cache\Cache_Version;
-use Kntnt\Gpx_Blocks\Rendering\Render_Elevation;
 use Kntnt\Gpx_Blocks\Rendering\Render_Map;
 
 // ---------------------------------------------------------------------------
@@ -42,27 +38,6 @@ function a11y_map_fake_block(): object {
 		 * @var array<string, mixed>
 		 */
 		public array $context = [];
-	};
-}
-
-/**
- * Builds a fake WP_Block-like object exposing $context['postId'].
- *
- * @param int $post_id The post ID to expose.
- *
- * @return WP_Block
- */
-function a11y_elev_fake_block( int $post_id ): WP_Block {
-	return new class( $post_id ) extends WP_Block {
-
-		/**
-		 * Initialises the context with the supplied post ID.
-		 *
-		 * @param int $post_id The post ID to expose via context['postId'].
-		 */
-		public function __construct( int $post_id ) {
-			$this->context = [ 'postId' => $post_id ];
-		}
 	};
 }
 
@@ -155,25 +130,6 @@ function a11y_seeded_store(
 }
 
 /**
- * Builds a minimal parsed-block array for a GPX Map block.
- *
- * @param int    $attachment_id Attachment ID.
- * @param string $map_id        mapId attribute.
- *
- * @return array<string, mixed>
- */
-function a11y_map_block( int $attachment_id, string $map_id = 'map-a11y' ): array {
-	return [
-		'blockName'   => 'kntnt-gpx-blocks/map',
-		'attrs'       => [
-			'attachmentId' => $attachment_id,
-			'mapId'        => $map_id,
-		],
-		'innerBlocks' => [],
-	];
-}
-
-/**
  * Builds a synthetic 2D coordinate list near Stockholm.
  *
  * @param int $count Number of points.
@@ -185,22 +141,6 @@ function a11y_coords_2d( int $count ): array {
 	for ( $i = 0; $i < $count; $i++ ) {
 		$r     = $count > 1 ? $i / ( $count - 1 ) : 0.0;
 		$out[] = [ 18.0 + 0.05 * $r, 59.0 + 0.05 * $r ];
-	}
-	return $out;
-}
-
-/**
- * Builds a synthetic 3D coordinate list (with elevation rising linearly).
- *
- * @param int $count Number of points.
- *
- * @return array<int, array<int, float>>
- */
-function a11y_coords_3d( int $count ): array {
-	$out = [];
-	for ( $i = 0; $i < $count; $i++ ) {
-		$r     = $count > 1 ? $i / ( $count - 1 ) : 0.0;
-		$out[] = [ 18.0 + 0.05 * $r, 59.0 + 0.05 * $r, 100.0 + 100.0 * $r ];
 	}
 	return $out;
 }
@@ -240,8 +180,7 @@ beforeEach( function (): void {
 	// in plus the namespaced wp-block class, mirroring core's wrapper output.
 	// The accessibility tests do not exercise alignment, anchor, or
 	// className, so the stub does not need to read any global attribute
-	// context — those branches are covered by Render_MapTest /
-	// Render_ElevationTest.
+	// context — those branches are covered by Render_MapTest.
 	Functions\when( 'get_block_wrapper_attributes' )->alias(
 		static function ( array $extras = [] ): string {
 			$class_parts = [];
@@ -362,123 +301,5 @@ test( 'Render_Map output contains a <noscript> element with fallback text', func
 		->toContain( '<noscript>' )
 		->toContain( 'kntnt-gpx-blocks-map-noscript' )
 		->toContain( 'This map requires JavaScript to display.' );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Render_Elevation: role="img" and aria-labelledby
-// ---------------------------------------------------------------------------
-
-test( 'Render_Elevation SVG contains role="img"', function (): void {
-
-	$coords = a11y_coords_3d( 200 );
-	$stats  = [
-		'distance'      => 5500.0,
-		'min_elevation' => 100.0,
-		'max_elevation' => 200.0,
-		'ascent'        => 100.0,
-		'descent'       => 0.0,
-	];
-	$store  = a11y_seeded_store( 201, $coords, $stats );
-	a11y_bind_meta( $store );
-
-	Functions\when( 'get_attached_file' )->alias(
-		static fn ( int $id ): string|false => $id === 201 ? a11y_fixture_path( 'happy-path.gpx' ) : false
-	);
-	Functions\when( 'get_the_ID' )->justReturn( 50 );
-	Functions\when( 'get_post' )->alias(
-		static function ( int $id ): ?object {
-			$p               = new stdClass();
-			$p->ID           = $id;
-			$p->post_content = '';
-			return $p;
-		}
-	);
-	Functions\when( 'parse_blocks' )->justReturn( [ a11y_map_block( 201, 'map-elev-role' ) ] );
-
-	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', a11y_elev_fake_block( 50 ) );
-
-	expect( $html )->toContain( 'role="img"' );
-
-} );
-
-test( 'Render_Elevation SVG has aria-labelledby pointing to a desc element id', function (): void {
-
-	$coords = a11y_coords_3d( 200 );
-	$stats  = [
-		'distance'      => 5500.0,
-		'min_elevation' => 100.0,
-		'max_elevation' => 200.0,
-		'ascent'        => 100.0,
-		'descent'       => 0.0,
-	];
-	$store  = a11y_seeded_store( 202, $coords, $stats );
-	a11y_bind_meta( $store );
-
-	Functions\when( 'get_attached_file' )->alias(
-		static fn ( int $id ): string|false => $id === 202 ? a11y_fixture_path( 'happy-path.gpx' ) : false
-	);
-	Functions\when( 'get_the_ID' )->justReturn( 51 );
-	Functions\when( 'get_post' )->alias(
-		static function ( int $id ): ?object {
-			$p               = new stdClass();
-			$p->ID           = $id;
-			$p->post_content = '';
-			return $p;
-		}
-	);
-	Functions\when( 'parse_blocks' )->justReturn( [ a11y_map_block( 202, 'map-elev-labelledby' ) ] );
-
-	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', a11y_elev_fake_block( 51 ) );
-
-	// The SVG must have aria-labelledby.
-	expect( $html )->toContain( 'aria-labelledby=' );
-
-	// The referenced id must appear on the <desc> element.
-	expect( $html )->toMatch( '/aria-labelledby="([^"]+)"/' );
-	preg_match( '/aria-labelledby="([^"]+)"/', $html, $m );
-	$referenced_id = $m[1] ?? '';
-
-	expect( $html )->toContain( sprintf( '<desc id="%s">', $referenced_id ) );
-
-} );
-
-// ---------------------------------------------------------------------------
-// Render_Elevation: <noscript> fallback with summary text
-// ---------------------------------------------------------------------------
-
-test( 'Render_Elevation output contains a <noscript> element with elevation summary', function (): void {
-
-	$coords = a11y_coords_3d( 200 );
-	$stats  = [
-		'distance'      => 5500.0,
-		'min_elevation' => 100.0,
-		'max_elevation' => 200.0,
-		'ascent'        => 100.0,
-		'descent'       => 0.0,
-	];
-	$store  = a11y_seeded_store( 203, $coords, $stats );
-	a11y_bind_meta( $store );
-
-	Functions\when( 'get_attached_file' )->alias(
-		static fn ( int $id ): string|false => $id === 203 ? a11y_fixture_path( 'happy-path.gpx' ) : false
-	);
-	Functions\when( 'get_the_ID' )->justReturn( 52 );
-	Functions\when( 'get_post' )->alias(
-		static function ( int $id ): ?object {
-			$p               = new stdClass();
-			$p->ID           = $id;
-			$p->post_content = '';
-			return $p;
-		}
-	);
-	Functions\when( 'parse_blocks' )->justReturn( [ a11y_map_block( 203, 'map-elev-noscript' ) ] );
-
-	$html = Render_Elevation::render( [ 'mapId' => 'auto' ], '', a11y_elev_fake_block( 52 ) );
-
-	expect( $html )
-		->toContain( '<noscript>' )
-		->toContain( 'kntnt-gpx-blocks-elevation-noscript' )
-		->toContain( 'Elevation profile from' );
 
 } );
