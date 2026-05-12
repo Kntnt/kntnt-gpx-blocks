@@ -17,5 +17,9 @@ export const ElevationEdit = (): JSX.Element => {
 		className: 'kntnt-gpx-blocks-elevation',
 	} );
 
-	return <div { ...blockProps }>{ __( 'GPX Elevation', 'kntnt-gpx-blocks' ) }</div>;
+	return (
+		<div { ...blockProps }>
+			{ __( 'GPX Elevation', 'kntnt-gpx-blocks' ) }
+		</div>
+	);
 };

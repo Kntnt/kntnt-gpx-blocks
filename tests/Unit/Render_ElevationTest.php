@@ -913,44 +913,6 @@ test( 'ignores legacy tooltipFont* attributes left over from an older save', fun
 
 } );
 
-test( 'block.json declares supports.typography with the expected aspects and defaults', function (): void {
-
-	$json = json_decode(
-		(string) file_get_contents( __DIR__ . '/../../src/blocks/elevation/block.json' ),
-		true,
-	);
-	expect( $json )->toBeArray();
-
-	$typography = $json['supports']['typography'] ?? null;
-	expect( $typography )->toBeArray();
-
-	// Each user-facing aspect is enabled at the block level so the editor
-	// surfaces the standard Typography panel.
-	foreach (
-		[
-			'fontFamily',
-			'fontSize',
-			'fontWeight',
-			'fontStyle',
-			'lineHeight',
-			'letterSpacing',
-			'textTransform',
-			'textDecoration',
-		] as $aspect
-	) {
-		expect( $typography[ $aspect ] ?? null )->toBeTrue();
-	}
-
-	// The defaultControls trio (Font, Size, Appearance) is what the issue
-	// fixed as the visible top-level controls in the panel.
-	$defaults = $typography['defaultControls'] ?? null;
-	expect( $defaults )->toBeArray();
-	expect( $defaults['fontFamily'] ?? null )->toBeTrue();
-	expect( $defaults['fontSize'] ?? null )->toBeTrue();
-	expect( $defaults['fontAppearance'] ?? null )->toBeTrue();
-
-} );
-
 test( 'block.json no longer declares any axisFont* or tooltipFont* attributes', function (): void {
 
 	$json = json_decode(

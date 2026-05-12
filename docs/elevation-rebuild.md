@@ -12,7 +12,13 @@ The rebuild proceeds **one step per Claude Code session**. Each session opens wi
 
 Every step lists a **load list**: the additional `docs/*.md` files Claude should read for that step. Anything not on the load list should not be read. The default load (`CLAUDE.md` → `AGENTS.md` → `docs/coding-standards.md`) plus the step's load list is enough.
 
-Each step ends with a single commit directly to `main`. There is no feature branch and no worktree. If a step misfires, `git revert` the offending commit.
+Each step ends with a **tagged GitHub release**, not just a commit. Versions follow the pattern `0.13.N` where `N` is the step number — Step 0 → `v0.13.0`, Step 1 → `v0.13.1`, …, Step 7 → `v0.13.7`.
+
+Follow the full six-step release procedure documented in `AGENTS.md` (section *Cutting a release*) for every step: bump the two version files (`kntnt-gpx-blocks.php` and `package.json`), run all gates, commit and tag, build the ZIP via `./build-release-zip.sh`, push commit and tag, create the GitHub release with the ZIP attached, and verify the asset's content type. The procedure is authoritative — do not skip building the ZIP or attaching it, regardless of how small the step's diff looks. See `docs/updater.md` for the underlying reason.
+
+Commit message convention for these releases: `Release v0.13.N — Step N: <short description>`. This matches the existing `Release vX.Y.Z` pattern while keeping `git log` skim-friendly.
+
+No feature branch, no worktree. Work happens directly on `main`. If a step misfires after its release is published, roll the fix into the next step's release (or cut an interim release if it can't wait) — do not retroactively edit a published release.
 
 When a step says "study how v0.12.0 solved this", consult the tagged code via `git show v0.12.0:src/blocks/elevation/<file>` rather than the working-tree files (which will be partially rebuilt or absent during the rebuild).
 
@@ -39,8 +45,7 @@ The steps below take these in order: chart first (Steps 3–5), cursor next (Ste
 1. If not already saved, record a memory entry noting that `v0.12.0` is the best-so-far implementation and the reference for this rebuild. (Likely already saved when this document was created.)
 2. Delete the contents of `src/blocks/elevation/` except what is needed to keep the block registered with its current name and icon. Concretely: strip `block.json` of attributes, supports, render-script bindings, view scripts, etc., keeping only the metadata needed to register the block (`name`, `title`, `category`, `textdomain`, `apiVersion`, `icon` reference). Retain `icon.tsx`. Reduce `index.tsx` / `edit.tsx` to a minimal edit component that renders nothing meaningful, and `render.php` to a minimal frontend placeholder.
 3. Verify the block still appears in the inserter and inserts as an empty `<div>` (a placeholder label like "GPX Elevation" inside the div is acceptable for this step).
-4. Run `npm run build` and confirm it succeeds.
-5. Commit: `Step 0: reset GPX Elevation to empty block`.
+4. Release as `v0.13.0` per the per-step release procedure (see "How to use this document"). Commit message: `Release v0.13.0 — Step 0: reset GPX Elevation to empty block`.
 
 ---
 
