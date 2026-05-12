@@ -26,6 +26,8 @@ No feature branch, no worktree. Work happens directly on `main`. If a step misfi
 
 When a step says "study how v0.12.0 solved this", consult the tagged code via `git show v0.12.0:src/blocks/elevation/<file>` rather than the working-tree files (which will be partially rebuilt or absent during the rebuild).
 
+**Released-step recaps.** Once a step's release is tagged, its spec section in this document is collapsed to a short "Recap" naming what's in the codebase, with pointers to the relevant source files for orientation and to the corresponding `Lock Step N specification` commit (or the release tag) for the full original spec. This keeps the document focused on the *next* step at any moment. Retrieve a collapsed spec in full via `git show <commit-or-tag>:docs/elevation-rebuild.md`.
+
 ## Block architecture
 
 The block has three responsibilities, and the implementation should reflect this so each can be developed in isolation:
@@ -48,258 +50,21 @@ This decision was reached during the Step 2 design grilling and supersedes v0.12
 
 ---
 
-## Step 0: Reset
+## Step 0 (released as v0.13.0) — recap
 
-**Goal.** Empty slate — the elevation block still appears in the inserter and still has its name and icon, but the implementation is gone.
+Empty-slate baseline released. `src/blocks/elevation/` reduced to `block.json` (registration metadata only), `icon.tsx`, `index.tsx`, a minimal `edit.tsx` rendering the placeholder text "GPX Elevation", and a minimal `render.php` emitting the same placeholder. v0.12.0's full implementation (the rebuild's reference) is preserved at the `v0.12.0` git tag — consult via `git show v0.12.0:src/blocks/elevation/<file>` whenever a step's *v0.12.0 reference* note points back to it.
 
-**Load list:** `docs/file-structure.md`, `docs/architecture.md`
-
-**Tasks:**
-
-1. If not already saved, record a memory entry noting that `v0.12.0` is the best-so-far implementation and the reference for this rebuild. (Likely already saved when this document was created.)
-2. Delete the contents of `src/blocks/elevation/` except what is needed to keep the block registered with its current name and icon. Concretely: strip `block.json` of attributes, supports, render-script bindings, view scripts, etc., keeping only the metadata needed to register the block (`name`, `title`, `category`, `textdomain`, `apiVersion`, `icon` reference). Retain `icon.tsx`. Reduce `index.tsx` / `edit.tsx` to a minimal edit component that renders nothing meaningful, and `render.php` to a minimal frontend placeholder.
-3. Verify the block still appears in the inserter and inserts as an empty `<div>` (a placeholder label like "GPX Elevation" inside the div is acceptable for this step).
-4. Release as `v0.13.0` per the per-step release procedure (see "How to use this document"). Commit message: `Release v0.13.0 — Step 0: reset GPX Elevation to empty block`.
+Full Step 0 specification: `git show v0.13.0:docs/elevation-rebuild.md`.
 
 ---
 
-## Step 1: Outer `<div>` and block-inspector controls
+## Step 1 (released as v0.13.1, refined in v0.13.1-pl.1) — recap
 
-**Goal.** The block renders an outer `<div>` (no chart yet), and all panels and controls described below are present in the block inspector. Only `Color → Background` is wired to actually affect the output in this step; everything else is UI scaffolding.
+The codebase has the Elevation block's outer `<div>` with `useBlockProps`, both inspector tabs populated (Settings: Data Source + Tooltip info; Styles: Dimensions, Border, Box Shadow, a `PanelColorSettings` panel with 8 alpha-enabled colour rows, three collapsible `<PanelBody initialOpen={false}>`-wrapped Typography panels via the shared `TypographyToolsPanel` component). `block.json` declares 35 attributes and 6 `supports` blocks. `Color → Background` is wired through a `usefulValue()` wrapper to the inline CSS variable `--kntnt-gpx-blocks-elevation-background`; everything else persists values but has no rendering effect.
 
-**Load list:** `docs/blocks.md`, `docs/architecture.md`
+For orientation, read the relevant source files directly: `src/blocks/elevation/block.json` (attributes + supports), `src/blocks/elevation/edit.tsx` and `render.php` (the Background wiring is the template for Steps 3–7), `src/blocks/elevation/useful-value.ts` (three-state wrapper), `src/blocks/elevation/inspector-color.tsx` (also exports `elevationColorRows()` — the eight colour attributes' UI metadata as one list, for steps that need to iterate), `src/blocks/shared/typography-tools-panel.tsx` (shared component used by Elevation in Steps 4 and 7, and migrated to from Map in Step 8).
 
-In the lists below, `+` means the control is **visible by default**, `-` means it is **hidden by default** and the user must reveal it from the ToolsPanel ellipsis menu. Parentheses are notes to the implementer and are *not* part of the control name.
-
-### Inspector — Settings tab
-
-- **Panel: Data Source**
-  - `+` Map — a `SelectControl` rendered **unconditionally with an empty options array** in Step 1. This is honest UI scaffolding; map discovery and the conditional panel-visibility logic (hide when ≤1 map on page) land in Step 2 alongside the v0.12.0 reference hooks listed there. The dropdown will appear empty in the editor under Step 1 — that is intentional, not a bug.
-- **Panel: Tooltip info**
-  - `+` Show distance (on/off)
-  - `+` Show height (on/off)
-
-### Inspector — Styles tab
-
-The label is **Styles** (WordPress's actual tab name), not "Design" as earlier drafts of this document said. The controls are routed there via `<InspectorControls group="styles">`. No `Panel` wrappers — the `ToolsPanel`s sit directly in the block inspector.
-
-- **ToolsPanel: Dimensions**
-  - `+` Padding
-  - `+` Margin
-  - `+` Minimum height
-  - `+` Aspect ratio
-- **Border** (core panel via `supports.__experimentalBorder`, see *`block.json` — `supports` declaration* below) — `Color`, `Style`, `Width`, `Radius`. Default visibility is controlled by core's own preferences (sticky per-item), not by this spec; no plugin code is required.
-- **Box Shadow** (core panel via `supports.shadow`) — `Shadow`. Default visibility is core-controlled.
-
-> *Earlier drafts of this spec described a single "Border & Shadow" ToolsPanel with three items. WordPress does not ship that as a standard panel — `supports.__experimentalBorder` and `supports.shadow` deliver two separate `ToolsPanel` instances in the Styles tab. Per Rule 1 (use standard WordPress panels and components wherever possible), we accept the two-panel layout and do not build a custom merged panel. This matches the Map block's existing surface.*
-- **ToolsPanel: Color**
-  - `+` Background
-  - `+` Plot line
-  - `+` Cursor
-  - `+` Axis
-  - `+` Axis labels
-  - `+` Tooltip background
-  - `+` Tooltip distance
-  - `+` Tooltip height
-- **ToolsPanel: Tick labels** (Typography) — the seven standard typography aspects WordPress's surface offers, mirroring the Map block's *Waypoint name* / *Waypoint description* panels:
-  - `-` Font (`FontFamilyControl`)
-  - `+` Font size (`FontSizePicker`)
-  - `+` Appearance (`FontAppearanceControl` — combined weight + style)
-  - `-` Line height (`LineHeightControl`)
-  - `-` Letter spacing (`LetterSpacingControl`)
-  - `-` Letter case (`TextTransformControl`)
-  - `-` Decoration (`TextDecorationControl`)
-- **ToolsPanel: Tooltip distance** (Typography) — same item set as Tick labels (font hidden, font size + appearance visible, the rest hidden by default)
-- **ToolsPanel: Tooltip height** (Typography) — same item set as Tick labels (font hidden, font size + appearance visible, the rest hidden by default)
-
-**Shared `TypographyToolsPanel` component.** The three Typography panels are structurally identical — they differ only by attribute prefix (`tickLabel`, `tooltipDistance`, `tooltipHeight`), title, and default-visibility set. The same panel pattern is already used twice in the Map block (`tooltipName`, `tooltipDesc`). Build the panel as a single reusable component in `src/blocks/shared/typography-tools-panel.tsx` from Step 1, parameterised by:
-
-- `title: string` (already translated)
-- `prefix: string` (e.g. `'tickLabel'`)
-- `attributes`, `setAttributes` (passed through from `edit.tsx`)
-- `defaultVisibility: Partial<Record<TypographyAspect, boolean>>`
-- `panelId: string` (required for ToolsPanel ResetAll grouping)
-
-The component owns the suffix tuple (`FontFamily`, `FontSize`, `FontWeight`, `FontStyle`, `LineHeight`, `LetterSpacing`, `TextTransform`, `TextDecoration`) internally and builds attribute names as `${prefix}${suffix}`. A co-located unit test asserts that the prefix → attribute-name mapping is correct for all five intended prefixes (Elevation's three plus Map's two), so the eventual Map migration in Step 8 is mechanical. The Map block itself is **not modified** during Steps 1–7 — its existing hardcoded Typography panels stay in place until Step 8.
-
-### Rules
-
-1. **Use standard WordPress panels and components wherever possible.** Do not invent custom controls unless absolutely necessary; even then, build on the WordPress primitives as much as you can. If you write a custom control, justify the decision in a code comment and in the commit message.
-2. All colours in the Color panel have **alpha channel enabled**. Therefore the Color panel is **a plugin-owned ToolsPanel rendered inside `<InspectorControls group="styles">`** — `supports.color.background` is *not* declared, because core's Background control does not enable alpha. All eight Color items live in this one custom panel, including Background. The plugin owns the entire colour surface for this block.
-3. Only `Color → Background` is wired to the outer `<div>` in this step. The other controls are UI placeholders for now.
-4. **WordPress's Dimensions semantics — mutual exclusion.** Minimum height and Aspect ratio are mutually exclusive. Setting Minimum height to a value resets Aspect ratio to "Original". Setting Aspect ratio to anything other than "Original" clears Minimum height. Core's Dimensions panel enforces this automatically when `supports.dimensions.{ minHeight, aspectRatio }` are declared — no plugin code required.
-5. **Three-state controls.** Most WordPress inspector controls have no value at all until the user first interacts with them. They then transition to a value (which may equal a placeholder default such as `""` for Minimum height or `default` for Aspect ratio) and from there to a non-default value. The implementation must handle all three states: missing entirely, present-but-default, present-and-non-default — that is what the `usefulValue<T>()` wrapper exists for (see below).
-
-### The "useful-value" wrapper layer
-
-Because of Rule 5 (and its interaction with Rule 4), do not consume control values directly from the component. Introduce a thin wrapper layer whose sole job is to return a usable value when the control has no value at all, or when its value is a placeholder default that would produce invalid CSS (for example, `""` for Minimum height, which can't be passed through to a CSS variable as-is). Build this layer now, applying best-practice design patterns. Decide sensible fallback values as part of the work.
-
-**Shape.** The layer is a single pure function `usefulValue<T>(attributes, setAttributes, key, fallback, isEmpty?)` exported from `src/blocks/elevation/useful-value.ts`. It returns `{ raw, resolved, hasValue, set, reset }` so that inspector controls (`ToolsPanelItem`, the inner `<UnitControl>` / `<ColorPicker>` / etc.) can consume the raw three-state value plus the presence/reset callbacks, while the renderer consumes `resolved` (the raw value with a sensible fallback applied). The default empty-detection is `(v) => v === undefined || v === ''`. Co-located unit tests in `useful-value.test.ts`.
-
-**Defaults for chart-specific dimensions.** A chart has no inherent default for Minimum height or Aspect ratio. Use the same defaults as v0.12.0: **Minimum height = `15vh`**, **Aspect ratio = `default`** (i.e. determined by content).
-
-**Extending the layer in subsequent steps.** Step 1 only wires one attribute (`Color → Background`) through the layer, plus the chart-dimension defaults above. Each subsequent step that wires a new control is responsible for *extending the layer's call-sites* with the fallback value and (where the default empty-detection doesn't fit) a value-specific `isEmpty` predicate. When two or more steps end up with the same predicate, refactor it into a named export from `useful-value.ts` (e.g. `isEmptyHex`, `isEmptyDimension`) at the point of second use — not pre-emptively. The layer's API surface (the `usefulValue` function and the `UsefulValue<T>` return type) stays fixed; only the fallback values and the small library of named predicates grow.
-
-### Application scope
-
-- All controls in **Dimensions**, **Border & Shadow**, and `Color → Background` apply to the outer `<div>` of the block.
-- All other controls are UI placeholders only in this step.
-- **Padding insets the chart area.** The chart drawn from Step 3 onwards fills the wrapper's **content box** (the CSS rectangle inside any padding the user has applied via the Dimensions panel), *not* the border box. Padding stays as visible whitespace between the wrapper edge and the chart edge. All chart-dimension calculations from Step 3 onward operate on the content box's width and height — see Step 3 step 4.
-
-### `block.json` — `supports` declaration
-
-```json
-"supports": {
-    "align": [ "wide", "full" ],
-    "anchor": true,
-    "__experimentalBorder": {
-        "color": true,
-        "radius": true,
-        "style": true,
-        "width": true
-    },
-    "shadow": true,
-    "dimensions": {
-        "aspectRatio": true,
-        "minHeight": true
-    },
-    "spacing": {
-        "padding": true,
-        "margin": true
-    }
-}
-```
-
-Note: `spacing` enables both `padding` and `margin` — this is an **intentional divergence from the Map block** (which omits `padding` because Leaflet absolutely-positions its panes against the wrapper's padding box, so the padding control has no visible effect there). Elevation's chart is drawn into the content box (see *Application scope*), so padding does have a visible effect and is included. `supports.color` is intentionally *not* declared — see Rule 2.
-
-### `block.json` — `attributes` declaration
-
-**35 attributes total.** All `string` defaults are `""` unless noted; all `boolean` defaults are explicit per the table.
-
-**Behavioural (3 attributes):**
-
-| Attribute | Type | Default | Source UI |
-|---|---|---|---|
-| `mapId` | string | `"auto"` | Data Source → Map (empty in Step 1, wired in Step 2) |
-| `tooltipShowDistance` | boolean | `true` | Tooltip info → Show distance |
-| `tooltipShowHeight` | boolean | `true` | Tooltip info → Show height |
-
-**Colours (8 attributes, all `string` default `""`, alpha-bearing hex `#RGB` / `#RGBA` / `#RRGGBB` / `#RRGGBBAA`):**
-
-| Attribute | Source UI | CSS custom property (wrapper inline style) | Wired in |
-|---|---|---|---|
-| `backgroundColor` | Color → Background | `--kntnt-gpx-blocks-elevation-background` | Step 1 |
-| `plotLineColor` | Color → Plot line | `--kntnt-gpx-blocks-elevation-plot-line-color` | Step 5 |
-| `cursorColor` | Color → Cursor | `--kntnt-gpx-blocks-elevation-cursor-color` | Step 6 |
-| `axisColor` | Color → Axis | `--kntnt-gpx-blocks-elevation-axis-color` | Step 3 |
-| `axisLabelColor` | Color → Axis labels | `--kntnt-gpx-blocks-elevation-axis-label-color` | Step 4 |
-| `tooltipBackgroundColor` | Color → Tooltip background | `--kntnt-gpx-blocks-elevation-tooltip-background-color` | Step 7 |
-| `tooltipDistanceColor` | Color → Tooltip distance | `--kntnt-gpx-blocks-elevation-tooltip-distance-color` | Step 7 |
-| `tooltipHeightColor` | Color → Tooltip height | `--kntnt-gpx-blocks-elevation-tooltip-height-color` | Step 7 |
-
-**Typography (24 attributes, all `string` default `""`):** three identical families with prefixes `tickLabel`, `tooltipDistance`, `tooltipHeight`. Each family has eight attributes — the suffixes are `FontFamily`, `FontSize`, `FontWeight`, `FontStyle`, `LineHeight`, `LetterSpacing`, `TextTransform`, `TextDecoration`. Full attribute names: `tickLabelFontFamily`, `tickLabelFontSize`, … `tooltipHeightTextDecoration`. The shared `TypographyToolsPanel` component (see above) builds these names from `prefix + suffix` internally; the test in `typography-tools-panel.test.tsx` locks the mapping for all five intended prefixes.
-
-### Background wiring — exact contract
-
-This is the **only** rendering wire-up in Step 1. The pattern set here is the template for the seven remaining colours in Steps 3–7.
-
-**Editor (`edit.tsx`):**
-
-```ts
-const bg = usefulValue( attributes, setAttributes, 'backgroundColor', '' );
-const inlineStyle: Record< string, string > = {};
-if ( bg.resolved !== '' ) {
-    inlineStyle[ '--kntnt-gpx-blocks-elevation-background' ] = bg.resolved;
-}
-const blockProps = useBlockProps( {
-    className: 'kntnt-gpx-blocks-elevation',
-    style: inlineStyle as React.CSSProperties,
-} );
-```
-
-**Frontend (`render.php`):**
-
-```php
-use Kntnt\Gpx_Blocks\Rendering\Color_Sanitizer;
-
-$bg = Color_Sanitizer::sanitize( $attributes['backgroundColor'] ?? '' );
-$style = $bg !== '' ? '--kntnt-gpx-blocks-elevation-background: ' . $bg . ';' : '';
-$wrapper_attributes = get_block_wrapper_attributes( [
-    'class' => 'kntnt-gpx-blocks-elevation',
-    'style' => $style,
-] );
-```
-
-`Color_Sanitizer::sanitize()` lives in `classes/Rendering/Color_Sanitizer.php` and accepts hex 3/4/6/8. Reject paths return `''`, so the conditional `$bg !== ''` is correct for both "user didn't set" and "user-set value rejected as malformed".
-
-**CSS consumption.** Step 1 has no `style.scss` file — there is no SVG yet, and one inline `background-color` consumer would not earn its own stylesheet. The wrapper consumes the variable inline via a tiny rule embedded in `render.php`:
-
-```php
-// In render.php, after the wrapper opens, prepend a one-rule inline style block keyed by the wrapper class:
-echo '<style>.kntnt-gpx-blocks-elevation { background-color: var( --kntnt-gpx-blocks-elevation-background, transparent ); }</style>';
-```
-
-Step 3 introduces `style.scss` when the SVG arrives, at which point this inline `<style>` block is removed and the rule migrates into the stylesheet. The `transparent` fallback ensures that unset Background leaves the wrapper transparent — matching every other unstyled core block.
-
-### File layout for Step 1
-
-```
-src/blocks/elevation/
-├── block.json                        — 35 attributes + 6 supports, per the tables above
-├── icon.tsx                          — unchanged from Step 0
-├── index.tsx                         — unchanged from Step 0 (registers the block)
-├── edit.tsx                          — orchestrator: useBlockProps, both inspector tabs
-├── useful-value.ts                   — pure function per Q3
-├── useful-value.test.ts              — co-located unit tests
-├── inspector-color.tsx               — the custom Color ToolsPanel (8 items, alpha)
-└── render.php                        — Background injection + inline <style> rule
-
-src/blocks/shared/
-├── typography-tools-panel.tsx        — the shared TypographyToolsPanel component
-└── typography-tools-panel.test.tsx   — co-located tests for all 5 prefixes
-```
-
-Files **not created in Step 1**: `view.ts` (no interactivity yet), `style.scss` / `editor.scss` (no SVG, the inline `<style>` block in `render.php` carries the single rule). These arrive in Step 3 when the SVG appears.
-
-### Acceptance criteria
-
-Step 1 is considered done — and `v0.13.1` may be tagged — when **all** of the following hold:
-
-**Behaviour:**
-
-1. The block still appears in the inserter under the "Kntnt" category with the same name and icon as after Step 0 (no regression).
-2. The block can be inserted in the editor and renders as a single `<div>`.
-3. `block.json` declares exactly the 35 attributes and 6 `supports` blocks fixed in the attribute table for Step 1.
-4. The **Settings** tab of the block inspector shows:
-   - A `Data Source` panel containing a `SelectControl` with empty options (unconditional in Step 1).
-   - A `Tooltip info` panel containing two `ToggleControl`s (`tooltipShowDistance`, `tooltipShowHeight`), both defaulting to `true`.
-5. The **Styles** tab of the block inspector shows, in order:
-   - Core's standard **Dimensions** panel (`Padding`, `Margin`, `Minimum height`, `Aspect ratio`).
-   - Core's standard **Border** panel (`Color`, `Style`, `Width`, `Radius`).
-   - Core's standard **Box Shadow** panel.
-   - A custom **Color** ToolsPanel with eight items (Background, Plot line, Cursor, Axis, Axis labels, Tooltip background, Tooltip distance, Tooltip height), all `enableAlpha`, all visible by default.
-   - Three **Typography** ToolsPanels (Tick labels, Tooltip distance, Tooltip height), each rendered via the shared `TypographyToolsPanel` component with `prefix` set to `tickLabel`, `tooltipDistance`, `tooltipHeight` respectively.
-6. Changing `Color → Background` updates the editor preview's wrapper background immediately (no SSR round-trip).
-7. Changing any `Dimensions`, `Border`, or `Box Shadow` control updates the editor preview accordingly through core's block-supports machinery (no plugin code involved).
-8. On the frontend, `render.php` emits the wrapper through `get_block_wrapper_attributes()` with `Color → Background` injected as the CSS custom property `--kntnt-gpx-blocks-elevation-background`. All core supports values reach the wrapper through the standard pipeline.
-9. **No other controls than `Color → Background` produce visible output changes** — the remaining seven Color items, both Tooltip-info toggles, the empty Data Source dropdown, and all three Typography panels persist values but have no rendering effect in Step 1.
-
-**Gates (must all pass at HEAD before tagging):**
-
-10. `npm run build`.
-11. `composer test` (Pest).
-12. `vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M`.
-13. `npm run test:js` — including the new `useful-value.test.ts` and `typography-tools-panel.test.tsx`. The latter must assert prefix-to-attribute mapping for all five intended prefixes (`tickLabel`, `tooltipDistance`, `tooltipHeight`, `tooltipName`, `tooltipDesc`) so the Step 8 Map migration is mechanical.
-14. `npx wp-scripts lint-js src/blocks/` (because `src/blocks/` is touched).
-
-**Manual verification in WordPress Playground (`@wp-playground/cli`):**
-
-15. Insert the block, change `Color → Background`, change `Padding`, `Min height`, and `Aspect ratio`, then preview the post and confirm both editor and frontend reflect the changes consistently.
-16. Click "Reset all" in the Color panel and in one Typography panel — every item in that panel returns to its unset/default state and the ellipsis menu reflects the reset.
-
-### Release
-
-When all acceptance criteria hold, follow the six-step release procedure documented in `AGENTS.md` (section *Cutting a release*). Tag `v0.13.1`. Commit message: `Release v0.13.1 — Step 1: outer div and block-inspector controls`.
+Full Step 1 specification (design rationale, acceptance criteria, manual verification list): `git show 3390f49:docs/elevation-rebuild.md`. The follow-up that aligned the inspector surface with GPX Map's UX (`PanelColorSettings` instead of a custom Color ToolsPanel; collapsible `PanelBody` wrappers around the Typography panels) is commit `d574087`, shipped as the interim release `v0.13.1-pl.1`.
 
 ---
 
