@@ -1,15 +1,15 @@
 <?php
 /**
- * GPX Elevation block render proxy.
+ * GPX Elevation block render — empty-slate baseline.
  *
- * WordPress calls this file for every frontend render of the block, passing
- * the three standard render-callback arguments as variables. The file is a
- * thin proxy — it delegates all logic to the autoloaded Render_Elevation class
- * so that the render.php files stay trivial and easy to reason about.
+ * WordPress calls this file for every frontend render of the block. During
+ * the rebuild driven by `docs/elevation-rebuild.md`, the block renders a
+ * minimal wrapper with a placeholder label; subsequent steps reintroduce
+ * the data binding, the SVG chart, and the cursor synchronisation.
  *
  * Variables injected by WordPress:
  *   $attributes  array      Block attributes as saved in post_content.
- *   $content     string     Inner block HTML (empty — this block has no inner blocks).
+ *   $content     string     Inner block HTML (empty — no inner blocks).
  *   $block       \WP_Block  The block instance, carrying block.json metadata.
  *
  * @package Kntnt\Gpx_Blocks
@@ -18,5 +18,10 @@
 
 declare( strict_types = 1 );
 
-// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Render_Elevation is responsible for escaping its output.
-echo \Kntnt\Gpx_Blocks\Rendering\Render_Elevation::render( $attributes, $content, $block );
+$wrapper_attributes = get_block_wrapper_attributes( [ 'class' => 'kntnt-gpx-blocks-elevation' ] );
+
+printf(
+	'<div %1$s>%2$s</div>',
+	$wrapper_attributes, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- get_block_wrapper_attributes() returns pre-escaped HTML attributes.
+	esc_html__( 'GPX Elevation', 'kntnt-gpx-blocks' )
+);
