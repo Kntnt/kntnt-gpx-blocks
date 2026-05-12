@@ -208,7 +208,7 @@ tests/Unit/
 └── Rest/Preview_ControllerTest.php   — modified (already exists): assert that the response includes the statistics field with the expected shape
 ```
 
-Files **not created in Step 2**: `view.ts` (no Interactivity API yet — arrives in Step 6 with the cursor), `style.scss` / `editor.scss` (the placeholder boxes use inline styles on the rendered `<div>`; the SCSS files arrive in Step 3 when the SVG appears).
+Files **not created in Step 2**: `view.ts` (the file and its `data-wp-init`-based mount arrive in Step 3 with the SVG, per the Step-3 grilling decision; the cursor + Interactivity store wiring is layered on top of this existing file in Step 6), `style.scss` / `editor.scss` (the placeholder boxes use inline styles on the rendered `<div>`; the SCSS files arrive in Step 3 when the SVG appears).
 
 ### Acceptance criteria
 
@@ -255,34 +255,203 @@ When all acceptance criteria hold, follow the six-step release procedure documen
 
 ## Step 3: Responsive axes
 
-**Goal.** The block draws the X and Y axes inside a responsive SVG. No tick marks, no labels, no curve yet.
+**Goal.** The block draws the X and Y axes inside a responsive SVG. No tick marks, no labels, no curve yet. Beyond the visible deliverable, Step 3 carries three architectural payloads that Steps 4–7 build on: the handoff from Step 2's server-side info/warning boxes to client-side chart rendering, the shared geometry helpers under `src/blocks/elevation/geometry/`, and the per-mapId Interactivity state contract.
 
 **Load list:** `docs/blocks.md`
 
-The chart needs margins around the plotting area to leave room for tick labels. The margins are computed from the actual rendered text dimensions using the typography settings from the **Tick labels** panel.
+**v0.12.0 references:** none for the chart geometry itself — v0.12.0's hybrid SSR + JS approach is explicitly superseded by the *Rendering architecture* decision near the top of this document. `Render_Map`'s `wp_interactivity_state()` call at `classes/Rendering/Render_Map.php:330` is the structural template for Elevation's own state emission; the wrapper-directive pattern at `Render_Map.php:505–519` is the structural template for Elevation's wrapper. `MapEdit`'s `getDefaultMinHeight()` mechanism at `src/blocks/map/edit.tsx:1219–1232` is the structural template for the inline `min-height: 15vh` injection in `edit.tsx`.
 
-1. **Left margin `w_left`:**
-   - Identify min and max elevation values for the Y axis.
-   - Build their label strings (e.g. `"-10 m"`, `"1050 m"`).
-   - Measure the rendered width of the wider of the two strings with the Tick labels typography settings.
-   - `w_left = measured_width + 0.5em`.
-2. **Bottom margin `h`:**
-   - Measure the rendered height of a reference string that contains extreme glyphs (e.g. `"-0,123456789"`).
-   - `h = measured_height + 0.5em`.
-3. **Right margin `w_right`:**
-   - Predict the label for the largest value on the X axis (e.g. `"12,5 km"`).
-   - Measure its width.
-   - `w_right = measured_width / 2 + 0.5em`. The half-width comes from the fact that the last X label is centred under its tick, so only half of it can overflow the plotting area; `w_right` keeps that overflow clear of the container's right edge.
-4. **Container dimensions:** read the **content box's** pixel `W` (width) and `H` (height) — i.e. the rectangle inside any padding the user has set in the Dimensions panel, *not* the border box. The chart is drawn into the content box; padding remains as visible whitespace between the wrapper edge and the SVG edge. With CSS `box-sizing: content-box` (the WordPress default for block wrappers), `element.clientWidth - paddingLeft - paddingRight` and `element.clientHeight - paddingTop - paddingBottom` give the content box, but the more robust approach is to read the SVG's own `getBoundingClientRect()` once the SVG is mounted as a normal-flow child of the wrapper — the SVG sits inside the content box by virtue of CSS layout, so its bounding rect *is* the content box.
-5. **SVG setup:** create an SVG with `width="100%"`, `height="100%"`, `viewBox="0 0 W H"`. The SVG is a normal-flow child of the wrapper `<div>`, so `100%` resolves against the content box and the SVG fills exactly that rectangle. This gives a 1:1 mapping between pixels and SVG units inside the content box.
-6. **Draw the axes:**
-   - X axis: line from `(w_left, H − h)` to `(W − w_right, H − h)`.
-   - Y axis: line from `(w_left, H − h)` to `(w_left, 0)`.
+### Rendering architecture (locked by the Step 3 grilling)
 
-### Notes
+The cross-cutting "JS owns everything from here on" decision (see *Rendering architecture* near the top of this document) materialises in Step 3. Specific shapes locked during grilling:
 
-1. Steps 4–6 of the algorithm above re-run on every container resize.
-2. Axis lines use the colour from `Color → Axis`.
+**view.ts arrives in Step 3, not Step 6.** Step 2's earlier parenthetical that the file "arrives in Step 6 with the cursor" was corrected during grilling (and the parenthetical patched): the file lands in Step 3 with the chart mount via `data-wp-init="callbacks.initElevation"`. Step 6 adds cursor + store-write wiring on top of this existing file; Step 3 makes no store writes and does not yet read `state[mapId].fraction`.
+
+**Shared geometry, host-specific instantiation.** The math (margin computation, nice-tick generation, m/km switching, label formatting) lives under `src/blocks/elevation/geometry/` as pure helper modules. Editor (`chart.tsx`, React) and frontend (`view.ts`, vanilla DOM under Interactivity) consume the same helpers but construct the SVG independently — React JSX in `chart.tsx`, `document.createElementNS` in `view.ts`. The duplication is small for Step 3 (two `<line>` elements per side) and the locked architecture explicitly accepts it as the price of host independence.
+
+**Text measurement via SVG `<text>` + `getBBox()`.** The measurement primitive lives at `geometry/measure.ts`. It inserts a hidden `<text>` element into the chart SVG with the Tick labels typography applied, reads `getBBox()` for both width and height, removes the element. Measurement is byte-faithful to the eventual visible labels (Step 4) because both pass through SVG's text-rendering pipeline — no HTML-vs-SVG measurement drift. The trade-off is that measurement is coupled to SVG mount; React handles this via a two-pass `useLayoutEffect` (mount → measure → setState → re-render with axes), and `view.ts` handles it imperatively inside its `initElevation` callback.
+
+### Wrapper sizing (locked by Q6)
+
+`src/blocks/elevation/style.scss` sets `min-height: 15vh` on `.wp-block-kntnt-gpx-blocks-elevation`. **No aspect-ratio default.** `edit.tsx` follows the same `getDefaultMinHeight()`-style pattern Map uses today: it injects inline `minHeight: '15vh'` on `useBlockProps().style` *iff* the user has not set `style.dimensions.minHeight`. `Render_Elevation::render_chart_wrapper()` mirrors this server-side via `get_block_wrapper_attributes()` (core's Dimensions block-supports machinery, populated by a `Dimensions_Defaults`-style filter for the elevation namespace). Core's Dimensions panel overrides everything; standard CSS cascade, no special-case PHP/JS logic.
+
+Map's analogous `aspect-ratio: 3 / 1 + min-height: 30vh` combination was identified as a bug during this grilling — the two mechanisms duplicate the height-defining role and let bredd indirectly drive höjd in a way the user never asked for. Map's wrapper is reduced to `min-height: 30vh` alone in Step 8.
+
+### Margin algorithm (locked by Q2 + Q3)
+
+The Step 1 spec's algorithm (six numbered steps from "Identify min and max elevation values" through "Draw the axes") is reformulated to consume **the nice-tick labels Step 4 will draw**, not raw `min_elevation` / `max_elevation` / `distance` values. The nice-tick helper that Step 4's spec originally introduced (tick-count derivation, nice-step rounding, m/km switching) **moves into Step 3** at `geometry/ticks.ts`. Step 4 reduces to "draw the ticks and labels Step 3 already computed".
+
+Concrete margin formulas:
+
+- `w_left = measure( widest( niceYLabels ) ).width + 0.5em`
+- `w_right = measure( last( niceXLabels ) ).width / 2 + 0.5em`
+- `h = measure( "-0,123456789" ).height + 0.5em`
+
+Where:
+
+- `niceYLabels` are the formatted tick labels over the Y range `[min_elevation, max_elevation]` (with the inflated `[min−1, min+1]` substitution from *Degenerate ranges* below when `min === max`).
+- `niceXLabels` are the formatted tick labels over the X range `[0, distance]`, with Step 4's m/km switching rule applied: if more than half of the non-zero X tick values are ≥ 1000, the whole axis converts to km, the last label gets the `" km"` suffix, intermediate labels are unitless.
+- `"-0,123456789"` is a fake reference string of extreme glyphs whose **height** (not width) drives `h`. The same character height applies to any realistic numeric label, so no axis-specific computation is needed for `h`.
+- `em` is the Tick labels' computed font-size — pragmatically returned by `measure()` alongside `width` and `height`, so callers do not need to re-resolve the typography. (See *Axis appearance* below for the choice of font-size as the `em` base.)
+
+### Container dimensions and SVG setup
+
+The SVG's own `getBoundingClientRect()` is the content box by virtue of CSS layout — the SVG is a normal-flow child of the wrapper with `width: 100%; height: 100%;`, so its rendered rectangle sits inside any padding the user has set in the Dimensions panel. Reading the SVG's BCR sidesteps the box-sizing question entirely (no `clientWidth − paddingLeft − paddingRight` arithmetic).
+
+`<svg width="100%" height="100%" viewBox="0 0 W H">` with `W`/`H` taken from the BCR gives a 1:1 mapping between viewport pixels and SVG user units inside the content box.
+
+### Axis appearance (locked by Q9)
+
+- **Stroke width: `1` (unitless, interpreted as user units → 1 px at the SVG's 1:1 mapping).** Fixed, not user-configurable (no Stroke Width inspector control in Step 1).
+- **Stroke colour: `var(--kntnt-gpx-blocks-elevation-axis)`.** Wired through Step 1's `usefulValue()`-wrapped colour attribute; inline custom-property emitted on the wrapper in `edit.tsx` and `Render_Elevation`; default value in `style.scss`.
+- **`em` base for the margin formulas:** the Tick labels' computed font-size. `0.5em` of padding therefore scales 1:1 with the etikett-typografi the user has chosen — a doubling of font-size doubles the marginal-padding.
+- **Axes drawn:**
+  - X axis: `<line x1="${wLeft}" y1="${H - h}" x2="${W - wRight}" y2="${H - h}" stroke="var(--kntnt-gpx-blocks-elevation-axis)" stroke-width="1" />`
+  - Y axis: `<line x1="${wLeft}" y1="${H - h}" x2="${wLeft}" y2="0" stroke="var(--kntnt-gpx-blocks-elevation-axis)" stroke-width="1" />`
+
+### Degenerate ranges (locked by Q7)
+
+Three cases trigger non-default behaviour. The healthy-path chart rendering applies only when none of A/B/C is in effect.
+
+- **Case A — `min_elevation === null` or `max_elevation === null`.** GPX track has no `<ele>` data. `Render_Elevation::render_warning('no_elevation_data')` displays the localised string *"Det inbundna GPX-spåret saknar höjddata. Höjdprofilen kan inte renderas."*. Same orsak handled by `preview.tsx` in the editor.
+- **Case B — `min_elevation === max_elevation` (non-null, flat track).** Y range is inflated to `[min − 1, min + 1]` (one metre symmetric around the value) for tick generation and axis drawing. Chart draws normally; the curve in Step 5 will be a horizontal line through the middle of the plot area. This is the only B-case that affects geometry; the warning system is not invoked.
+- **Case C — `distance === 0`.** No track to render. `Render_Elevation::render_warning('zero_distance')` displays *"Det inbundna GPX-spåret saknar avstånd (alla punkter ligger på samma position)."*. Same orsak in `preview.tsx`.
+
+The five PHP-side warning reasons after Step 3 are: `no_map_on_page`, `bound_map_deleted`, `bound_map_unconfigured` (Step 2), `no_elevation_data`, `zero_distance` (Step 3).
+
+### Transient editor states (locked by Q10)
+
+- **Loading (`useBoundMapPayload` returns `isLoading: true`).** `chart.tsx` returns `null`; the wrapper still occupies its `min-height: 15vh` slot. Chart pops in when data lands. No spinner, no skeleton — sub-100 ms latency is invisible.
+- **REST error (`useBoundMapPayload` returns `error`).** `preview.tsx` switches to a sixth warning reason `payload_error` (editor-only — frontend cannot reach this state because PHP server-renders the state payload). Localised string draft: *"Kunde inte hämta data för det inbundna GPX-spåret. Försök ladda om sidan."*. The full error is logged to `console.error` for DevTools users. `payload_error` is **not** added to PHP's `render_warning()` enum.
+- **Font-loading.** Both `chart.tsx` and `view.ts` `await document.fonts.ready` before the first measurement, and attach a `document.fonts.addEventListener('loadingdone', …)` listener that re-runs measurement when late-loaded fonts arrive. In React this materialises as a `fontsReady` state that gatekeepers `useLayoutEffect`; in vanilla view.ts the `await` happens inline inside `initElevation`.
+
+### Interactivity state and wrapper directives (locked by Q8)
+
+Per-mapId state-slot merge. `Render_Elevation::render()`, in healthy state, calls
+
+```php
+wp_interactivity_state( 'kntnt-gpx-blocks', [
+    $map_id => [
+        'statistics' => [
+            'min_elevation' => $min,
+            'max_elevation' => $max,
+            'distance'      => $distance,
+        ],
+    ],
+] );
+```
+
+This *merges* with Map's per-mapId emission (which carries `geojson`, `totalDistance`, `fraction: null`, etc., per `Render_Map.php:330`). The result on the client: `state.kntntGpxBlocks[mapId].statistics.{min_elevation, max_elevation, distance}` alongside `state.kntntGpxBlocks[mapId].geojson` (the Step 5 curve consumer) and `state.kntntGpxBlocks[mapId].fraction` (the Step 6 cursor consumer). **Map's `Render_Map.php` is not touched.**
+
+Wrapper HTML pattern, parallel to `Render_Map`:
+
+```html
+<div [block-wrapper-attrs]
+     role="img"
+     aria-label="<i18n: Elevation profile of GPX track>"
+     data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'
+     data-wp-context='{"mapId":"…"}'
+     data-wp-init="callbacks.initElevation">
+  <noscript><p>This elevation profile requires JavaScript to display. The track is recorded in the GPX file referenced by this block.</p></noscript>
+</div>
+```
+
+`role="img"` (not `application`) because Step 3's chart is non-interactive. Step 6's cursor upgrades the role to `application`. `data-wp-watch--cursor` is added in Step 6, not here.
+
+view.ts skeleton:
+
+```ts
+import { store, getContext } from '@wordpress/interactivity';
+
+store('kntnt-gpx-blocks', {
+  callbacks: {
+    async initElevation() {
+      const ctx = getContext<{ mapId: string }>();
+      const { state } = store('kntnt-gpx-blocks');
+      const slice = state[ctx.mapId];
+      await document.fonts.ready;
+      // mount SVG, create measurer, compute margins, draw axes, observe resize
+    },
+  },
+});
+```
+
+### File layout for Step 3
+
+```
+src/blocks/elevation/
+├── block.json                                — modified: adds viewScriptModule, style, editorStyle
+├── view.ts                                   — NEW: vanilla mount under Interactivity API
+├── chart.tsx                                 — NEW: React component, healthy-state SVG host
+├── chart.test.tsx                            — NEW: RTL tests; stubs getBBox in jsdom
+├── style.scss                                — NEW: wrapper baseline (min-height 15vh, axis CSS variable default)
+├── editor.scss                               — NEW: editor-only overrides (often empty in Step 3; reserved for Step 4+ tweaks)
+├── edit.tsx                                  — modified: inline minHeight + axis CSS variable injection
+├── preview.tsx                               — modified: switch extended with <Chart> (healthy) and payload_error (editor-only)
+├── render.php                                — modified: thin proxy delegating to Render_Elevation's extended render()
+└── geometry/
+    ├── ticks.ts                              — NEW: nice-tick generator (Y + X, m/km switch)
+    ├── ticks.test.ts                         — NEW
+    ├── format.ts                             — NEW: label formatting (m/km units, locale-aware decimals)
+    ├── format.test.ts                        — NEW
+    ├── margins.ts                            — NEW: computeMargins(data, typography, measureFn) → {wLeft, wRight, h, em}
+    ├── margins.test.ts                       — NEW: injects mock measureFn; fully DOM-free
+    └── measure.ts                            — NEW: createTextMeasurer(svg) → (text, typography) → {width, height, fontSize}
+
+classes/Rendering/
+└── Render_Elevation.php                      — modified: render_info() removed; render_chart_wrapper() added; render_warning() extended to 5 reasons
+
+tests/Unit/
+└── Render_ElevationTest.php                  — modified: tests for new warning reasons (no_elevation_data, zero_distance) and render_chart_wrapper (state emission, attribute escaping)
+```
+
+The seam between pure helpers and DOM-bound work runs through `geometry/`: everything in there *except* `measure.ts` is fully unit-testable without DOM. `measure.ts`'s logic that does not depend on `getBBox` (applying typography attributes to a `<text>` element) is testable in isolation; the `getBBox` call itself is integration-verified via WordPress Playground.
+
+### Acceptance criteria
+
+Step 3 is considered done — and `v0.13.3` may be tagged — when **all** of the following hold.
+
+**Behaviour:**
+
+1. The block still appears in the inserter under the "Kntnt" category with the Step-1 name and icon (no regression).
+2. `block.json`'s 35 attributes and 6 `supports` blocks are unchanged from Step 1. New fields added: `viewScriptModule`, `style`, `editorStyle`.
+3. **Wrapper sizing:** `style.scss` declares `min-height: 15vh` on `.wp-block-kntnt-gpx-blocks-elevation`; `edit.tsx` and `Render_Elevation` inject inline `min-height: 15vh` iff the user has not set `style.dimensions.minHeight`. No aspect-ratio default. Core's Dimensions panel overrides everything via the normal cascade.
+4. **Healthy state** (binding resolves to a configured Map with usable data, none of A/B/C triggered): two `<line>` elements drawn inside a `<svg viewBox="0 0 W H" width="100%" height="100%">`, sized by the margin algorithm. `stroke-width="1"`, `stroke="var(--kntnt-gpx-blocks-elevation-axis)"`. No ticks, no labels, no curve.
+5. **Margin algorithm:** `w_left` uses the widest nice-Y-label width; `w_right` uses the last nice-X-label half-width; `h` uses the height of `"-0,123456789"`. All three add `0.5em` where `em` is the Tick labels' computed font-size. Nice-tick generation (Y + X) and m/km switching live in `geometry/ticks.ts`; the unit-switch threshold (Step 4 rule 3: more than half of non-zero X ticks ≥ 1000 ⇒ km) is observed.
+6. **Editor preview:** `chart.tsx` is mounted inside `preview.tsx`'s healthy branch. It uses `useRef` on the SVG, `useLayoutEffect` for measurement (deps: data + typography), and a separate `useEffect` to attach `ResizeObserver` to the SVG element. ResizeObserver triggers axis redraw but does **not** re-run measurement (margins depend only on typography and data, neither of which the wrapper-size change implies).
+7. **Frontend:** `view.ts`'s `initElevation` callback runs once per Elevation block on the page. It reads `state[ctx.mapId].statistics`, awaits `document.fonts.ready`, mounts SVG, measures, draws axes, sets up `ResizeObserver` on the SVG element. No store writes in Step 3.
+8. **Font-loading:** both editor and frontend wait on `document.fonts.ready` before the first measurement and re-measure on `document.fonts`' `loadingdone` event.
+9. **Degenerate ranges:** Case A (`min` or `max` is `null`) → `render_warning('no_elevation_data')` + matching `preview.tsx` branch. Case B (`min === max`) → Y range inflated to `[min−1, min+1]`, chart renders. Case C (`distance === 0`) → `render_warning('zero_distance')` + matching `preview.tsx` branch.
+10. **Editor transient states:** `useBoundMapPayload` `isLoading: true` → `chart.tsx` returns `null` (wrapper still occupies 15vh). `useBoundMapPayload` `error` → `preview.tsx` shows the `payload_error` warning (editor-only; not in PHP's `render_warning()` enum).
+11. **Interactivity state contract:** `Render_Elevation::render()` in healthy state merges `{ 'statistics' => […] }` onto `state[mapId]` via `wp_interactivity_state('kntnt-gpx-blocks', …)`. Map's `Render_Map.php` is unchanged.
+12. **Wrapper directives:** `data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'`, `data-wp-context='{"mapId":"…"}'`, `data-wp-init="callbacks.initElevation"`, `role="img"`, translatable `aria-label`, `<noscript>` fallback. `data-wp-watch--cursor` arrives in Step 6 — not here.
+13. **Step 2 obsolete pieces removed:** `Render_Elevation::render_info()` is deleted; `preview.tsx`'s healthy-state info-box is replaced by `<Chart>`. Step 2 acceptance criterion 8 (the *"Bound to {label}. Min: {min} m, Max: {max} m."* string) is no longer a contract.
+
+**Gates (must all pass at HEAD before tagging):**
+
+14. `npm run build`.
+15. `composer test` (Pest) — including the extended `Render_ElevationTest` for `no_elevation_data`, `zero_distance`, and `render_chart_wrapper` (state-emission shape, wrapper-attribute escaping).
+16. `vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M`.
+17. `npm run test:js` — including the new `geometry/ticks.test.ts`, `geometry/format.test.ts`, `geometry/margins.test.ts` (with mock measureFn), `chart.test.tsx`, and the extended `preview.test.tsx` for the `payload_error` branch.
+18. `npx wp-scripts lint-js src/blocks/`.
+
+**Manual verification in WordPress Playground (`@wp-playground/cli`):**
+
+19. Insert one configured Map, then insert Elevation: two axis lines appear in the editor preview; same after save on the frontend.
+20. Resize the browser window: axes reposition (X axis at the bottom, Y axis at the left), wrapper height obeys `15vh` (or user-set value).
+21. Change Tick labels font-size to double the default: margins recompute, Y axis moves right and X axis moves up to accommodate the larger labels.
+22. Change Color → Axis in the inspector: axis stroke colour updates live in the editor; same on the frontend after save.
+23. **Case B verification** — track with `min_elevation === max_elevation` (e.g. a deliberately flat GPX): chart renders with the inflated `[min−1, min+1]` Y range; axes look normal.
+24. **Case A verification** — track without `<ele>` elements: `no_elevation_data` warning replaces the chart in both editor and frontend.
+25. **Case C verification** — single-point GPX (`distance === 0`): `zero_distance` warning.
+26. **Webfont verification** — theme that lazy-loads a Google Font for Tick labels typography: chart shows correct margins after the font finishes loading; no permanent margin error based on fallback-font metrics; the axes may briefly reposition once when the font lands (`loadingdone` listener fires).
+27. Two Elevation blocks bound to different Map blocks on the same page: both render independently with correct per-map data.
+28. **Frontend state inspection** — view the rendered page's source and confirm the Interactivity state JSON contains `kntnt-gpx-blocks.<mapId>.statistics` with the correct min/max/distance values for the bound track.
+29. **REST-error verification** — in the editor, use DevTools to block requests to `/wp-json/kntnt-gpx-blocks/v1/preview/<attachmentId>`: `payload_error` warning replaces the chart.
+
+### Release
+
+When all acceptance criteria hold, follow the six-step release procedure documented in `AGENTS.md` (section *Cutting a release*). Tag `v0.13.3`. Commit message: `Release v0.13.3 — Step 3: responsive axes with client-side rendering`.
 
 ---
 
@@ -369,13 +538,17 @@ Cursor colour comes from `Color → Cursor`.
 
 ---
 
-## Step 8: Migrate GPX Map to the shared `TypographyToolsPanel`
+## Step 8: Migrate GPX Map to the shared `TypographyToolsPanel`, fix the wrapper-sizing default, and expose `mapId` in the inspector
 
-**Goal.** Map's two hardcoded Typography panels (*Waypoint name*, *Waypoint description*) are replaced with the shared `TypographyToolsPanel` component introduced in Step 1. No user-visible behaviour changes; this is a pure deduplication.
+**Goal.** Three changes on Map:
+
+1. Map's two hardcoded Typography panels (*Waypoint name*, *Waypoint description*) are replaced with the shared `TypographyToolsPanel` component introduced in Step 1 (pure deduplication, no user-visible behaviour change).
+2. Map's wrapper-sizing default is reduced to `min-height: 30vh` only — the `aspect-ratio: 3 / 1` in `src/blocks/map/style.scss` is removed. The two together duplicate the height-defining mechanism (whichever is larger wins at any given width), which makes the rendered height bredd-beroende in a way the user never asked for. This is a real user-visible change: at widths where the aspect-ratio used to dominate (roughly ≥ 90 vw on a typical viewport), Map wrappers will be shorter after Step 8 than before. That is the intended outcome; users who want the old behaviour can set `aspectRatio` themselves via the Dimensions panel.
+3. The Map block's auto-generated `mapId` is surfaced read-only in the inspector with click-to-copy. The id has been an internal attribute since v0.13.0 (auto-assigned by `useEnsureUniqueMapId`, used by the cursor-sync store key and by `Resolve_Map_Id`), but the editor has had no way to *see* it. Step 8 exposes it so the user can paste it into `[kntnt-gpx <key> map="<id>"]` shortcodes (and into the GPX Elevation picker's "explicit mapId" path) when a page has more than one GPX Map. This is the implementation of the favoured direction from [#137](https://github.com/Kntnt/kntnt-gpx-blocks/issues/137) — surface the existing identifier rather than introduce a new one.
 
 **Load list:** `docs/blocks.md`
 
-This is the **first step where Map's source files are modified** — the no-touch rule that applied to Steps 0–7 lifts here. The migration is mechanical because the shared component was designed to handle Map's two prefixes (`tooltipName`, `tooltipDesc`) from Step 1 and its prefix-mapping unit test already covers them.
+This is the **first step where Map's source files are modified** — the no-touch rule that applied to Steps 0–7 lifts here. The TypographyToolsPanel migration is mechanical because the shared component was designed to handle Map's two prefixes (`tooltipName`, `tooltipDesc`) from Step 1 and its prefix-mapping unit test already covers them. The wrapper-sizing fix is a one-line SCSS removal plus test adjustments. The mapId exposure is small and self-contained — a read-only inspector row plus a click handler.
 
 **Tasks:**
 
@@ -383,11 +556,17 @@ This is the **first step where Map's source files are modified** — the no-touc
    - One with `prefix="tooltipName"`, title "Waypoint name", default-visibility matching Map's current panel.
    - One with `prefix="tooltipDesc"`, title "Waypoint description", default-visibility matching Map's current panel.
 2. Verify in the editor that both panels render identically to before, that ToolsPanel ellipsis / ResetAll behave correctly, and that attribute reads/writes still hit the same `tooltipName*` / `tooltipDesc*` keys.
-3. Remove any helper code in `src/blocks/map/` that the migration leaves dead.
-4. Run all gates (build, PHPStan, JS lint, JS tests, PHP tests).
-5. Release as `v0.13.8` per the per-step release procedure. Commit message: `Release v0.13.8 — Step 8: migrate GPX Map to shared TypographyToolsPanel`.
+3. Remove the `aspect-ratio: 3 / 1;` line from `src/blocks/map/style.scss`, leaving only `min-height: 30vh;` as the wrapper-sizing baseline. The comment block in `style.scss` that explains the dual-mechanism rationale (around the `aspect-ratio` line) is removed alongside it; what survives is "use `min-height: 30vh` as the default, let core's Dimensions block-supports override when the user sets anything explicit".
+4. Adjust `getDefaultMinHeight()` and the corresponding PHP-side `Dimensions_Defaults` filter so their condition is **"user has not set `minHeight`"** rather than the current **"user has set neither `minHeight` nor `aspectRatio`"**. A user-set `aspectRatio` no longer suppresses the default min-height; if both are set, both apply and the larger one wins at any given width (normal CSS cascade).
+5. Update Map's `edit.test.tsx` cases that cover the default-min-height permutations — at minimum the four tests around lines 537–598 that assert behaviour conditional on `aspectRatio` being set or blank. The post-Step-8 contract is simpler: 30vh is injected iff `minHeight` is blank.
+6. **Expose `mapId` in the inspector with click-to-copy.** Add a read-only row to Map's Settings tab — a small labelled control (label: `Map ID`, translatable) whose value is the block's current `mapId`. The value is rendered as monospace inline text (e.g. inside a `<code>` element styled as a button), and a single click on it copies the id to the clipboard via `navigator.clipboard.writeText()`, with a transient success notice (e.g. `wp.data.dispatch('core/notices').createNotice('success', __('Map ID copied to clipboard', 'kntnt-gpx-blocks'), { type: 'snackbar', isDismissible: true })`). The row is shown only when `mapId` is non-empty (i.e. after `useEnsureUniqueMapId` has assigned one — Step 2's empty-mapId derived rule still applies on the Elevation side). No editing affordance: the id is read-only because it is the cross-block binding key, and re-typing it would silently break every Statistics shortcode and Elevation block already bound to the old value. Place the row in a sensible existing panel (or a tiny new `Map ID` ToolsPanel — pick whichever fits Map's current inspector layout best at implementation time). Add a co-located Jest test asserting the click writes the id to `navigator.clipboard` and emits the snackbar.
+7. Remove any helper code in `src/blocks/map/` that the migrations leave dead.
+8. Run all gates (build, PHPStan, JS lint, JS tests, PHP tests).
+9. Release as `v0.13.8` per the per-step release procedure. Commit message: `Release v0.13.8 — Step 8: migrate GPX Map to shared TypographyToolsPanel, fix wrapper-sizing default, expose mapId`.
 
 **Note on Border & Shadow.** The Map block already uses core's standard two-panel layout (one `ToolsPanel` for Border via `supports.__experimentalBorder`, one for Box Shadow via `supports.shadow`) — there is no custom Border-and-Shadow component to refactor. The Border/Shadow surface is left untouched.
+
+**Note on the wrapper-sizing decision provenance.** Task 3 was added during Step 3's design grilling (commit history will show this), after the same single-mechanism choice was made for Elevation's own wrapper (`min-height: 15vh`, no aspect-ratio). Step 3's choice surfaced the latent ambiguity in Map's existing defaults; this task makes both blocks consistent.
 
 ---
 
