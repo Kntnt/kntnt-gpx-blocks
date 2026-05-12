@@ -45,14 +45,44 @@
 	// inline style by `useBlockProps()` / `Render_Elevation`).
 	--kntnt-gpx-blocks-elevation-axis: #1e1e1e;
 
-	// The chart SVG fills the wrapper's content box. `display: block`
-	// removes the inline-element baseline gap; `width/height: 100%`
-	// + the wrapper's relative positioning gives the SVG a definite
-	// size for `getBoundingClientRect()` to read. The font-* family
-	// inheritance feeds the measurer's hidden <text> nodes so they
-	// measure under the same typography pipeline that Step 4 will
-	// use for the visible labels.
+	// The chart SVG fills the wrapper's rendered content box via
+	// absolute positioning so its viewBox-derived intrinsic ratio
+	// does not influence the wrapper's height. Three concrete bugs
+	// avoided by this rule:
+	//
+	//   1. After the user resets aspect-ratio to Original, the SVG's
+	//      previous viewBox (e.g. 600×450 from a 4:3 render) would
+	//      otherwise drag the wrapper into the same shape via the
+	//      replaced-element sizing rules — the user-visible symptom
+	//      is "the aspect-ratio retains its last value in the editor"
+	//      even though `aspect-ratio: auto` is in the inline style.
+	//   2. A freshly inserted block whose wrapper has only
+	//      `min-height: 15vh` (no explicit `height`) gives the SVG no
+	//      definite percentage-height base. `height: 100%` does not
+	//      resolve, so the SVG falls back to the SVG-spec default
+	//      300×150 and the wrapper grows to contain it.
+	//   3. When the user enlarges `min-height` in the inspector, the
+	//      SVG (sized by its own viewBox + intrinsic-ratio fallback)
+	//      does not grow with the wrapper, and the chart appears
+	//      frozen at the initial render size.
+	//
+	// Absolute positioning with `inset: 0` takes the SVG out of
+	// normal flow: it fills the wrapper's content box regardless of
+	// what determines that content box's height (min-height,
+	// aspect-ratio, or an explicit user value). The wrapper's
+	// `position: relative` above is the anchor for the absolute
+	// positioning. `width/height: 100%` is kept alongside `inset: 0`
+	// for SVG-as-replaced-element correctness — some browsers honour
+	// only the explicit width/height when the intrinsic ratio is
+	// present.
+	//
+	// The font-* family inheritance still flows through normally so
+	// the measurer's hidden <text> nodes measure under the same
+	// typography pipeline that later steps use for the visible
+	// labels.
 	.kntnt-gpx-blocks-elevation-chart-svg {
+		position: absolute;
+		inset: 0;
 		display: block;
 		width: 100%;
 		height: 100%;
