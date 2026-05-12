@@ -296,6 +296,7 @@ export function ElevationEdit( {
 				<InspectorDataSource
 					mapId={ mapId }
 					mapOptions={ mapOptions }
+					bindingBroken={ resolution.bindingBroken }
 					onChange={ ( value: string ) =>
 						setAttributes( { mapId: value } )
 					}

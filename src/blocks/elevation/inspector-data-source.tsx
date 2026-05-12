@@ -8,11 +8,21 @@
  * which decides whether to mount this component at all; the
  * component itself simply renders the panel when invoked.
  *
- * The `SelectControl` shows one option per configured GPX Map block in
- * pre-order document traversal. A broken binding (the current `mapId`
- * does not match any picker entry) renders the control with no
- * matching value — the standard `SelectControl` default-behaviour. No
- * synthetic ghost entry is added.
+ * **Broken-binding placeholder option (correction to the Step 2 spec).**
+ * When the binding is broken (`bindingBroken === true`), the picker
+ * prepends a synthetic empty-value placeholder option labelled
+ * "— Select a GPX Map —". The Step 2 spec originally said no synthetic
+ * placeholder would be added because the `SelectControl` would "render
+ * with no matching value — the WordPress default behaviour (an empty
+ * selection visually, with the dropdown invitation still active)".
+ * That assumption turned out to be wrong: a native `<select>` with a
+ * `value` that does not match any option falls back to displaying the
+ * **first** option as selected, which (a) misleads the user into
+ * thinking the first remaining Map is already bound, and (b) swallows
+ * the click on that option because the displayed selection does not
+ * change. The placeholder repairs both symptoms — the displayed
+ * selection is the empty placeholder, and a click on any real option
+ * fires `onChange` because the displayed selection does change.
  *
  * @since 1.0.0
  */
@@ -31,6 +41,7 @@ import type { MapPickerOption } from './use-map-blocks';
 export interface InspectorDataSourceProps {
 	readonly mapId: string;
 	readonly mapOptions: readonly MapPickerOption[];
+	readonly bindingBroken: boolean;
 	readonly onChange: ( value: string ) => void;
 }
 
@@ -47,7 +58,23 @@ export interface InspectorDataSourceProps {
 export function InspectorDataSource(
 	props: InspectorDataSourceProps
 ): JSX.Element {
-	const { mapId, mapOptions, onChange } = props;
+	const { mapId, mapOptions, bindingBroken, onChange } = props;
+
+	// See file-level docblock for why the broken-binding state prepends
+	// a synthetic placeholder option. The placeholder's empty value
+	// matches the bindingBroken sentinel (`mapId` value is stale and
+	// won't match anything else either), so the rendered selection lands
+	// on the placeholder and a click on any real option produces a
+	// genuine onChange event.
+	const optionsForControl = bindingBroken
+		? [
+				{
+					label: __( '— Select a GPX Map —', 'kntnt-gpx-blocks' ),
+					value: '',
+				},
+				...mapOptions,
+		  ]
+		: mapOptions;
 
 	return (
 		<InspectorControls>
@@ -57,7 +84,7 @@ export function InspectorDataSource(
 					__nextHasNoMarginBottom
 					label={ __( 'Map', 'kntnt-gpx-blocks' ) }
 					value={ mapId }
-					options={ mapOptions.map( ( option ) => ( {
+					options={ optionsForControl.map( ( option ) => ( {
 						label: option.label,
 						value: option.value,
 					} ) ) }
