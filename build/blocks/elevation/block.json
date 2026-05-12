@@ -13,5 +13,169 @@
   ],
   "textdomain": "kntnt-gpx-blocks",
   "editorScript": "file:./index.js",
-  "render": "file:./render.php"
+  "render": "file:./render.php",
+  "supports": {
+    "align": [
+      "wide",
+      "full"
+    ],
+    "anchor": true,
+    "__experimentalBorder": {
+      "color": true,
+      "radius": true,
+      "style": true,
+      "width": true
+    },
+    "shadow": true,
+    "dimensions": {
+      "aspectRatio": true,
+      "minHeight": true
+    },
+    "spacing": {
+      "padding": true,
+      "margin": true
+    }
+  },
+  "attributes": {
+    "mapId": {
+      "type": "string",
+      "default": "auto"
+    },
+    "tooltipShowDistance": {
+      "type": "boolean",
+      "default": true
+    },
+    "tooltipShowHeight": {
+      "type": "boolean",
+      "default": true
+    },
+    "backgroundColor": {
+      "type": "string",
+      "default": ""
+    },
+    "plotLineColor": {
+      "type": "string",
+      "default": ""
+    },
+    "cursorColor": {
+      "type": "string",
+      "default": ""
+    },
+    "axisColor": {
+      "type": "string",
+      "default": ""
+    },
+    "axisLabelColor": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipBackgroundColor": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceColor": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightColor": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelFontStyle": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelLineHeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelLetterSpacing": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelTextTransform": {
+      "type": "string",
+      "default": ""
+    },
+    "tickLabelTextDecoration": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceFontStyle": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceLineHeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceLetterSpacing": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceTextTransform": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipDistanceTextDecoration": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightFontFamily": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightFontSize": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightFontWeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightFontStyle": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightLineHeight": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightLetterSpacing": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightTextTransform": {
+      "type": "string",
+      "default": ""
+    },
+    "tooltipHeightTextDecoration": {
+      "type": "string",
+      "default": ""
+    }
+  }
 }
