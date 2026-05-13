@@ -192,6 +192,7 @@ import {
 	computeLineMidpoint,
 	pickFirstWaypoint,
 	pickPreviewAnchor,
+	resolveLayerStyle,
 } from './editor-preview';
 
 /**
@@ -930,6 +931,243 @@ describe( 'MapEditorPreview tooltip preview anchoring (issue #92)', () => {
 		expect(
 			tooltipEl!.querySelector( '.kntnt-gpx-blocks-tooltip-desc' )
 		).not.toBeNull();
+
+		await act( async () => {
+			root.unmount();
+		} );
+		container.remove();
+	} );
+} );
+
+describe( 'resolveLayerStyle (issue #138)', () => {
+	it( 'returns the waypointColor for Point features with both stroke and fill', () => {
+		const point: GeoJSON.Feature = {
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: [ 0, 0 ] },
+			properties: {},
+		};
+
+		const style = resolveLayerStyle( point, '#0073aa', '#facc15' );
+
+		expect( style ).toEqual( {
+			color: '#facc15',
+			fillColor: '#facc15',
+		} );
+	} );
+
+	it( 'returns the trackColor for non-Point features without touching the fill', () => {
+		const line: GeoJSON.Feature = {
+			type: 'Feature',
+			geometry: {
+				type: 'LineString',
+				coordinates: [
+					[ 0, 0 ],
+					[ 1, 1 ],
+				],
+			},
+			properties: {},
+		};
+
+		const style = resolveLayerStyle( line, '#0073aa', '#facc15' );
+
+		expect( style ).toEqual( { color: '#0073aa' } );
+		expect( style ).not.toHaveProperty( 'fillColor' );
+	} );
+
+	it( 'falls back to the documented defaults when the matching color is empty', () => {
+		const point: GeoJSON.Feature = {
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: [ 0, 0 ] },
+			properties: {},
+		};
+		const line: GeoJSON.Feature = {
+			type: 'Feature',
+			geometry: {
+				type: 'LineString',
+				coordinates: [
+					[ 0, 0 ],
+					[ 1, 1 ],
+				],
+			},
+			properties: {},
+		};
+
+		expect( resolveLayerStyle( point, '', '' ) ).toEqual( {
+			color: '#d63638',
+			fillColor: '#d63638',
+		} );
+		expect( resolveLayerStyle( line, '', '' ) ).toEqual( {
+			color: '#0073aa',
+		} );
+	} );
+} );
+
+describe( 'MapEditorPreview waypoint colour live update (issue #138)', () => {
+	it( 'restyles waypoint markers with the new colour when waypointColor changes after mount', async () => {
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+
+		// Initial render with the documented "no colour set" attribute
+		// values (empty strings — SCSS fallbacks for the frontend, hardcoded
+		// constants for the preview). The mount effect picks up these
+		// initial values from the closure.
+		await act( async () => {
+			root.render(
+				createElement( MapEditorPreview, {
+					attributes: buildAttributes(),
+				} as never )
+			);
+		} );
+
+		// Resolve the payload so the mount effect creates the GeoJSON layer.
+		// The payload's exact contents don't matter beyond having a Point
+		// feature on which the colour-sync effect's style function will be
+		// invoked during the assertion below.
+		await act( async () => {
+			mockApiFetchState.resolve!( {
+				geojson: {
+					type: 'FeatureCollection',
+					features: [
+						{
+							type: 'Feature',
+							geometry: {
+								type: 'Point',
+								coordinates: [ 0, 0 ],
+							},
+							properties: {},
+						},
+					],
+				},
+			} );
+		} );
+
+		// Locate the L.geoJSON layer the component created. It carries
+		// `setStyle` (from the Leaflet mock above) — that's the spy the
+		// colour-sync effect must invoke when waypointColor changes.
+		const captured = (
+			jest.requireMock( 'leaflet' ) as {
+				default: { geoJSON: jest.Mock };
+			}
+		 ).default.geoJSON.mock.results;
+		expect( captured.length ).toBeGreaterThan( 0 );
+		const layer = captured[ captured.length - 1 ].value;
+		const setStyleMock = layer.setStyle as jest.Mock;
+		setStyleMock.mockClear();
+
+		// Re-render with a fresh waypointColor. The colour-sync effect must
+		// fire so the markers reflect the editor's pick rather than the
+		// initial empty-string default. This is the regression the issue
+		// reports.
+		await act( async () => {
+			root.render(
+				createElement( MapEditorPreview, {
+					attributes: buildAttributes( {
+						waypointColor: '#facc15',
+					} ),
+				} as never )
+			);
+		} );
+
+		expect( setStyleMock ).toHaveBeenCalled();
+
+		// The fix routes Point and non-Point through a feature-aware style
+		// function. Calling that function with a Point feature must return
+		// the new waypointColor on both stroke and fill — the bug the issue
+		// describes is exactly that this resolution drops the new value.
+		const styleArg =
+			setStyleMock.mock.calls[ setStyleMock.mock.calls.length - 1 ][ 0 ];
+		expect( typeof styleArg ).toBe( 'function' );
+		const pointStyle = (
+			styleArg as ( f: GeoJSON.Feature ) => Record< string, unknown >
+		 )( {
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: [ 0, 0 ] },
+			properties: {},
+		} );
+		expect( pointStyle ).toEqual( {
+			color: '#facc15',
+			fillColor: '#facc15',
+		} );
+
+		await act( async () => {
+			root.unmount();
+		} );
+		container.remove();
+	} );
+
+	it( 'leaves waypoint markers alone when trackColor changes (no cross-talk)', async () => {
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+
+		await act( async () => {
+			root.render(
+				createElement( MapEditorPreview, {
+					attributes: buildAttributes( {
+						waypointColor: '#facc15',
+					} ),
+				} as never )
+			);
+		} );
+
+		await act( async () => {
+			mockApiFetchState.resolve!( {
+				geojson: {
+					type: 'FeatureCollection',
+					features: [
+						{
+							type: 'Feature',
+							geometry: {
+								type: 'Point',
+								coordinates: [ 0, 0 ],
+							},
+							properties: {},
+						},
+					],
+				},
+			} );
+		} );
+
+		const captured = (
+			jest.requireMock( 'leaflet' ) as {
+				default: { geoJSON: jest.Mock };
+			}
+		 ).default.geoJSON.mock.results;
+		const layer = captured[ captured.length - 1 ].value;
+		const setStyleMock = layer.setStyle as jest.Mock;
+		setStyleMock.mockClear();
+
+		// Trigger the colour-sync effect by changing trackColor only. The
+		// previous implementation called `setStyle({ color: trackColor })`
+		// on the whole GeoJSON layer, recolouring every circle marker's
+		// stroke — that cross-talk is the second part of issue #138.
+		await act( async () => {
+			root.render(
+				createElement( MapEditorPreview, {
+					attributes: buildAttributes( {
+						trackColor: '#22aa22',
+						waypointColor: '#facc15',
+					} ),
+				} as never )
+			);
+		} );
+
+		expect( setStyleMock ).toHaveBeenCalled();
+		const styleArg =
+			setStyleMock.mock.calls[ setStyleMock.mock.calls.length - 1 ][ 0 ];
+		expect( typeof styleArg ).toBe( 'function' );
+		const pointStyle = (
+			styleArg as ( f: GeoJSON.Feature ) => Record< string, unknown >
+		 )( {
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: [ 0, 0 ] },
+			properties: {},
+		} );
+		expect( pointStyle ).toEqual( {
+			color: '#facc15',
+			fillColor: '#facc15',
+		} );
 
 		await act( async () => {
 			root.unmount();

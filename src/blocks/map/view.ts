@@ -47,9 +47,9 @@ import {
 	addMapControls,
 	addWaypointMarkers,
 	applyInteractionSettings,
-	createCursorMarker,
 	createLeafletMap,
 	fitAndConstrainBounds,
+	maybeCreateCursorMarker,
 	renderTrackLayers,
 } from './mount';
 import {
@@ -110,6 +110,14 @@ interface MapSettings {
 	readonly enableDoubleClickZoom: boolean;
 	/** Enable keyboard navigation. Required for accessibility. */
 	readonly enableKeyboard: boolean;
+	/**
+	 * Show the Map-side track cursor that mirrors the shared fraction
+	 * (issue #118). When `false`, the cursor marker is not created, the
+	 * track scrub handlers are not wired, and `onMapCursorChange` is a
+	 * no-op for this map — the Elevation block's own pointer / hover
+	 * behaviour stays intact, only the Map-side reflection is suppressed.
+	 */
+	readonly showTrackCursor: boolean;
 	/** Show the waypoint name as the first line of the tooltip when present. */
 	readonly tooltipShowName: boolean;
 	/** Show the waypoint description as the second line of the tooltip when present. */
@@ -193,8 +201,13 @@ interface MapContext {
 interface MapEntry {
 	/** Leaflet map instance. */
 	map: L.Map;
-	/** Cursor marker drawn on the polyline. Opacity 0 until first fraction. */
-	cursor: L.CircleMarker;
+	/**
+	 * Cursor marker drawn on the polyline. Opacity 0 until first fraction.
+	 * `null` when the editor disabled the Map-side cursor via
+	 * `settings.showTrackCursor` (issue #118); callers that read this field
+	 * must early-return on null rather than treating it as a mounting bug.
+	 */
+	cursor: L.CircleMarker | null;
 	/** Flat [lat, lng] array extracted from the simplified LineString. */
 	coords: Array< [ number, number ] >;
 	/** Per-vertex cumulative distance (metres) along the original full track. */
@@ -667,7 +680,12 @@ function bootMount(
 
 			// Create the cursor marker at the track midpoint, initially
 			// invisible. Opacity is set to 1 on the first non-null fraction.
-			const cursor = createCursorMarker(
+			// Gated by the editor's `showTrackCursor` toggle (issue #118):
+			// when disabled, the helper returns `null` and the scrub
+			// handlers below are skipped, so the Map ships with no Map-side
+			// cursor reflection at all.
+			const cursor = maybeCreateCursorMarker(
+				settings.showTrackCursor,
 				map,
 				coords,
 				trackCumDist,
@@ -721,17 +739,24 @@ function bootMount(
 			// a track tap or empty-area click dismiss any sticky waypoint
 			// tooltip — the convention "tap outside to close" extended to
 			// the two outside surfaces this map exposes.
-			attachScrubHandlers(
-				map,
-				hitLayer,
-				blockEl,
-				coords,
-				trackCumDist,
-				totalDistance,
-				mapId,
-				closeSticky,
-				disposer.signal
-			);
+			//
+			// Skipped entirely when `showTrackCursor === false` (issue
+			// #118): a Map without a paired Elevation block has no use for
+			// Map-driven scrubbing, and the editor opted out of the cursor
+			// reflection altogether.
+			if ( cursor !== null ) {
+				attachScrubHandlers(
+					map,
+					hitLayer,
+					blockEl,
+					coords,
+					trackCumDist,
+					totalDistance,
+					mapId,
+					closeSticky,
+					disposer.signal
+				);
+			}
 		},
 		// rootMargin pre-triggers the observer 200 px before the block enters
 		// the viewport, giving Leaflet time to initialise tiles before the
@@ -953,6 +978,13 @@ const { state } = store< { state: PluginState } >( 'kntnt-gpx-blocks', {
 			}
 			const entry = mountedMaps.get( ref );
 			if ( ! entry ) {
+				return;
+			}
+
+			// No-op when the editor disabled the Map-side cursor (issue
+			// #118). The Elevation block keeps writing the shared fraction;
+			// this map simply does not reflect it.
+			if ( entry.cursor === null ) {
 				return;
 			}
 

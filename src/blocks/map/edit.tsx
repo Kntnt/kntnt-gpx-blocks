@@ -242,6 +242,7 @@ interface MapAttributes {
 	enablePinchZoom: boolean;
 	enableDoubleClickZoom: boolean;
 	enableKeyboard: boolean;
+	showTrackCursor: boolean;
 	trackColor: string;
 	trackCursorColor: string;
 	waypointColor: string;
@@ -1155,6 +1156,7 @@ export const MapEdit = ( {
 		enablePinchZoom,
 		enableDoubleClickZoom,
 		enableKeyboard,
+		showTrackCursor,
 		trackColor,
 		trackCursorColor,
 		waypointColor,
@@ -1501,6 +1503,17 @@ export const MapEdit = ( {
 						checked={ enableKeyboard }
 						onChange={ ( value ) =>
 							setAttributes( { enableKeyboard: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Show track cursor', 'kntnt-gpx-blocks' ) }
+						help={ __(
+							'Show the small circle that mirrors the GPX Elevation block cursor on the map. Turn off when this map is used without a paired Elevation block.',
+							'kntnt-gpx-blocks'
+						) }
+						checked={ showTrackCursor }
+						onChange={ ( value ) =>
+							setAttributes( { showTrackCursor: value } )
 						}
 					/>
 				</PanelBody>

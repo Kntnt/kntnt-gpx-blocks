@@ -72,6 +72,10 @@
 			"type": "boolean",
 			"default": true
 		},
+		"showTrackCursor": {
+			"type": "boolean",
+			"default": true
+		},
 		"trackColor": {
 			"type": "string",
 			"default": ""

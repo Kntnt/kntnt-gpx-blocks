@@ -184,6 +184,43 @@ const DEFAULT_TRACK_COLOR = '#0073aa';
 const DEFAULT_WAYPOINT_COLOR = '#d63638';
 
 /**
+ * Resolve the Leaflet path-style options for a single GeoJSON feature.
+ *
+ * The editor preview's `L.geoJSON` layer holds both the LineString track
+ * and the Point waypoints. Leaflet's `GeoJSON.setStyle` walks every inner
+ * layer with the same style, which is why a track-only update used to
+ * recolour marker strokes too (issue #138). Routing through this
+ * feature-aware function keeps the two coats independent: Point features
+ * get both stroke and fill from `waypointColor`, every other geometry
+ * picks up just the stroke from `trackColor`.
+ *
+ * Each colour falls back to the documented default when the corresponding
+ * attribute is empty so the preview matches the SCSS-driven frontend
+ * baseline. Returning a plain object (rather than an `L.PathOptions`
+ * spread) keeps the contract trivially testable without importing
+ * Leaflet's type.
+ *
+ * @since 0.13.5
+ *
+ * @param feature       The GeoJSON feature whose Leaflet layer is being styled.
+ * @param trackColor    Editor-supplied track colour; empty means "use default".
+ * @param waypointColor Editor-supplied waypoint marker colour; empty means
+ *                      "use default".
+ * @return Leaflet path options applied to that feature's layer.
+ */
+export function resolveLayerStyle(
+	feature: GeoJSON.Feature | undefined,
+	trackColor: string,
+	waypointColor: string
+): Record< string, string > {
+	if ( feature?.geometry?.type === 'Point' ) {
+		const color = waypointColor || DEFAULT_WAYPOINT_COLOR;
+		return { color, fillColor: color };
+	}
+	return { color: trackColor || DEFAULT_TRACK_COLOR };
+}
+
+/**
  * Earth radius in metres for Haversine summation along the track polyline.
  *
  * Matches the value used by Render_Elevation::build_distance_elevation_series
@@ -376,20 +413,29 @@ export const MapEditorPreview = ( {
 		overlayLayersRef.current = [];
 
 		// Render the polyline + waypoints from the cached GeoJSON.
+		// `style` and `pointToLayer` both route through `resolveLayerStyle`
+		// so the mount-time colours line up with what the colour-sync
+		// effect below applies on every subsequent attribute change.
 		const layer = L.geoJSON( payload.geojson, {
-			style: () => ( {
-				color: trackColor || DEFAULT_TRACK_COLOR,
+			style: ( feature ) => ( {
+				...resolveLayerStyle( feature, trackColor, waypointColor ),
 				weight: 4,
 				opacity: 1,
 			} ),
-			pointToLayer: ( _feature, latlng ) =>
-				L.circleMarker( latlng, {
+			pointToLayer: ( feature, latlng ) => {
+				const style = resolveLayerStyle(
+					feature,
+					trackColor,
+					waypointColor
+				);
+				return L.circleMarker( latlng, {
 					radius: 6,
-					color: waypointColor || DEFAULT_WAYPOINT_COLOR,
-					fillColor: waypointColor || DEFAULT_WAYPOINT_COLOR,
+					color: style.color,
+					fillColor: style.fillColor,
 					fillOpacity: 1,
 					weight: 2,
-				} ),
+				} );
+			},
 		} );
 		layer.addTo( map );
 		layerRef.current = layer;
@@ -420,18 +466,25 @@ export const MapEditorPreview = ( {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ payload ] );
 
-	// Apply colour changes without rebuilding the map. Leaflet's canvas paths
-	// take their colours from JS options, not CSS, so we restyle the layer
-	// in place when the user drags a colour picker.
+	// Apply colour changes without rebuilding the map. Leaflet's canvas
+	// paths take their colours from JS options, not CSS, so we restyle the
+	// layer in place when the user drags a colour picker. The style is
+	// supplied as a function so Leaflet calls it per inner layer with the
+	// originating feature — that's how Point (waypoint) and LineString
+	// (track) end up with independent colours instead of the cross-talk
+	// the bare `setStyle({ color })` form caused (issue #138). Listing
+	// both colour deps lets the effect re-run on either change, so the
+	// waypoint colour reaches the editor preview as soon as the user
+	// picks a value rather than waiting for the next remount.
 	useEffect( () => {
 		const layer = layerRef.current;
 		if ( ! layer ) {
 			return;
 		}
-		layer.setStyle( {
-			color: trackColor || DEFAULT_TRACK_COLOR,
-		} );
-	}, [ trackColor ] );
+		layer.setStyle( ( feature ) =>
+			resolveLayerStyle( feature, trackColor, waypointColor )
+		);
+	}, [ trackColor, waypointColor ] );
 
 	// Anchor the floating waypoint-info preview on real track geometry.
 	// Resolves the geographic anchor (first waypoint when present, otherwise

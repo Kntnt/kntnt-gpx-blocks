@@ -109,6 +109,12 @@ final class Render_Map {
 		$enable_double_click_zoom = isset( $raw_dclk ) ? (bool) $raw_dclk : true;
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
 
+		// Read the track-cursor toggle. Defaults to true so a Map paired with
+		// an Elevation block keeps reflecting the cursor; setting it to false
+		// suppresses the Map-side cursor for layouts that use the Map without
+		// an adjacent Elevation block (issue #118).
+		$show_track_cursor = isset( $attributes['showTrackCursor'] ) ? (bool) $attributes['showTrackCursor'] : true;
+
 		// Read and sanitize the two track colour attributes through the shared
 		// Color_Sanitizer (alpha-aware hex 3/4/6/8). PanelColorSettings on
 		// these controls runs with `enableAlpha`, so a non-opaque hex8
@@ -346,6 +352,7 @@ final class Render_Map {
 					'enablePinchZoom'       => $enable_pinch_zoom,
 					'enableDoubleClickZoom' => $enable_double_click_zoom,
 					'enableKeyboard'        => $enable_keyboard,
+					'showTrackCursor'       => $show_track_cursor,
 					'tooltipShowName'       => $tooltip_show_name,
 					'tooltipShowDesc'       => $tooltip_show_desc,
 				],

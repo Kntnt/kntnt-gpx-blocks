@@ -1022,6 +1022,75 @@ test( 'wp_interactivity_state propagates tooltipShowName and tooltipShowDesc whe
 } );
 
 // ---------------------------------------------------------------------------
+// Track cursor toggle — defaults to true and propagates an explicit false
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state includes showTrackCursor as true by default', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 85, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 85, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured ): void {
+			$captured = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 85,
+			'mapId'        => 'map-cursor-default',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured['map-cursor-default']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['showTrackCursor'] )->toBeTrue();
+
+} );
+
+test( 'wp_interactivity_state propagates showTrackCursor when set to false', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 86, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 86, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured ): void {
+			$captured = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId'    => 86,
+			'mapId'           => 'map-cursor-off',
+			'showTrackCursor' => false,
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured['map-cursor-off']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['showTrackCursor'] )->toBeFalse();
+
+} );
+
+// ---------------------------------------------------------------------------
 // Cursor sync — trackCumDist[] and totalDistance are emitted in state
 // ---------------------------------------------------------------------------
 
