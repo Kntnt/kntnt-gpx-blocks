@@ -1507,10 +1507,6 @@ export const MapEdit = ( {
 					/>
 					<ToggleControl
 						label={ __( 'Show track cursor', 'kntnt-gpx-blocks' ) }
-						help={ __(
-							'Show the small circle that mirrors the GPX Elevation block cursor on the map. Turn off when this map is used without a paired Elevation block.',
-							'kntnt-gpx-blocks'
-						) }
 						checked={ showTrackCursor }
 						onChange={ ( value ) =>
 							setAttributes( { showTrackCursor: value } )
