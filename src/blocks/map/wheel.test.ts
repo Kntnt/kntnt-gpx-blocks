@@ -2,12 +2,12 @@
  * Jest tests for the GPX Map wheel classifier.
  *
  * Pure-function tests: every fixture is a plain object literal exercising one
- * branch of `classifyWheel`. The `enableDrag` gating on the `'pan'` branch is
+ * branch of `classifyWheel`. The `enablePan` gating on the `'pan'` branch is
  * the regression coverage for issue #66 (trackpad two-finger scroll panning
- * the map even when "Drag to pan" was disabled). The `enableScrollWheelZoom`
- * gating on the `'zoom'` branch is the coverage for issue #139 (Cmd/Ctrl +
- * scroll and trackpad pinch still zooming the map even when every other
- * interaction toggle was off).
+ * the map even when the Pan result was disabled). The `enableZoom` gating on
+ * the `'zoom'` branch is the coverage for issue #139 (Cmd/Ctrl + scroll and
+ * trackpad pinch still zooming the map even when every other interaction
+ * toggle was off).
  *
  * @since 0.4.4
  */
@@ -36,23 +36,23 @@ function wheel(
 	};
 }
 
-// Default-on settings — every interaction enabled. The four named slices below
+// Default-on settings — both results enabled. The three named slices below
 // each turn exactly one knob off so individual branches read cleanly.
 const allOn: WheelClassifierSettings = {
-	enableDrag: true,
-	enableScrollWheelZoom: true,
+	enablePan: true,
+	enableZoom: true,
 };
-const dragOff: WheelClassifierSettings = {
-	enableDrag: false,
-	enableScrollWheelZoom: true,
+const panOff: WheelClassifierSettings = {
+	enablePan: false,
+	enableZoom: true,
 };
 const zoomOff: WheelClassifierSettings = {
-	enableDrag: true,
-	enableScrollWheelZoom: false,
+	enablePan: true,
+	enableZoom: false,
 };
-const dragAndZoomOff: WheelClassifierSettings = {
-	enableDrag: false,
-	enableScrollWheelZoom: false,
+const panAndZoomOff: WheelClassifierSettings = {
+	enablePan: false,
+	enableZoom: false,
 };
 
 describe( 'classifyWheel', () => {
@@ -75,26 +75,26 @@ describe( 'classifyWheel', () => {
 			).toBe( 'zoom' );
 		} );
 
-		it( 'returns "zoom" even when enableDrag is false — pinch-zoom is unaffected', () => {
+		it( 'returns "zoom" even when Pan is off — Zoom is independent', () => {
 			expect(
 				classifyWheel(
 					wheel( { ctrlKey: true, deltaMode: 0 } ),
-					dragOff
+					panOff
 				)
 			).toBe( 'zoom' );
 			expect(
 				classifyWheel(
 					wheel( { metaKey: true, deltaMode: 0 } ),
-					dragOff
+					panOff
 				)
 			).toBe( 'zoom' );
 		} );
 
-		// Issue #139 — toggling scroll-wheel zoom off must suppress every
+		// Issue #139 — toggling the Zoom result off must suppress every
 		// wheel-driven zoom branch: the Cmd/Ctrl + wheel modifier path on a
 		// mouse, and the trackpad-pinch gesture browsers deliver as a wheel
 		// event with `ctrlKey: true` (often paired with a very small deltaY).
-		it( 'returns "hint" for Cmd+wheel when enableScrollWheelZoom is false (issue #139)', () => {
+		it( 'returns "hint" for Cmd+wheel when Zoom is off (issue #139)', () => {
 			expect( classifyWheel( wheel( { metaKey: true } ), zoomOff ) ).toBe(
 				'hint'
 			);
@@ -106,7 +106,7 @@ describe( 'classifyWheel', () => {
 			).toBe( 'hint' );
 		} );
 
-		it( 'returns "hint" for Ctrl+wheel mouse zoom when enableScrollWheelZoom is false (issue #139)', () => {
+		it( 'returns "hint" for Ctrl+wheel mouse zoom when Zoom is off (issue #139)', () => {
 			// Modifier-key wheel on a non-Apple mouse delivers `deltaMode === 1`
 			// (line) on Firefox and `deltaMode === 0` (pixel) on Chromium — the
 			// classifier must reject both because the modifier alone determines
@@ -122,12 +122,12 @@ describe( 'classifyWheel', () => {
 			).toBe( 'hint' );
 		} );
 
-		it( 'returns "hint" for trackpad-pinch (ctrlKey + tiny deltaY pixels) when enableScrollWheelZoom is false (issue #139)', () => {
+		it( 'returns "hint" for trackpad-pinch (ctrlKey + tiny deltaY pixels) when Zoom is off (issue #139)', () => {
 			// Trackpad-pinch on macOS arrives as a wheel event with
 			// `ctrlKey: true` regardless of physical key state and pixel
 			// deltas (`deltaMode === 0`). The classifier branches on
 			// modifier-or-pinch first, so the pinch must reject too when
-			// scroll-wheel zoom is off.
+			// Zoom is off.
 			expect(
 				classifyWheel(
 					wheel( { ctrlKey: true, deltaMode: 0 } ),
@@ -138,22 +138,22 @@ describe( 'classifyWheel', () => {
 	} );
 
 	describe( 'pan branch (trackpad two-finger scroll)', () => {
-		it( 'returns "pan" when deltaMode is 0 and no modifier and enableDrag is true', () => {
+		it( 'returns "pan" when deltaMode is 0 and no modifier and Pan is on', () => {
 			expect( classifyWheel( wheel( { deltaMode: 0 } ), allOn ) ).toBe(
 				'pan'
 			);
 		} );
 
-		it( 'returns "hint" when deltaMode is 0 and no modifier and enableDrag is false (issue #66)', () => {
-			expect( classifyWheel( wheel( { deltaMode: 0 } ), dragOff ) ).toBe(
+		it( 'returns "hint" when deltaMode is 0 and no modifier and Pan is off (issue #66)', () => {
+			expect( classifyWheel( wheel( { deltaMode: 0 } ), panOff ) ).toBe(
 				'hint'
 			);
 		} );
 
 		// Issue #139 cross-check — the pan branch must keep its own gate. With
-		// scroll-wheel zoom off but drag-to-pan on, an unmodified trackpad
-		// two-finger pan still pans the map; the two toggles are independent.
-		it( 'still returns "pan" when enableScrollWheelZoom is false but enableDrag is true (issue #139)', () => {
+		// Zoom off but Pan on, an unmodified trackpad two-finger pan still
+		// pans the map; the two toggles are independent.
+		it( 'still returns "pan" when Zoom is off but Pan is on (issue #139)', () => {
 			expect( classifyWheel( wheel( { deltaMode: 0 } ), zoomOff ) ).toBe(
 				'pan'
 			);
@@ -162,19 +162,19 @@ describe( 'classifyWheel', () => {
 		// Issue #139 cross-check — when both toggles are off, the wheel
 		// handler is fully passive: pan branch falls back to hint just like
 		// the zoom branch.
-		it( 'returns "hint" when both enableDrag and enableScrollWheelZoom are false', () => {
+		it( 'returns "hint" when both Pan and Zoom are off', () => {
 			expect(
-				classifyWheel( wheel( { deltaMode: 0 } ), dragAndZoomOff )
+				classifyWheel( wheel( { deltaMode: 0 } ), panAndZoomOff )
 			).toBe( 'hint' );
 		} );
 	} );
 
 	describe( 'hint branch (mouse wheel)', () => {
-		it( 'returns "hint" for line-mode wheel deltas without a modifier, regardless of enableDrag', () => {
+		it( 'returns "hint" for line-mode wheel deltas without a modifier, regardless of Pan', () => {
 			expect( classifyWheel( wheel( { deltaMode: 1 } ), allOn ) ).toBe(
 				'hint'
 			);
-			expect( classifyWheel( wheel( { deltaMode: 1 } ), dragOff ) ).toBe(
+			expect( classifyWheel( wheel( { deltaMode: 1 } ), panOff ) ).toBe(
 				'hint'
 			);
 		} );
@@ -186,12 +186,11 @@ describe( 'classifyWheel', () => {
 		} );
 
 		// Issue #139 — an unmodified mouse wheel (the case the hint overlay
-		// was designed for) still classifies as `'hint'` when scroll-wheel
-		// zoom is off. The classifier's contract is unchanged for this
-		// branch; suppression of the actual overlay rendering is the
-		// view-side concern of `attachWheelHandler`, documented in
-		// `view.ts`.
-		it( 'returns "hint" for unmodified mouse wheel when enableScrollWheelZoom is false (issue #139)', () => {
+		// was designed for) still classifies as `'hint'` when Zoom is off.
+		// The classifier's contract is unchanged for this branch; suppression
+		// of the actual overlay rendering is the view-side concern of
+		// `attachWheelHandler`, documented in `view.ts`.
+		it( 'returns "hint" for unmodified mouse wheel when Zoom is off (issue #139)', () => {
 			expect( classifyWheel( wheel( { deltaMode: 1 } ), zoomOff ) ).toBe(
 				'hint'
 			);

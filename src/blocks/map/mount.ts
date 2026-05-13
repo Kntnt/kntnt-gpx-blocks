@@ -30,10 +30,8 @@ export interface MapControlSettings {
 	readonly showScale: boolean;
 	readonly showFullscreen: boolean;
 	readonly showDownload: boolean;
-	readonly enableDrag: boolean;
-	readonly enablePinchZoom: boolean;
-	readonly enableDoubleClickZoom: boolean;
-	readonly enableKeyboard: boolean;
+	readonly enablePan: boolean;
+	readonly enableZoom: boolean;
 	readonly enableTrackPositionCursor: boolean;
 	readonly tooltipShowName: boolean;
 	readonly tooltipShowDesc: boolean;
@@ -337,6 +335,15 @@ export function addMapControls(
  * toggles map directly to handler state without an intermediate option
  * object.
  *
+ * The Inspector's two result-named toggles (Pan, Zoom) cover several
+ * Leaflet interaction handlers each: `enablePan` gates `dragging`;
+ * `enableZoom` gates both `touchZoom` and `doubleClickZoom`. The
+ * keyboard handler is enabled whenever either result is on so the map
+ * remains focusable for the at-least-one-enabled key group — the
+ * per-key gating that decides which keys reach Leaflet's bubble-phase
+ * listener lives in `keyboard.ts` (`attachKeyFilter`), called from the
+ * mount flow alongside this helper.
+ *
  * @since 1.0.0
  *
  * @param map      - Leaflet map instance.
@@ -346,22 +353,19 @@ export function applyInteractionSettings(
 	map: L.Map,
 	settings: MapControlSettings
 ): void {
-	if ( settings.enableDrag ) {
+	if ( settings.enablePan ) {
 		map.dragging.enable();
 	} else {
 		map.dragging.disable();
 	}
-	if ( settings.enablePinchZoom ) {
+	if ( settings.enableZoom ) {
 		map.touchZoom.enable();
-	} else {
-		map.touchZoom.disable();
-	}
-	if ( settings.enableDoubleClickZoom ) {
 		map.doubleClickZoom.enable();
 	} else {
+		map.touchZoom.disable();
 		map.doubleClickZoom.disable();
 	}
-	if ( settings.enableKeyboard ) {
+	if ( settings.enablePan || settings.enableZoom ) {
 		map.keyboard.enable();
 	} else {
 		map.keyboard.disable();

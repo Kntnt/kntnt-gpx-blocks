@@ -435,10 +435,10 @@ test( 'gpxFileUrl is null when wp_get_attachment_url returns false', function ()
 } );
 
 // ---------------------------------------------------------------------------
-// Interaction flags — defaults (drag, pinch, scroll-wheel, dblclick, keyboard ON; box OFF)
+// Interaction flags — defaults (Pan and Zoom ON; box-zoom dropped from state)
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state receives correct default interaction flags', function (): void {
+test( 'wp_interactivity_state receives Pan and Zoom as true by default', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 50, $coords );
@@ -466,20 +466,18 @@ test( 'wp_interactivity_state receives correct default interaction flags', funct
 	$settings = $captured_state['map-interaction-defaults']['settings'] ?? null;
 
 	expect( $settings )->not->toBeNull();
-	expect( $settings['enableDrag'] )->toBeTrue();
-	expect( $settings['enablePinchZoom'] )->toBeTrue();
-	expect( $settings['enableScrollWheelZoom'] )->toBeTrue();
-	expect( $settings['enableDoubleClickZoom'] )->toBeTrue();
-	expect( $settings['enableKeyboard'] )->toBeTrue();
+	expect( $settings['enablePan'] )->toBeTrue();
+	expect( $settings['enableZoom'] )->toBeTrue();
 	expect( $settings )->not->toHaveKey( 'enableBoxZoom' );
 
 } );
 
 // ---------------------------------------------------------------------------
-// Interaction flags — explicit overrides are passed through
+// Interaction flags — explicit overrides on the two result-named toggles
+// are propagated verbatim
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state reflects explicit interaction flag overrides', function (): void {
+test( 'wp_interactivity_state reflects explicit Pan and Zoom overrides', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 51, $coords );
@@ -497,13 +495,10 @@ test( 'wp_interactivity_state reflects explicit interaction flag overrides', fun
 
 	Render_Map::render(
 		[
-			'attachmentId'          => 51,
-			'mapId'                 => 'map-interaction-overrides',
-			'enableDrag'            => false,
-			'enablePinchZoom'       => false,
-			'enableScrollWheelZoom' => false,
-			'enableDoubleClickZoom' => false,
-			'enableKeyboard'        => false,
+			'attachmentId' => 51,
+			'mapId'        => 'map-interaction-overrides',
+			'enablePan'    => false,
+			'enableZoom'   => false,
 		],
 		'',
 		map_fake_block(),
@@ -512,11 +507,8 @@ test( 'wp_interactivity_state reflects explicit interaction flag overrides', fun
 	$settings = $captured_state['map-interaction-overrides']['settings'] ?? null;
 
 	expect( $settings )->not->toBeNull();
-	expect( $settings['enableDrag'] )->toBeFalse();
-	expect( $settings['enablePinchZoom'] )->toBeFalse();
-	expect( $settings['enableScrollWheelZoom'] )->toBeFalse();
-	expect( $settings['enableDoubleClickZoom'] )->toBeFalse();
-	expect( $settings['enableKeyboard'] )->toBeFalse();
+	expect( $settings['enablePan'] )->toBeFalse();
+	expect( $settings['enableZoom'] )->toBeFalse();
 
 } );
 
@@ -1093,10 +1085,10 @@ test( 'wp_interactivity_state propagates enableTrackPositionCursor when set to f
 } );
 
 // ---------------------------------------------------------------------------
-// Scroll-wheel zoom toggle — defaults to true and propagates an explicit false
+// Zoom result — defaults to true and propagates an explicit false
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state includes enableScrollWheelZoom as true by default', function (): void {
+test( 'wp_interactivity_state includes enableZoom as true by default', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 87, $coords );
@@ -1115,20 +1107,20 @@ test( 'wp_interactivity_state includes enableScrollWheelZoom as true by default'
 	Render_Map::render(
 		[
 			'attachmentId' => 87,
-			'mapId'        => 'map-wheel-default',
+			'mapId'        => 'map-zoom-default',
 		],
 		'',
 		map_fake_block(),
 	);
 
-	$settings = $captured['map-wheel-default']['settings'] ?? null;
+	$settings = $captured['map-zoom-default']['settings'] ?? null;
 
 	expect( $settings )->not->toBeNull();
-	expect( $settings['enableScrollWheelZoom'] )->toBeTrue();
+	expect( $settings['enableZoom'] )->toBeTrue();
 
 } );
 
-test( 'wp_interactivity_state propagates enableScrollWheelZoom when set to false', function (): void {
+test( 'wp_interactivity_state propagates enableZoom when set to false', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 88, $coords );
@@ -1146,18 +1138,18 @@ test( 'wp_interactivity_state propagates enableScrollWheelZoom when set to false
 
 	Render_Map::render(
 		[
-			'attachmentId'          => 88,
-			'mapId'                 => 'map-wheel-off',
-			'enableScrollWheelZoom' => false,
+			'attachmentId' => 88,
+			'mapId'        => 'map-zoom-off',
+			'enableZoom'   => false,
 		],
 		'',
 		map_fake_block(),
 	);
 
-	$settings = $captured['map-wheel-off']['settings'] ?? null;
+	$settings = $captured['map-zoom-off']['settings'] ?? null;
 
 	expect( $settings )->not->toBeNull();
-	expect( $settings['enableScrollWheelZoom'] )->toBeFalse();
+	expect( $settings['enableZoom'] )->toBeFalse();
 
 } );
 

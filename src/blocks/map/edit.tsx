@@ -238,11 +238,8 @@ interface MapAttributes {
 	showScale: boolean;
 	showFullscreen: boolean;
 	showDownload: boolean;
-	enableDrag: boolean;
-	enablePinchZoom: boolean;
-	enableScrollWheelZoom: boolean;
-	enableDoubleClickZoom: boolean;
-	enableKeyboard: boolean;
+	enablePan: boolean;
+	enableZoom: boolean;
 	enableTrackPositionCursor: boolean;
 	trackColor: string;
 	trackCursorColor: string;
@@ -1153,11 +1150,8 @@ export const MapEdit = ( {
 		showScale,
 		showFullscreen,
 		showDownload,
-		enableDrag,
-		enablePinchZoom,
-		enableScrollWheelZoom,
-		enableDoubleClickZoom,
-		enableKeyboard,
+		enablePan,
+		enableZoom,
 		enableTrackPositionCursor,
 		trackColor,
 		trackCursorColor,
@@ -1477,48 +1471,21 @@ export const MapEdit = ( {
 				</PanelBody>
 				<PanelBody title={ __( 'Interactions', 'kntnt-gpx-blocks' ) }>
 					<ToggleControl
-						label={ __( 'Drag to pan', 'kntnt-gpx-blocks' ) }
-						checked={ enableDrag }
+						label={ __( 'Pan', 'kntnt-gpx-blocks' ) }
+						checked={ enablePan }
 						onChange={ ( value ) =>
-							setAttributes( { enableDrag: value } )
+							setAttributes( { enablePan: value } )
 						}
 					/>
 					<ToggleControl
-						label={ __( 'Pinch zoom', 'kntnt-gpx-blocks' ) }
-						checked={ enablePinchZoom }
+						label={ __( 'Zoom', 'kntnt-gpx-blocks' ) }
+						checked={ enableZoom }
 						onChange={ ( value ) =>
-							setAttributes( { enablePinchZoom: value } )
+							setAttributes( { enableZoom: value } )
 						}
 					/>
 					<ToggleControl
-						label={ __( 'Scroll-wheel zoom', 'kntnt-gpx-blocks' ) }
-						checked={ enableScrollWheelZoom }
-						onChange={ ( value ) =>
-							setAttributes( { enableScrollWheelZoom: value } )
-						}
-					/>
-					<ToggleControl
-						label={ __( 'Double-click zoom', 'kntnt-gpx-blocks' ) }
-						checked={ enableDoubleClickZoom }
-						onChange={ ( value ) =>
-							setAttributes( { enableDoubleClickZoom: value } )
-						}
-					/>
-					<ToggleControl
-						label={ __(
-							'Keyboard navigation',
-							'kntnt-gpx-blocks'
-						) }
-						checked={ enableKeyboard }
-						onChange={ ( value ) =>
-							setAttributes( { enableKeyboard: value } )
-						}
-					/>
-					<ToggleControl
-						label={ __(
-							'Track position cursor',
-							'kntnt-gpx-blocks'
-						) }
+						label={ __( 'Track cursor', 'kntnt-gpx-blocks' ) }
 						checked={ enableTrackPositionCursor }
 						onChange={ ( value ) =>
 							setAttributes( {

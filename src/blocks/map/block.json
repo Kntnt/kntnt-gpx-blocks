@@ -56,23 +56,11 @@
 			"type": "boolean",
 			"default": false
 		},
-		"enableDrag": {
+		"enablePan": {
 			"type": "boolean",
 			"default": true
 		},
-		"enablePinchZoom": {
-			"type": "boolean",
-			"default": true
-		},
-		"enableScrollWheelZoom": {
-			"type": "boolean",
-			"default": true
-		},
-		"enableDoubleClickZoom": {
-			"type": "boolean",
-			"default": true
-		},
-		"enableKeyboard": {
+		"enableZoom": {
 			"type": "boolean",
 			"default": true
 		},

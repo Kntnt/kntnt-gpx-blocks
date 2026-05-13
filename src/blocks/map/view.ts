@@ -61,6 +61,7 @@ import {
 	type TileLayerRefs,
 } from './tile-lifecycle';
 import { classifyWheel } from './wheel';
+import { attachKeyFilter } from './keyboard';
 
 // ─── Global type augmentation ────────────────────────────────────────────────
 
@@ -102,26 +103,25 @@ interface MapSettings {
 	readonly showFullscreen: boolean;
 	/** Show the custom download-GPX control button. */
 	readonly showDownload: boolean;
-	/** Enable drag-to-pan. */
-	readonly enableDrag: boolean;
-	/** Enable pinch-to-zoom on touch devices. */
-	readonly enablePinchZoom: boolean;
 	/**
-	 * Enable wheel-driven zoom. Gates every wheel-event zoom branch — both
-	 * the Cmd/Ctrl + wheel modifier path on a mouse and the trackpad-pinch
-	 * gesture (which browsers deliver as a wheel event with
-	 * `ctrlKey: true`). Touchscreen pinch (Leaflet's `touchZoom`) is a
-	 * separate code path governed by `enablePinchZoom` and is unaffected.
-	 * When `false`, the wheel handler returns `'hint'` for every zoom
-	 * candidate, but the hint overlay is suppressed too because the hint
-	 * message ("Hold ⌘ + scroll to zoom the map") is misleading when zoom
-	 * is disabled altogether. See issue #139.
+	 * Enable the Pan result — drag, two-finger swipe, and arrow keys. Gates
+	 * `map.dragging`, the `'pan'` branch in `classifyWheel`, and the arrow
+	 * keys in `attachKeyFilter`. The keyboard handler is enabled whenever
+	 * either Pan or Zoom is on so the map remains focusable for the
+	 * at-least-one-enabled key group.
 	 */
-	readonly enableScrollWheelZoom: boolean;
-	/** Enable double-click zoom. */
-	readonly enableDoubleClickZoom: boolean;
-	/** Enable keyboard navigation. Required for accessibility. */
-	readonly enableKeyboard: boolean;
+	readonly enablePan: boolean;
+	/**
+	 * Enable the Zoom result — Cmd/Ctrl + wheel, pinch (touchscreen and
+	 * trackpad), double-click, and the `+` / `-` / `=` keys. Gates
+	 * `map.touchZoom`, `map.doubleClickZoom`, the `'zoom'` branch in
+	 * `classifyWheel`, the `+` / `-` / `=` keys in `attachKeyFilter`, and
+	 * the hint-overlay suppression — when `false`, the wheel handler also
+	 * suppresses the modifier-key hint overlay because the hint message
+	 * ("Hold ⌘ + scroll to zoom the map") is misleading when zoom is
+	 * disabled altogether. See issue #139.
+	 */
+	readonly enableZoom: boolean;
 	/**
 	 * Show the Map-side track cursor that mirrors the shared fraction
 	 * (issue #118). When `false`, the cursor marker is not created, the
@@ -493,40 +493,38 @@ function pickScrollHintMessage( hint: MapState[ 'scrollHint' ] ): string {
  * normally. The hint overlay is created lazily and reused; a single timer
  * ensures the overlay disappears after roughly one second of wheel idleness.
  *
- * `enableDrag` is forwarded to `classifyWheel` so the trackpad two-finger
- * pan modality respects the same toggle that gates mouse and single-touch
+ * `enablePan` is forwarded to `classifyWheel` so the trackpad two-finger pan
+ * modality respects the same Pan toggle that gates mouse and single-touch
  * drag — see issue #66.
  *
- * `enableScrollWheelZoom` likewise gates every wheel-driven zoom branch
- * (issue #139). When the editor disabled scroll-wheel zoom, the classifier
- * returns `'hint'` for the modifier-key wheel and trackpad-pinch cases too,
- * and this handler additionally suppresses `showHint()` for all hint events
- * — the overlay message ("Hold ⌘ + scroll to zoom the map") would be a
- * misdirection when zoom is off altogether. The pan branch is independent
- * and still surfaces the overlay when relevant via the `'pan'`-rejected
- * fall-through inside `classifyWheel`; that fall-through honours
- * `enableScrollWheelZoom === false` by suppressing the overlay too, because
- * the message remains misleading regardless of the gesture that produced
- * the wheel event.
+ * `enableZoom` likewise gates every wheel-driven zoom branch (issue #139).
+ * When the editor disabled the Zoom result, the classifier returns `'hint'`
+ * for the modifier-key wheel and trackpad-pinch cases too, and this handler
+ * additionally suppresses `showHint()` for all hint events — the overlay
+ * message ("Hold ⌘ + scroll to zoom the map") would be a misdirection when
+ * zoom is off altogether. The pan branch is independent and still surfaces
+ * the overlay when relevant via the `'pan'`-rejected fall-through inside
+ * `classifyWheel`; that fall-through honours `enableZoom === false` by
+ * suppressing the overlay too, because the message remains misleading
+ * regardless of the gesture that produced the wheel event.
  *
  * @since 1.0.0
  *
- * @param map                   - Leaflet map instance.
- * @param blockEl               - Block wrapper element receiving wheel events.
- * @param hint                  - Pre-translated `{ apple, other }` hint pair.
- * @param enableDrag            - Whether drag-to-pan is enabled. Gates the
- *                              `'pan'` branch.
- * @param enableScrollWheelZoom - Whether wheel-driven zoom is enabled. Gates
- *                              the `'zoom'` branch and the hint overlay.
- * @param signal                - AbortSignal that releases listeners on
- *                              tear-down.
+ * @param map        - Leaflet map instance.
+ * @param blockEl    - Block wrapper element receiving wheel events.
+ * @param hint       - Pre-translated `{ apple, other }` hint pair.
+ * @param enablePan  - Whether the Pan result is enabled. Gates the `'pan'`
+ *                   branch.
+ * @param enableZoom - Whether the Zoom result is enabled. Gates the `'zoom'`
+ *                   branch and the hint overlay.
+ * @param signal     - AbortSignal that releases listeners on tear-down.
  */
 function attachWheelHandler(
 	map: L.Map,
 	blockEl: HTMLElement,
 	hint: MapState[ 'scrollHint' ],
-	enableDrag: boolean,
-	enableScrollWheelZoom: boolean,
+	enablePan: boolean,
+	enableZoom: boolean,
 	signal: AbortSignal
 ): void {
 	let hintEl: HTMLElement | null = null;
@@ -560,8 +558,8 @@ function attachWheelHandler(
 		'wheel',
 		( event: WheelEvent ) => {
 			const action = classifyWheel( event, {
-				enableDrag,
-				enableScrollWheelZoom,
+				enablePan,
+				enableZoom,
 			} );
 
 			if ( action === 'zoom' ) {
@@ -588,12 +586,12 @@ function attachWheelHandler(
 			// `hint` — do NOT preventDefault. Page scrolls past the map
 			// while the overlay surfaces the modifier-key requirement.
 			//
-			// Suppress the overlay entirely when scroll-wheel zoom is off
+			// Suppress the overlay entirely when the Zoom result is off
 			// (issue #139): the message "Hold ⌘ + scroll to zoom the map"
 			// is misleading when zoom is disabled altogether — the map is
 			// meant to behave as a static image for wheel events in that
 			// mode.
-			if ( ! enableScrollWheelZoom ) {
+			if ( ! enableZoom ) {
 				return;
 			}
 			showHint();
@@ -699,19 +697,34 @@ function bootMount(
 
 			// Replace Leaflet's scrollWheelZoom with a wheel handler that
 			// distinguishes pinch / Cmd / Ctrl (zoom), trackpad two-finger
-			// pan (deltaMode 0, no modifier — only when enableDrag is true),
+			// pan (deltaMode 0, no modifier — only when enablePan is true),
 			// and mouse wheel (deltaMode 1+, no modifier — show a hint and
-			// let the page scroll). Forwarding enableDrag here is what makes
-			// the trackpad-pan gesture honour the "Drag to pan" toggle, and
-			// forwarding enableScrollWheelZoom is what makes every wheel
-			// event short-circuit to a passive hint-suppressed pass-through
-			// when the editor turned scroll-wheel zoom off (issue #139).
+			// let the page scroll). Forwarding enablePan here is what makes
+			// the trackpad-pan gesture honour the Pan toggle, and forwarding
+			// enableZoom is what makes every wheel event short-circuit to a
+			// passive hint-suppressed pass-through when the editor turned
+			// the Zoom result off (issue #139).
 			attachWheelHandler(
 				map,
 				blockEl,
 				mapState.scrollHint,
-				settings.enableDrag,
-				settings.enableScrollWheelZoom,
+				settings.enablePan,
+				settings.enableZoom,
+				disposer.signal
+			);
+
+			// Capture-phase key filter that swallows arrow keys when Pan is
+			// off and `+` / `-` / `=` when Zoom is off. Leaflet's keyboard
+			// handler attaches in bubble phase and reads all four key groups
+			// from a single object, so this is how the two result-named
+			// toggles split Leaflet's monolithic keyboard handler into the
+			// two result-named groups the Inspector surfaces.
+			attachKeyFilter(
+				blockEl,
+				{
+					enablePan: settings.enablePan,
+					enableZoom: settings.enableZoom,
+				},
 				disposer.signal
 			);
 

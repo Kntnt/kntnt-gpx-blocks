@@ -99,18 +99,22 @@ final class Render_Map {
 		$show_fullscreen   = isset( $attributes['showFullscreen'] ) ? (bool) $attributes['showFullscreen'] : false;
 		$show_download     = isset( $attributes['showDownload'] ) ? (bool) $attributes['showDownload'] : false;
 
-		// Read the five interaction flags; coerce to bool with documented defaults.
-		// Box-zoom is intentionally absent — the view module drops it altogether.
-		// Scroll-wheel zoom gates the wheel handler's `'zoom'` branch entirely
-		// (both Cmd/Ctrl + wheel and trackpad-pinch via `ctrlKey:true`); when
-		// off, the wheel handler also suppresses the modifier-key hint overlay.
-		// See issue #139.
-		$enable_drag  = isset( $attributes['enableDrag'] ) ? (bool) $attributes['enableDrag'] : true;
-		$enable_pinch_zoom  = isset( $attributes['enablePinchZoom'] ) ? (bool) $attributes['enablePinchZoom'] : true;
-		$enable_scroll_wheel_zoom = isset( $attributes['enableScrollWheelZoom'] ) ? (bool) $attributes['enableScrollWheelZoom'] : true;
-		$raw_dclk           = $attributes['enableDoubleClickZoom'] ?? null;
-		$enable_double_click_zoom = isset( $raw_dclk ) ? (bool) $raw_dclk : true;
-		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
+		// Read the two result-named interaction flags; coerce to bool with
+		// documented defaults. The two toggles surface the *outcome* the
+		// visitor sees — Pan and Zoom — and each gathers several Leaflet
+		// mechanisms behind one switch:
+		//
+		// - Pan gates `map.dragging`, the wheel handler's `'pan'` branch
+		//   (trackpad two-finger pan), and the arrow keys via the
+		//   capture-phase key filter in `keyboard.ts`.
+		// - Zoom gates `map.touchZoom`, `map.doubleClickZoom`, the wheel
+		//   handler's `'zoom'` branch (Cmd/Ctrl + wheel and trackpad pinch
+		//   via `ctrlKey:true`), the `+` / `-` / `=` keys via the same key
+		//   filter, and the modifier-key hint-overlay suppression (issue
+		//   #139). Box-zoom is intentionally absent — the view module drops
+		//   it altogether at construction time.
+		$enable_pan  = isset( $attributes['enablePan'] ) ? (bool) $attributes['enablePan'] : true;
+		$enable_zoom = isset( $attributes['enableZoom'] ) ? (bool) $attributes['enableZoom'] : true;
 
 		// Read the track-cursor toggle. Defaults to true so a Map paired with
 		// an Elevation block keeps reflecting the cursor; setting it to false
@@ -351,11 +355,8 @@ final class Render_Map {
 					'showScale'                 => $show_scale,
 					'showFullscreen'            => $show_fullscreen,
 					'showDownload'              => $show_download,
-					'enableDrag'                => $enable_drag,
-					'enablePinchZoom'           => $enable_pinch_zoom,
-					'enableScrollWheelZoom'     => $enable_scroll_wheel_zoom,
-					'enableDoubleClickZoom'     => $enable_double_click_zoom,
-					'enableKeyboard'            => $enable_keyboard,
+					'enablePan'                 => $enable_pan,
+					'enableZoom'                => $enable_zoom,
 					'enableTrackPositionCursor' => $enable_track_position_cursor,
 					'tooltipShowName'           => $tooltip_show_name,
 					'tooltipShowDesc'           => $tooltip_show_desc,
