@@ -10,19 +10,28 @@
 // preview and the rendered frontend agree byte-for-byte.
 
 .kntnt-gpx-blocks-elevation {
-	// Wrapper baseline. Overridden inline by core's `dimensions` block
-	// supports when the editor sets a value, and additionally
+	// Wrapper baseline. The wrapper is a column flex container so the
+	// chart SVG can be a flex item that fills the container's content
+	// box (i.e. the area inside the user's `spacing.padding` band) on
+	// both editor and frontend regardless of the `box-sizing` value
+	// the host environment puts on the wrapper. The frontend uses
+	// `box-sizing: border-box` (theme default); the editor uses
+	// `box-sizing: content-box` via `.block-editor-block-list__block`.
+	// With `position: absolute; inset: 0` on the SVG (the previous
+	// Step 3 follow-up rule), the SVG filled the wrapper's padding-box
+	// in both environments and visually swallowed the user's padding
+	// band on the frontend — a flex item respects the container's
+	// padding by construction.
+	//
+	// `min-height: 15vh` is overridden inline by core's `dimensions`
+	// block supports when the editor sets a value, and additionally
 	// overridden by the render path's always-on inline `min-height`
 	// default when both fields are blank — see `Dimensions_Defaults`
 	// for the normalisation rule.
-	display: block;
+	display: flex;
+	flex-direction: column;
 	width: 100%;
 	min-height: 15vh;
-
-	// Anchor descendants that need to fill the wrapper's box (the
-	// chart SVG with `width: 100%; height: 100%`) without depending
-	// on percentage-height resolution against an indefinite parent.
-	position: relative;
 
 	// Clip the chart SVG to the block's rounded corners when the
 	// editor sets a border-radius via the core Border panel. The
@@ -65,43 +74,51 @@
 	--kntnt-gpx-blocks-elevation-plot-line: #1e1e1e;
 	--kntnt-gpx-blocks-elevation-plot-fill: transparent;
 
-	// The chart SVG fills the wrapper's rendered content box via
-	// absolute positioning so its viewBox-derived intrinsic ratio
-	// does not influence the wrapper's height. Three concrete bugs
-	// avoided by this rule:
+	// The chart SVG is the single flex item the wrapper hosts. Three
+	// declarations carry the load:
 	//
-	//   1. After the user resets aspect-ratio to Original, the SVG's
-	//      previous viewBox (e.g. 600×450 from a 4:3 render) would
-	//      otherwise drag the wrapper into the same shape via the
-	//      replaced-element sizing rules — the user-visible symptom
-	//      is "the aspect-ratio retains its last value in the editor"
-	//      even though `aspect-ratio: auto` is in the inline style.
-	//   2. A freshly inserted block whose wrapper has only
-	//      `min-height: 15vh` (no explicit `height`) gives the SVG no
-	//      definite percentage-height base. `height: 100%` does not
-	//      resolve, so the SVG falls back to the SVG-spec default
-	//      300×150 and the wrapper grows to contain it.
-	//   3. When the user enlarges `min-height` in the inspector, the
-	//      SVG (sized by its own viewBox + intrinsic-ratio fallback)
-	//      does not grow with the wrapper, and the chart appears
-	//      frozen at the initial render size.
+	//   - `flex: 1 1 0` grows the SVG to fill the column's main axis,
+	//     so the SVG always occupies the wrapper's content-box height
+	//     whether that height comes from `aspect-ratio`, an explicit
+	//     user `min-height`, or the plugin's `15vh` default.
+	//   - `min-width: 0` and `min-height: 0` override the flex
+	//     algorithm's "do not shrink below intrinsic min-content" rule.
+	//     Without them the SVG's `viewBox`-derived intrinsic dimensions
+	//     (300×150 default, or whatever the previous render's viewBox
+	//     carried) would set a floor on the wrapper's height and
+	//     reproduce the three Step 3 follow-up bugs that the original
+	//     absolute-positioning rule was introduced to fix:
+	//       1. After the user resets aspect-ratio to Original, the SVG's
+	//          previous viewBox would otherwise drag the wrapper into
+	//          the same shape via the replaced-element sizing rules.
+	//       2. A freshly inserted block whose wrapper has only
+	//          `min-height: 15vh` (no explicit `height`) would render at
+	//          the SVG's 300×150 intrinsic default instead of 15vh.
+	//       3. Enlarging `min-height` in the inspector would grow the
+	//          wrapper but leave the SVG at its previous viewBox size.
+	//   - `width: 100%` and `height: 100%` are kept for SVG-as-replaced-
+	//     element correctness — some browsers honour only the explicit
+	//     dimensions when the intrinsic ratio is present. Combined with
+	//     the cross-axis default `align-items: stretch` on the flex
+	//     container, the SVG's rendered width tracks the wrapper's
+	//     content-box width exactly.
 	//
-	// Absolute positioning with `inset: 0` takes the SVG out of
-	// normal flow: it fills the wrapper's content box regardless of
-	// what determines that content box's height (min-height,
-	// aspect-ratio, or an explicit user value). The wrapper's
-	// `position: relative` above is the anchor for the absolute
-	// positioning. `width/height: 100%` is kept alongside `inset: 0`
-	// for SVG-as-replaced-element correctness — some browsers honour
-	// only the explicit width/height when the intrinsic ratio is
-	// present.
+	// The previous Step 3 follow-up rule (`position: absolute; inset: 0`
+	// on the SVG, anchored to `position: relative` on the wrapper) is
+	// removed because `position: absolute`'s containing block is the
+	// nearest positioned ancestor's *padding-box*, which made the SVG
+	// visually swallow the user's `spacing.padding` band on the
+	// frontend. A flex item respects the container's padding by
+	// construction. The Step 3 bugs above are now prevented by the
+	// flex item's `min-*: 0` declarations instead.
 	//
 	// The font-* family inheritance still flows through normally so
 	// the measurer's hidden <text> nodes measure under the same
 	// typography pipeline the visible labels use.
 	.kntnt-gpx-blocks-elevation-chart-svg {
-		position: absolute;
-		inset: 0;
+		flex: 1 1 0;
+		min-width: 0;
+		min-height: 0;
 		display: block;
 		width: 100%;
 		height: 100%;
