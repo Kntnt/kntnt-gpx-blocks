@@ -284,6 +284,12 @@ export function ElevationEdit( {
 		'axisColor',
 		''
 	);
+	const axisLabel = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'axisLabelColor',
+		''
+	);
 	const inlineStyle: Record< string, string > = {};
 	if ( bg.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-background' ] = bg.resolved;
@@ -291,6 +297,10 @@ export function ElevationEdit( {
 	}
 	if ( axis.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-axis' ] = axis.resolved;
+	}
+	if ( axisLabel.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-axis-label' ] =
+			axisLabel.resolved;
 	}
 
 	// Inject the Step 3 default min-height (15vh) only when the user

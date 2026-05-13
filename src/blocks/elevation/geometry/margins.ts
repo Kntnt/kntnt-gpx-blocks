@@ -1,12 +1,18 @@
 /**
  * Margin algorithm for the elevation chart.
  *
- * Computes the four scalars the Step 3 chart geometry needs:
+ * Computes the five scalars the Step 3 + Step 4 chart geometry needs:
  *
  *   - `wLeft`  — left margin reserving space for the widest Y label.
- *   - `wRight` — right margin reserving the half-width of the last X
- *                label so the centre-aligned label cannot overflow the
- *                container's right edge.
+ *   - `wRight` — right margin reserving the half-width of the
+ *                worst-case X label so the centre-aligned label cannot
+ *                overflow the container's right edge. Driven by
+ *                `xReferenceString(distance)` so the value is stable
+ *                across resizes and the chicken-and-egg between
+ *                margins and tick count is broken (Step 4).
+ *   - `wTop`   — top margin reserving the upper half of the topmost
+ *                Y label, which is centred on its tick at `y = wTop`
+ *                (Step 4).
  *   - `h`      — bottom margin reserving the height of the tallest
  *                realistic numeric label (driven by the fixed
  *                reference string `"-0,123456789"`).
@@ -14,12 +20,12 @@
  *                so callers do not need to re-measure to convert
  *                `em`-scaled values to user units.
  *
- * The formulas are pinned in Step 3 of `docs/elevation-rebuild.md`
- * § *Margin algorithm*:
+ * Updated formulas (Step 4):
  *
- *   wLeft  = widest(niceYLabels).width  + 0.5em
- *   wRight = last(niceXLabels).width / 2 + 0.5em
- *   h      = measure("-0,123456789").height + 0.5em
+ *   wLeft  = widest(niceYLabels).width + 0.5em
+ *   wRight = measure(xReferenceString(distance)).width / 2 + 0.5em
+ *   wTop   = 0.5 × refHeight + 0.5em
+ *   h      = refHeight + 0.5em
  *
  * The function is pure with respect to a passed-in measurer — DOM
  * access is delegated entirely to that callable, which makes
@@ -35,7 +41,7 @@
  * @since 1.0.0
  */
 
-import { formatXLabels, formatYLabels } from './format';
+import { formatYLabels, xReferenceString } from './format';
 import type { TextMeasurer, TypographyAttributes } from './measure';
 import { niceTicks } from './ticks';
 
@@ -60,19 +66,22 @@ export interface MarginsInput {
  *
  * `em` is the Tick-labels font-size in pixels, useful for callers that
  * want to express other geometry in `em` units (e.g. Step 4's tick
- * marker length of `0.2em`) without a second measurer round-trip.
+ * marker length of `0.2em` and the additive luft term in
+ * `computeTickCount`) without a second measurer round-trip.
  *
  * @since 1.0.0
  */
 export interface Margins {
 	readonly wLeft: number;
 	readonly wRight: number;
+	readonly wTop: number;
 	readonly h: number;
 	readonly em: number;
 }
 
 /**
- * Reference string whose rendered height drives the bottom margin.
+ * Reference string whose rendered height drives the top and bottom
+ * margins.
  *
  * Chosen for the union of extreme glyphs (minus sign, comma decimal,
  * full digit range) so the measurement covers any realistic label the
@@ -86,11 +95,11 @@ const HEIGHT_REFERENCE = '-0,123456789';
  * Default target tick count used when sizing margins before the
  * available plot width is known.
  *
- * Used as the initial estimate; Step 4 refines the count from
- * `W_avail / (labelWidth × 1.5)` once margins are settled. A count
- * around five is the de-facto convention for legible elevation
- * profiles — small enough to keep labels separated, large enough to
- * cover the range with reasonable resolution.
+ * Only the Y-label set drives a measurement (`wLeft` reads the
+ * widest); the X side now uses the deterministic
+ * {@link xReferenceString} so it does not need this hint. The actual
+ * tick counts on screen are derived per-axis from the post-margin
+ * extents in `chart.tsx` / `view.ts` via `computeTickCount`.
  *
  * @since 1.0.0
  */
@@ -125,7 +134,7 @@ function widestWidth(
 }
 
 /**
- * Computes the four margin scalars for the given data + typography.
+ * Computes the margin scalars for the given data + typography.
  *
  * @since 1.0.0
  *
@@ -134,7 +143,8 @@ function widestWidth(
  *                    resolved typography).
  * @param measure     Text measurer (typically returned by
  *                    `createTextMeasurer()`; tests inject a mock).
- * @param targetCount Optional tick-count hint; defaults to
+ * @param targetCount Optional tick-count hint for the Y-label
+ *                    measurement; defaults to
  *                    {@link DEFAULT_TARGET_TICK_COUNT}.
  * @return The {@link Margins} bundle.
  */
@@ -151,23 +161,15 @@ export function computeMargins(
 	const yMin = flatY ? data.minElevation - 1 : data.minElevation;
 	const yMax = flatY ? data.maxElevation + 1 : data.maxElevation;
 
-	// Generate the nice tick values and format them. The X axis runs
-	// `[0, distance]` per the chart's geometry model; the Y axis runs
-	// the (possibly inflated) elevation range.
+	// Generate the Y nice tick set and format it. The widest Y label
+	// drives wLeft; X's wRight is keyed on a worst-case reference
+	// string so no X tick generation is needed at this stage.
 	const yTicks = niceTicks( yMin, yMax, targetCount );
-	const xTicks = niceTicks( 0, data.distance, targetCount );
 	const yLabels = formatYLabels( yTicks.values, yTicks.step );
-	const xLabels = formatXLabels( xTicks.values, xTicks.step );
 
-	// Measure the labels the formulas reference. The widest Y label
-	// drives the left margin; the last X label drives the right margin
-	// (half-width because the label is centred under its marker).
+	// Measure the widest Y label and the worst-case X reference string.
 	const widestY = widestWidth( yLabels, typography, measure );
-	const lastXMeasure =
-		xLabels.length > 0
-			? measure( xLabels[ xLabels.length - 1 ] as string, typography )
-			: null;
-	const lastXWidth = lastXMeasure?.width ?? 0;
+	const xRef = measure( xReferenceString( data.distance ), typography );
 
 	// Measure the height reference string. The same character height
 	// applies to any realistic numeric label, so no per-axis height
@@ -182,7 +184,8 @@ export function computeMargins(
 
 	return {
 		wLeft: widestY + halfEm,
-		wRight: lastXWidth / 2 + halfEm,
+		wRight: xRef.width / 2 + halfEm,
+		wTop: 0.5 * ref.height + halfEm,
 		h: ref.height + halfEm,
 		em,
 	};

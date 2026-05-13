@@ -42,8 +42,18 @@
 	// view.ts and chart.tsx reference this custom property directly
 	// in their `stroke` attribute so the editor's Color → Axis picker
 	// repaints them live (the property is written onto the wrapper's
-	// inline style by `useBlockProps()` / `Render_Elevation`).
+	// inline style by `useBlockProps()` / `Render_Elevation`). The
+	// Step 4 tick marks reuse the same property so axis lines and tick
+	// marks always match.
 	--kntnt-gpx-blocks-elevation-axis: #1e1e1e;
+
+	// Axis-label fill colour default. The Step 4 tick-label `<text>`
+	// elements drawn by view.ts and chart.tsx reference this custom
+	// property in their `fill` attribute. The default is identical to
+	// --kntnt-gpx-blocks-elevation-axis so a single Axis override
+	// produces a coherent monochrome look; editors who want labels in
+	// a different colour set Color → Axis labels independently.
+	--kntnt-gpx-blocks-elevation-axis-label: #1e1e1e;
 
 	// The chart SVG fills the wrapper's rendered content box via
 	// absolute positioning so its viewBox-derived intrinsic ratio

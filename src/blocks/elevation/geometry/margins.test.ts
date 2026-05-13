@@ -6,10 +6,15 @@
  * length so margin computations are exactly predictable from the
  * resulting tick label set.
  *
- * Pins the Step 3 contract:
+ * Pins the Step 4 contract:
  *
  *   - `wLeft  = widest(niceYLabels).width + 0.5em`
- *   - `wRight = last(niceXLabels).width / 2 + 0.5em`
+ *   - `wRight = measure(xReferenceString(distance)).width / 2 + 0.5em`
+ *     (driven by the worst-case reference string keyed on `distance`,
+ *     not by the actual last X tick label — eliminates the chicken-
+ *     and-egg between margins and tick count).
+ *   - `wTop   = 0.5 × refHeight + 0.5em` (new in Step 4 — reserves the
+ *     upper half of the topmost Y label, which is centred on its tick).
  *   - `h      = measure(HEIGHT_REFERENCE).height + 0.5em`
  *   - Case B (`min === max`) inflates the Y range to `[min−1, min+1]`.
  *   - `em` is the resolved font-size returned by the measurer.
@@ -17,6 +22,7 @@
  * @since 1.0.0
  */
 
+import { xReferenceString } from './format';
 import { computeMargins } from './margins';
 import type {
 	TextMeasurement,
@@ -72,17 +78,28 @@ describe( 'computeMargins', () => {
 		expect( m.wLeft ).toBe( 60 + 8 );
 	} );
 
-	it( 'applies the wRight = lastX/2 + 0.5em formula', () => {
+	it( 'applies the wRight = refString/2 + 0.5em formula keyed on distance', () => {
 		const { measure } = makeMeasurer( 10, 20, 16 );
 		const m = computeMargins(
 			{ minElevation: 0, maxElevation: 1000, distance: 5000 },
 			{},
 			measure
 		);
-		// X labels in km mode: 'X km' for the last entry.
-		// Last value formatted as e.g. '5,0 km' (6 chars) → 60 px / 2 + 8 = 38.
-		// Compute exact: last X tick from niceTicks(0,5000,5) is 5000 → '5,0 km' (6 chars).
-		expect( m.wRight ).toBe( 60 / 2 + 8 );
+		// distance=5000 → km-mode refString = '88,8 km' under sv-SE.
+		// Length-based mock width = strlen × 10 → 70 / 2 + 8 = 43.
+		const refLen = xReferenceString( 5000 ).length;
+		expect( m.wRight ).toBe( ( refLen * 10 ) / 2 + 8 );
+	} );
+
+	it( 'applies the wTop = 0.5 × refHeight + 0.5em formula', () => {
+		const { measure } = makeMeasurer( 10, 22, 16 );
+		const m = computeMargins(
+			{ minElevation: 0, maxElevation: 1000, distance: 5000 },
+			{},
+			measure
+		);
+		// 0.5 × 22 + 0.5 × 16 = 11 + 8 = 19.
+		expect( m.wTop ).toBe( 11 + 8 );
 	} );
 
 	it( 'applies the h = refHeight + 0.5em formula', () => {
@@ -148,5 +165,17 @@ describe( 'computeMargins', () => {
 			measure
 		);
 		expect( calls.map( ( c ) => c.text ) ).toContain( '-0,123456789' );
+	} );
+
+	it( 'measures the X reference string for the given distance', () => {
+		const { measure, calls } = makeMeasurer( 10, 20, 16 );
+		computeMargins(
+			{ minElevation: 0, maxElevation: 100, distance: 5000 },
+			{},
+			measure
+		);
+		// distance=5000 → km-mode refString = '88,8 km' under sv-SE.
+		const refString = xReferenceString( 5000 );
+		expect( calls.map( ( c ) => c.text ) ).toContain( refString );
 	} );
 } );

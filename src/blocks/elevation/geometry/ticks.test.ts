@@ -1,10 +1,12 @@
 /**
  * Unit tests for the nice-tick generator.
  *
- * Pins the Step 3 contract:
+ * Pins the Step 4 contract:
  *
- *   - {@link computeTickCount} returns `floor(width / (label × 1.5))`,
- *     clamped to `≥ 2`.
+ *   - {@link computeTickCount} returns
+ *     `floor((avail + 0.5em) / (refSize + 0.5em))`, clamped to `≥ 2`.
+ *     Step 4 replaced Step 3's `× 1.5` proportional padding with an
+ *     additive `0.5em` luft term.
  *   - {@link niceStep} rounds to the nearest entry in
  *     `[1, 2, 5] × 10^n` with ties going downward.
  *   - {@link generateTicks} covers the requested range inclusively on
@@ -17,19 +19,34 @@
 import { computeTickCount, generateTicks, niceStep, niceTicks } from './ticks';
 
 describe( 'computeTickCount', () => {
-	it( 'returns floor(width / (label * 1.5))', () => {
-		// 600 / (50 * 1.5) = 8 → 8.
-		expect( computeTickCount( 600, 50 ) ).toBe( 8 );
+	it( 'applies the additive formula floor((avail + 0.5em) / (refSize + 0.5em))', () => {
+		// avail=600, refSize=50, em=16 → padding=8 → (608/58) = 10.48… → 10.
+		expect( computeTickCount( 600, 50, 16 ) ).toBe( 10 );
 	} );
 
-	it( 'clamps to at least 2 even on a very narrow chart', () => {
-		expect( computeTickCount( 30, 50 ) ).toBe( 2 );
+	it( 'clamps to at least 2 on a very narrow chart', () => {
+		// (30 + 8) / (50 + 8) = 0.65 → floor=0 → clamped to 2.
+		expect( computeTickCount( 30, 50, 16 ) ).toBe( 2 );
 	} );
 
-	it( 'returns 2 for non-positive inputs', () => {
-		expect( computeTickCount( 0, 50 ) ).toBe( 2 );
-		expect( computeTickCount( 100, 0 ) ).toBe( 2 );
-		expect( computeTickCount( -100, 50 ) ).toBe( 2 );
+	it( 'returns 2 for non-positive avail', () => {
+		expect( computeTickCount( 0, 50, 16 ) ).toBe( 2 );
+		expect( computeTickCount( -100, 50, 16 ) ).toBe( 2 );
+	} );
+
+	it( 'returns 2 for non-positive refSize', () => {
+		expect( computeTickCount( 600, 0, 16 ) ).toBe( 2 );
+		expect( computeTickCount( 600, -10, 16 ) ).toBe( 2 );
+	} );
+
+	it( 'scales the luft with em', () => {
+		// em=32 → padding=16 → (600+16)/(50+16) = 616/66 ≈ 9.33 → 9.
+		expect( computeTickCount( 600, 50, 32 ) ).toBe( 9 );
+	} );
+
+	it( 'fits more ticks as the container widens', () => {
+		// em=16 → padding=8 → (1200+8)/(50+8) = 1208/58 ≈ 20.83 → 20.
+		expect( computeTickCount( 1200, 50, 16 ) ).toBe( 20 );
 	} );
 } );
 

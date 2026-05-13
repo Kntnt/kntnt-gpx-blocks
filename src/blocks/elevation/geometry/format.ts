@@ -2,14 +2,17 @@
  * Locale-aware label formatting for the elevation chart axes.
  *
  * Pure functions — no DOM, no React, no SVG. Convert nice-tick numeric
- * values into the strings shown next to the X and Y axes.
+ * values into the strings shown next to the X and Y axes, and produce
+ * the worst-case reference string the margin algorithm measures to
+ * size `wRight` and the tick-count algorithm to derive `N_x`.
  *
  * The Y axis always carries metres; the X axis switches between metres
- * and kilometres on the per-axis rule from Step 4 of
- * `docs/elevation-rebuild.md`: if more than half of the non-zero tick
- * values are ≥ 1000 m, the whole axis converts to kilometres, only the
- * last label carries the `" km"` suffix, and intermediate labels are
- * unitless.
+ * and kilometres on a deterministic distance-only threshold pinned by
+ * Step 4 of `docs/elevation-rebuild.md`:
+ *
+ *   - `distance < 2000`  → metres mode.
+ *   - `distance >= 2000` → kilometres mode (intermediate labels
+ *                          unitless, last label suffixed `" km"`).
  *
  * Locale handling mirrors the PHP-side `Value_Formatter`: decimal and
  * thousand separators follow the site's locale (Swedish in this
@@ -34,6 +37,17 @@ export type XAxisUnit = 'm' | 'km';
  * @since 1.0.0
  */
 const FALLBACK_LOCALE = 'sv-SE';
+
+/**
+ * Threshold (in metres) at which the X axis flips from metres to
+ * kilometres. Tracks shorter than this stay in metres; tracks of
+ * exactly this length or longer convert to km. Locked by Step 4's
+ * Q2 grilling — decoupling the unit choice from the eventual tick
+ * count is what makes the worst-case reference string deterministic.
+ *
+ * @since 1.0.0
+ */
+const KM_THRESHOLD = 2000;
 
 /**
  * Resolves the locale used for formatting.
@@ -117,26 +131,75 @@ function fractionDigitsForStep( niceStep: number ): number {
 }
 
 /**
- * Chooses the X-axis unit for a set of nice-tick values.
+ * Chooses the X-axis unit for a given track distance.
  *
- * Counts the non-zero values whose magnitude is ≥ 1000 m. The whole
- * axis converts to kilometres iff more than half of the non-zero
- * values pass the threshold. When the value list is empty or contains
- * only zero, the axis stays in metres so a degenerate (zero-distance)
- * chart still renders consistent labels.
+ * The unit is determined by `distance` alone — independent of the
+ * eventual tick count — so the margin algorithm can pre-compute a
+ * worst-case reference string before `niceTicks` (in `ticks.ts`) is
+ * called. See Step 4 *Reference strings* in
+ * `docs/elevation-rebuild.md` for the rationale.
  *
  * @since 1.0.0
  *
- * @param values Nice-tick values in metres, in ascending order.
+ * @param distance Track distance in metres.
  * @return The chosen unit for the whole axis.
  */
-export function chooseXUnit( values: readonly number[] ): XAxisUnit {
-	const nonZero = values.filter( ( v ) => v !== 0 );
-	if ( nonZero.length === 0 ) {
-		return 'm';
+export function chooseXUnit( distance: number ): XAxisUnit {
+	return distance < KM_THRESHOLD ? 'm' : 'km';
+}
+
+/**
+ * Returns a worst-case X-axis label string keyed on `distance`.
+ *
+ * The returned string is typographically ≥ the widest label any
+ * `niceTicks` call (see `ticks.ts`) against the same `distance` can
+ * produce, so measuring it once gives a safe upper bound for `wRight`
+ * (in `margins.ts`) and for `N_x` (via the additive `computeTickCount`
+ * in `ticks.ts`). All `"8"` digits are chosen typographically because
+ * `8` is the widest digit in the proportional fonts the project
+ * supports (Inter, Source Sans, Roboto, Open Sans, …).
+ *
+ * m-mode buffer logic (Step 4 spec):
+ *
+ *   - `digits = min(4, floor(log10(max(distance, 1))) + 2)` — the `+2`
+ *     buffer covers `niceTicks` rounding up to the next decade (e.g.
+ *     `distance = 888` → last tick `1000`). The `4` cap is the
+ *     hard bound implied by `distance < 2000` ⇒ last tick ≤ `2000`.
+ *
+ * km-mode buffer logic (Step 4 spec):
+ *
+ *   - `n = max(1, floor(log10(distance)) - 1)` — the `-1` buffer
+ *     covers `niceTicks` rounding past the next power of ten (e.g.
+ *     `distance = 9999` → last tick `10 000` → label `"10,0 km"`).
+ *
+ * @since 1.0.0
+ *
+ * @param distance Track distance in metres.
+ * @param locale   Optional locale override.
+ * @return The reference label string.
+ */
+export function xReferenceString( distance: number, locale?: string ): string {
+	if ( distance < KM_THRESHOLD ) {
+		const safeDistance = Math.max( distance, 1 );
+		const digits = Math.min(
+			4,
+			Math.floor( Math.log10( safeDistance ) ) + 2
+		);
+		const num = formatNumber(
+			Number.parseInt( '8'.repeat( digits ), 10 ),
+			0,
+			locale
+		);
+		return `${ num } m`;
 	}
-	const big = nonZero.filter( ( v ) => Math.abs( v ) >= 1000 ).length;
-	return big > nonZero.length / 2 ? 'km' : 'm';
+
+	const n = Math.max( 1, Math.floor( Math.log10( distance ) ) - 1 );
+	const num = formatNumber(
+		Number.parseFloat( `${ '8'.repeat( n ) }.8` ),
+		1,
+		locale
+	);
+	return `${ num } km`;
 }
 
 /**
@@ -165,25 +228,27 @@ export function formatYLabels(
  * Formats the X-axis tick labels.
  *
  * Switches the whole axis to kilometres when {@link chooseXUnit}
- * returns `'km'`. In metres mode every label carries `" m"`. In
- * kilometres mode values are divided by 1000, shown with one decimal,
- * and only the last label carries the `" km"` suffix — intermediate
- * labels are unitless to keep the axis readable.
+ * returns `'km'` for the given `distance`. In metres mode every label
+ * carries `" m"`. In kilometres mode values are divided by 1000, shown
+ * with one decimal, and only the last label carries the `" km"`
+ * suffix — intermediate labels are unitless to keep the axis readable.
  *
  * @since 1.0.0
  *
  * @param values   Nice-tick values in metres, in ascending order.
  * @param niceStep The nice-step size used to generate the values, in
  *                 metres. Used to pick precision in metres mode.
+ * @param distance Track distance in metres. Drives the unit choice.
  * @param locale   Optional locale override.
  * @return Array of formatted label strings, parallel to `values`.
  */
 export function formatXLabels(
 	values: readonly number[],
 	niceStep: number,
+	distance: number,
 	locale?: string
 ): readonly string[] {
-	const unit = chooseXUnit( values );
+	const unit = chooseXUnit( distance );
 	if ( unit === 'm' ) {
 		const digits = fractionDigitsForStep( niceStep );
 		return values.map(

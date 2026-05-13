@@ -6,11 +6,15 @@
  * geometry in jsdom. Verifies:
  *
  *   - Two axis `<line>` elements render with the documented coordinates
- *     after measurement and layout settle.
+ *     after measurement and layout settle. The Y axis starts at
+ *     `y = margins.wTop` (Step 4) rather than at `y = 0`.
  *   - The axis stroke is the CSS custom property
  *     `var(--kntnt-gpx-blocks-elevation-axis)` and the stroke-width is
  *     `1` (per Step 3 *Axis appearance*).
  *   - The SVG carries `role="img"` and a localised `aria-label`.
+ *   - Step 4: two tick-mark groups + two tick-label groups appear inside
+ *     the SVG. The first X tick sits at `x = margins.wLeft`. X tick
+ *     values are filtered to `value ≤ distance` (Strava-style bounds).
  *
  * @since 1.0.0
  */
@@ -182,7 +186,9 @@ describe( 'Chart', () => {
 			maxElevation: 500,
 			distance: 5000,
 		} );
-		const lines = svg.querySelectorAll( 'line' );
+		const lines = svg.querySelectorAll(
+			'line.kntnt-gpx-blocks-elevation-axis-x, line.kntnt-gpx-blocks-elevation-axis-y'
+		);
 		expect( lines ).toHaveLength( 2 );
 	} );
 
@@ -192,12 +198,118 @@ describe( 'Chart', () => {
 			maxElevation: 500,
 			distance: 5000,
 		} );
-		const lines = svg.querySelectorAll( 'line' );
-		for ( const line of lines ) {
+		const axisLines = svg.querySelectorAll(
+			'line.kntnt-gpx-blocks-elevation-axis-x, line.kntnt-gpx-blocks-elevation-axis-y'
+		);
+		for ( const line of axisLines ) {
 			expect( line.getAttribute( 'stroke-width' ) ).toBe( '1' );
 			expect( line.getAttribute( 'stroke' ) ).toBe(
 				'var(--kntnt-gpx-blocks-elevation-axis)'
 			);
 		}
+	} );
+
+	it( 'starts the Y axis line at y1 = margins.wTop (not 0)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const yAxis = svg.querySelector(
+			'line.kntnt-gpx-blocks-elevation-axis-y'
+		);
+		expect( yAxis ).not.toBeNull();
+		const y1 = Number.parseFloat( yAxis!.getAttribute( 'y2' ) ?? '0' );
+		// Step 4: Y axis line endpoints are (margins.wLeft, H-margins.h) →
+		// (margins.wLeft, margins.wTop). wTop is strictly positive because
+		// 0.5 × refHeight + 0.5em > 0 under the stubbed measurer.
+		expect( y1 ).toBeGreaterThan( 0 );
+	} );
+
+	it( 'renders the four Step 4 tick groups (marks + labels for both axes)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-ticks-x' )
+		).not.toBeNull();
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-ticks-y' )
+		).not.toBeNull();
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-tick-labels-x' )
+		).not.toBeNull();
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-tick-labels-y' )
+		).not.toBeNull();
+	} );
+
+	it( 'positions tick labels with the documented anchor + baseline attributes', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const xLabels = svg.querySelectorAll(
+			'g.kntnt-gpx-blocks-elevation-tick-labels-x text'
+		);
+		const yLabels = svg.querySelectorAll(
+			'g.kntnt-gpx-blocks-elevation-tick-labels-y text'
+		);
+		expect( xLabels.length ).toBeGreaterThan( 0 );
+		expect( yLabels.length ).toBeGreaterThan( 0 );
+		for ( const t of xLabels ) {
+			expect( t.getAttribute( 'text-anchor' ) ).toBe( 'middle' );
+			expect( t.getAttribute( 'dominant-baseline' ) ).toBe( 'hanging' );
+		}
+		for ( const t of yLabels ) {
+			expect( t.getAttribute( 'text-anchor' ) ).toBe( 'end' );
+			expect( t.getAttribute( 'dominant-baseline' ) ).toBe( 'central' );
+		}
+	} );
+
+	it( 'places the first X tick at x = margins.wLeft (the origin)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const yAxis = svg.querySelector(
+			'line.kntnt-gpx-blocks-elevation-axis-y'
+		);
+		const wLeft = Number.parseFloat( yAxis!.getAttribute( 'x1' ) ?? '0' );
+
+		const firstXTickMark = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-ticks-x line'
+		);
+		expect( firstXTickMark ).not.toBeNull();
+		// Tick marks for X are vertical lines anchored to the X axis Y
+		// coordinate; the first tick's x1 == margins.wLeft.
+		expect(
+			Number.parseFloat( firstXTickMark!.getAttribute( 'x1' ) ?? 'NaN' )
+		).toBeCloseTo( wLeft, 5 );
+	} );
+
+	it( 'never plots an X tick whose value exceeds distance', async () => {
+		// distance = 4500 → niceTicks(0, 4500, N) can produce 5000 if
+		// the nice step is 1000 (since ceil(4500/1000)*1000 = 5000). The
+		// filter in chart.tsx should drop any value > distance so the
+		// last rendered X tick value is at most 4500.
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 4500,
+		} );
+		const labels = Array.from(
+			svg.querySelectorAll(
+				'g.kntnt-gpx-blocks-elevation-tick-labels-x text'
+			)
+		).map( ( t ) => t.textContent ?? '' );
+		// In km-mode the last label is "4,5 km" (or smaller); never the
+		// "5,0 km" that the unfiltered nice-tick set would have produced.
+		const last = labels[ labels.length - 1 ];
+		expect( last ).not.toMatch( /^5[.,]0 km$/ );
 	} );
 } );

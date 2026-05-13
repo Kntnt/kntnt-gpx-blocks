@@ -10,9 +10,10 @@
  * The algorithm:
  *
  *   1. Compute a target tick count `N` from the available plotting
- *      width and the width of an average label
- *      (`N = floor(width / (labelWidth × 1.5))`, clamped to ≥ 2).
- *      The 1.5 factor prevents labels from crowding visually.
+ *      extent and a reference-label size
+ *      (`N = floor((avail + 0.5em) / (refSize + 0.5em))`, clamped to
+ *      ≥ 2). The additive `0.5em` is the constant luft Step 4 settled
+ *      on after rejecting Step 3's proportional `× 1.5` factor.
  *   2. Divide the data range by `N` to get a candidate step.
  *   3. Round the candidate to the nearest value of the form
  *      `[1, 2, 5] × 10^n` so the axis reads on a linear, easy-to-skim
@@ -21,36 +22,51 @@
  *      `ceil(max/step) × step`, inclusive on both ends.
  *
  * The functions are pure: no DOM, no closures over caller state. Step 3
- * uses them through `geometry/margins.ts`; Step 4 will draw the
- * generated values directly.
+ * uses them through `geometry/margins.ts`; Step 4 draws the generated
+ * values directly.
  *
  * @since 1.0.0
  */
 
 /**
  * Computes the target tick count `N` from the available plotting
- * width and an average-label width.
+ * extent and a reference-label size.
+ *
+ * Step 4 replaced the proportional `× 1.5` luft of Step 3 with an
+ * additive `0.5em` term: at least `0.5em` of breathing room between
+ * adjacent labels regardless of label width. Solving
+ * `N · refSize + (N − 1) · 0.5em ≤ avail` for `N` gives the formula
+ * encoded here. Constant luft is easier to reason about and keeps the
+ * visual gap consistent across very different label widths (`"0 m"`
+ * vs `"1234 m"`).
  *
  * Returns at least `2` so even an unusably narrow chart still emits a
  * start-and-end tick pair. Non-positive inputs collapse to the
- * minimum — the caller passes the actual SVG dimensions and label
+ * minimum — the caller passes the actual SVG dimensions and reference
  * measurement, so either zero would indicate a not-yet-ready chart.
  *
  * @since 1.0.0
  *
- * @param availableWidth Plotting-area width in SVG user units (after
- *                       subtracting the left and right margins).
- * @param labelWidth     Average label width in the same units.
+ * @param avail   Plotting-area extent in SVG user units (after
+ *                subtracting the relevant margins). Width for X,
+ *                height for Y.
+ * @param refSize Reference-label size in the same units. Width of the
+ *                worst-case X label for the X axis; height of the
+ *                shared height-reference string for the Y axis.
+ * @param em      Resolved font-size in pixels, used to scale the
+ *                additive `0.5em` luft term.
  * @return The target tick count, clamped to `≥ 2`.
  */
 export function computeTickCount(
-	availableWidth: number,
-	labelWidth: number
+	avail: number,
+	refSize: number,
+	em: number
 ): number {
-	if ( availableWidth <= 0 || labelWidth <= 0 ) {
+	if ( avail <= 0 || refSize <= 0 ) {
 		return 2;
 	}
-	const raw = Math.floor( availableWidth / ( labelWidth * 1.5 ) );
+	const padding = 0.5 * em;
+	const raw = Math.floor( ( avail + padding ) / ( refSize + padding ) );
 	return raw < 2 ? 2 : raw;
 }
 

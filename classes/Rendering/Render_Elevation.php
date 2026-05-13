@@ -275,15 +275,17 @@ final class Render_Elevation {
 	 * Builds the wrapper's inline style string from the block's
 	 * sanitised colour attributes.
 	 *
-	 * Step 3 ships two custom properties:
+	 * Step 3 introduced two custom properties; Step 4 adds the
+	 * `axis-label` colour that drives tick label fills. Subsequent
+	 * steps will append the remaining colour custom properties here
+	 * as their chart surfaces land.
 	 *
 	 *   - `--kntnt-gpx-blocks-elevation-background` from
 	 *     `attributes.backgroundColor`.
 	 *   - `--kntnt-gpx-blocks-elevation-axis` from
 	 *     `attributes.axisColor`.
-	 *
-	 * Subsequent steps will append the other colour custom properties
-	 * here as their corresponding chart surfaces land.
+	 *   - `--kntnt-gpx-blocks-elevation-axis-label` from
+	 *     `attributes.axisLabelColor`.
 	 *
 	 * @since 1.0.0
 	 *
@@ -307,6 +309,13 @@ final class Render_Elevation {
 		);
 		if ( '' !== $axis ) {
 			$parts[] = '--kntnt-gpx-blocks-elevation-axis: ' . esc_attr( $axis );
+		}
+
+		$axis_label = Color_Sanitizer::sanitize(
+			is_string( $attributes['axisLabelColor'] ?? null ) ? (string) $attributes['axisLabelColor'] : ''
+		);
+		if ( '' !== $axis_label ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-axis-label: ' . esc_attr( $axis_label );
 		}
 
 		// Append a trailing `;` so the joined declarations always end

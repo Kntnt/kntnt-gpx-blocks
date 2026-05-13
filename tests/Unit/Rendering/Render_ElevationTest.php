@@ -219,24 +219,29 @@ test( 'render_chart_wrapper threads sanitised colour custom properties through t
 	$attributes = [
 		'backgroundColor' => '#abcdef',
 		'axisColor'       => '#123456',
+		'axisLabelColor'  => '#789abc',
 	];
 	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-background: #abcdef' );
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-axis: #123456' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-axis-label: #789abc' );
 } );
 
 test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', function (): void {
 	$attributes = [
 		'backgroundColor' => 'javascript:alert(1)',
 		'axisColor'       => '#GGG',
+		'axisLabelColor'  => 'expression(alert(1))',
 	];
 	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
 	expect( $html )->not->toContain( 'javascript:' );
 	expect( $html )->not->toContain( '#GGG' );
+	expect( $html )->not->toContain( 'expression(' );
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-background' );
-	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-axis' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-axis:' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-axis-label' );
 } );
 
 test( 'render_chart_wrapper escapes the data-wp-context attribute value', function (): void {
