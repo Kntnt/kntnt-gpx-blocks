@@ -527,6 +527,112 @@ describe( 'Chart', () => {
 		}
 	} );
 
+	it( 'keeps the chart visible when a webfont fires loadingdone after mount', async () => {
+		// Regression pin for the user-reported "chart flashes briefly
+		// then disappears" symptom: a `loadingdone` event on
+		// document.fonts that fires after the initial margin computation
+		// must trigger a re-measurement WITHOUT tearing the rendered
+		// chart down in the meantime. The previous implementation cleared
+		// `margins` to `null` and re-asserted `fontsReady`, but the
+		// `setFontsReady( true )` call was a no-op when the value was
+		// already `true` and `margins` was not in the layout effect's
+		// dep list, so the chart stayed permanently empty until the next
+		// data / typography change. The fix routes the re-measure
+		// request through a dedicated counter that IS in the dep list.
+		const data = { minElevation: 0, maxElevation: 500, distance: 5000 };
+		const samples = [
+			[ 0, 100 ],
+			[ 5000, 200 ],
+		] as const;
+
+		// Install a minimal FontFaceSet stub on document.fonts so the
+		// chart's `useEffect` attaches its `loadingdone` listener.
+		// jsdom does not implement the CSS Font Loading API natively.
+		const listeners: Array< () => void > = [];
+		const fontsStub = {
+			status: 'loaded' as const,
+			ready: Promise.resolve(),
+			addEventListener: ( type: string, listener: () => void ): void => {
+				if ( type === 'loadingdone' ) {
+					listeners.push( listener );
+				}
+			},
+			removeEventListener: (
+				type: string,
+				listener: () => void
+			): void => {
+				if ( type === 'loadingdone' ) {
+					const index = listeners.indexOf( listener );
+					if ( index !== -1 ) {
+						listeners.splice( index, 1 );
+					}
+				}
+			},
+		};
+		const originalFonts = ( document as unknown as { fonts?: unknown } )
+			.fonts;
+		Object.defineProperty( document, 'fonts', {
+			value: fontsStub,
+			configurable: true,
+			writable: true,
+		} );
+
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+
+		try {
+			await act( async () => {
+				root.render(
+					createElement( Chart, {
+						data,
+						samples,
+						typography: {},
+					} )
+				);
+			} );
+			await act( async () => {
+				await Promise.resolve();
+			} );
+
+			// Sanity check: the chart drew its axes after the initial
+			// measurement settled.
+			const linesBefore = container.querySelectorAll(
+				'line.kntnt-gpx-blocks-elevation-axis-x, line.kntnt-gpx-blocks-elevation-axis-y'
+			);
+			expect( linesBefore.length ).toBe( 2 );
+
+			// Fire `loadingdone` — the regression case.
+			await act( async () => {
+				for ( const listener of listeners ) {
+					listener();
+				}
+			} );
+			await act( async () => {
+				await Promise.resolve();
+			} );
+
+			// The chart must still be drawn. Pre-fix this assertion
+			// failed: the listener cleared `margins` to `null` and the
+			// layout effect did not re-fire, so both axis lines were
+			// removed from the DOM.
+			const linesAfter = container.querySelectorAll(
+				'line.kntnt-gpx-blocks-elevation-axis-x, line.kntnt-gpx-blocks-elevation-axis-y'
+			);
+			expect( linesAfter.length ).toBe( 2 );
+		} finally {
+			if ( originalFonts === undefined ) {
+				delete ( document as unknown as { fonts?: unknown } ).fonts;
+			} else {
+				Object.defineProperty( document, 'fonts', {
+					value: originalFonts,
+					configurable: true,
+					writable: true,
+				} );
+			}
+		}
+	} );
+
 	it( 'never plots an X tick whose value exceeds distance', async () => {
 		// distance = 4500 → niceTicks(0, 4500, N) can produce 5000 if
 		// the nice step is 1000 (since ceil(4500/1000)*1000 = 5000). The

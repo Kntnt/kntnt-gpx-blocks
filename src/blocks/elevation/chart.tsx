@@ -196,6 +196,19 @@ export function Chart( {
 			document.fonts.status === 'loaded'
 	);
 
+	// Re-measure trigger for `loadingdone` events that fire after the
+	// initial margin computation. The handler bumps this counter and
+	// the layout effect below lists it as a dep, so a late-loaded
+	// webfont reaches a fresh `computeMargins` call under its final
+	// metrics. A counter — rather than clearing `margins` to `null` and
+	// re-asserting `fontsReady` — is necessary because `setFontsReady(
+	// true )` is a no-op when the value is already `true`, and a
+	// `setMargins( null )` re-render alone does not re-fire the layout
+	// effect (the dep list does not include `margins`). Without this
+	// token, a post-mount `loadingdone` would tear the chart down
+	// permanently.
+	const [ remeasureToken, setRemeasureToken ] = useState< number >( 0 );
+
 	// Wait for fonts.ready before the first measurement; re-measure
 	// on later loadingdone events so late-loaded webfonts replace
 	// fallback-font metrics rather than leaving the chart with
@@ -221,11 +234,7 @@ export function Chart( {
 			if ( cancelled ) {
 				return;
 			}
-			// Force a re-measure by clearing margins; the next
-			// useLayoutEffect tick rebuilds them under the now-final
-			// font metrics.
-			setMargins( null );
-			setFontsReady( true );
+			setRemeasureToken( ( previous ) => previous + 1 );
 		};
 		fonts.addEventListener( 'loadingdone', onLoadingDone );
 
@@ -267,6 +276,7 @@ export function Chart( {
 		typography.textTransform,
 		typography.textDecoration,
 		fontsReady,
+		remeasureToken,
 	] );
 
 	// Cache SVG dimensions for axis drawing; ResizeObserver triggers
