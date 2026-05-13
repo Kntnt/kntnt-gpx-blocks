@@ -106,6 +106,18 @@ interface MapSettings {
 	readonly enableDrag: boolean;
 	/** Enable pinch-to-zoom on touch devices. */
 	readonly enablePinchZoom: boolean;
+	/**
+	 * Enable wheel-driven zoom. Gates every wheel-event zoom branch — both
+	 * the Cmd/Ctrl + wheel modifier path on a mouse and the trackpad-pinch
+	 * gesture (which browsers deliver as a wheel event with
+	 * `ctrlKey: true`). Touchscreen pinch (Leaflet's `touchZoom`) is a
+	 * separate code path governed by `enablePinchZoom` and is unaffected.
+	 * When `false`, the wheel handler returns `'hint'` for every zoom
+	 * candidate, but the hint overlay is suppressed too because the hint
+	 * message ("Hold ⌘ + scroll to zoom the map") is misleading when zoom
+	 * is disabled altogether. See issue #139.
+	 */
+	readonly enableScrollWheelZoom: boolean;
 	/** Enable double-click zoom. */
 	readonly enableDoubleClickZoom: boolean;
 	/** Enable keyboard navigation. Required for accessibility. */
@@ -485,19 +497,36 @@ function pickScrollHintMessage( hint: MapState[ 'scrollHint' ] ): string {
  * pan modality respects the same toggle that gates mouse and single-touch
  * drag — see issue #66.
  *
+ * `enableScrollWheelZoom` likewise gates every wheel-driven zoom branch
+ * (issue #139). When the editor disabled scroll-wheel zoom, the classifier
+ * returns `'hint'` for the modifier-key wheel and trackpad-pinch cases too,
+ * and this handler additionally suppresses `showHint()` for all hint events
+ * — the overlay message ("Hold ⌘ + scroll to zoom the map") would be a
+ * misdirection when zoom is off altogether. The pan branch is independent
+ * and still surfaces the overlay when relevant via the `'pan'`-rejected
+ * fall-through inside `classifyWheel`; that fall-through honours
+ * `enableScrollWheelZoom === false` by suppressing the overlay too, because
+ * the message remains misleading regardless of the gesture that produced
+ * the wheel event.
+ *
  * @since 1.0.0
  *
- * @param map        - Leaflet map instance.
- * @param blockEl    - Block wrapper element receiving wheel events.
- * @param hint       - Pre-translated `{ apple, other }` hint pair.
- * @param enableDrag - Whether drag-to-pan is enabled. Gates the `'pan'` branch.
- * @param signal     - AbortSignal that releases listeners on tear-down.
+ * @param map                   - Leaflet map instance.
+ * @param blockEl               - Block wrapper element receiving wheel events.
+ * @param hint                  - Pre-translated `{ apple, other }` hint pair.
+ * @param enableDrag            - Whether drag-to-pan is enabled. Gates the
+ *                              `'pan'` branch.
+ * @param enableScrollWheelZoom - Whether wheel-driven zoom is enabled. Gates
+ *                              the `'zoom'` branch and the hint overlay.
+ * @param signal                - AbortSignal that releases listeners on
+ *                              tear-down.
  */
 function attachWheelHandler(
 	map: L.Map,
 	blockEl: HTMLElement,
 	hint: MapState[ 'scrollHint' ],
 	enableDrag: boolean,
+	enableScrollWheelZoom: boolean,
 	signal: AbortSignal
 ): void {
 	let hintEl: HTMLElement | null = null;
@@ -530,7 +559,10 @@ function attachWheelHandler(
 	blockEl.addEventListener(
 		'wheel',
 		( event: WheelEvent ) => {
-			const action = classifyWheel( event, { enableDrag } );
+			const action = classifyWheel( event, {
+				enableDrag,
+				enableScrollWheelZoom,
+			} );
 
 			if ( action === 'zoom' ) {
 				event.preventDefault();
@@ -555,6 +587,15 @@ function attachWheelHandler(
 
 			// `hint` — do NOT preventDefault. Page scrolls past the map
 			// while the overlay surfaces the modifier-key requirement.
+			//
+			// Suppress the overlay entirely when scroll-wheel zoom is off
+			// (issue #139): the message "Hold ⌘ + scroll to zoom the map"
+			// is misleading when zoom is disabled altogether — the map is
+			// meant to behave as a static image for wheel events in that
+			// mode.
+			if ( ! enableScrollWheelZoom ) {
+				return;
+			}
 			showHint();
 		},
 		{ passive: false, signal }
@@ -661,12 +702,16 @@ function bootMount(
 			// pan (deltaMode 0, no modifier — only when enableDrag is true),
 			// and mouse wheel (deltaMode 1+, no modifier — show a hint and
 			// let the page scroll). Forwarding enableDrag here is what makes
-			// the trackpad-pan gesture honour the "Drag to pan" toggle.
+			// the trackpad-pan gesture honour the "Drag to pan" toggle, and
+			// forwarding enableScrollWheelZoom is what makes every wheel
+			// event short-circuit to a passive hint-suppressed pass-through
+			// when the editor turned scroll-wheel zoom off (issue #139).
 			attachWheelHandler(
 				map,
 				blockEl,
 				mapState.scrollHint,
 				settings.enableDrag,
+				settings.enableScrollWheelZoom,
 				disposer.signal
 			);
 

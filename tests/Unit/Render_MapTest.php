@@ -435,7 +435,7 @@ test( 'gpxFileUrl is null when wp_get_attachment_url returns false', function ()
 } );
 
 // ---------------------------------------------------------------------------
-// Interaction flags — defaults (drag, pinch, dblclick, keyboard ON; scroll, box OFF)
+// Interaction flags — defaults (drag, pinch, scroll-wheel, dblclick, keyboard ON; box OFF)
 // ---------------------------------------------------------------------------
 
 test( 'wp_interactivity_state receives correct default interaction flags', function (): void {
@@ -468,9 +468,9 @@ test( 'wp_interactivity_state receives correct default interaction flags', funct
 	expect( $settings )->not->toBeNull();
 	expect( $settings['enableDrag'] )->toBeTrue();
 	expect( $settings['enablePinchZoom'] )->toBeTrue();
+	expect( $settings['enableScrollWheelZoom'] )->toBeTrue();
 	expect( $settings['enableDoubleClickZoom'] )->toBeTrue();
 	expect( $settings['enableKeyboard'] )->toBeTrue();
-	expect( $settings )->not->toHaveKey( 'enableScrollWheelZoom' );
 	expect( $settings )->not->toHaveKey( 'enableBoxZoom' );
 
 } );
@@ -501,6 +501,7 @@ test( 'wp_interactivity_state reflects explicit interaction flag overrides', fun
 			'mapId'                 => 'map-interaction-overrides',
 			'enableDrag'            => false,
 			'enablePinchZoom'       => false,
+			'enableScrollWheelZoom' => false,
 			'enableDoubleClickZoom' => false,
 			'enableKeyboard'        => false,
 		],
@@ -513,6 +514,7 @@ test( 'wp_interactivity_state reflects explicit interaction flag overrides', fun
 	expect( $settings )->not->toBeNull();
 	expect( $settings['enableDrag'] )->toBeFalse();
 	expect( $settings['enablePinchZoom'] )->toBeFalse();
+	expect( $settings['enableScrollWheelZoom'] )->toBeFalse();
 	expect( $settings['enableDoubleClickZoom'] )->toBeFalse();
 	expect( $settings['enableKeyboard'] )->toBeFalse();
 
@@ -1087,6 +1089,75 @@ test( 'wp_interactivity_state propagates enableTrackPositionCursor when set to f
 
 	expect( $settings )->not->toBeNull();
 	expect( $settings['enableTrackPositionCursor'] )->toBeFalse();
+
+} );
+
+// ---------------------------------------------------------------------------
+// Scroll-wheel zoom toggle — defaults to true and propagates an explicit false
+// ---------------------------------------------------------------------------
+
+test( 'wp_interactivity_state includes enableScrollWheelZoom as true by default', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 87, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 87, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured ): void {
+			$captured = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId' => 87,
+			'mapId'        => 'map-wheel-default',
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured['map-wheel-default']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['enableScrollWheelZoom'] )->toBeTrue();
+
+} );
+
+test( 'wp_interactivity_state propagates enableScrollWheelZoom when set to false', function (): void {
+
+	$coords = map_synthetic_coords( 10 );
+	$store  = map_seeded_store( 88, $coords );
+	map_bind_meta( $store );
+	map_stub_attached_file( 88, map_fixture_path( 'happy-path.gpx' ) );
+
+	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
+
+	$captured = null;
+	Functions\when( 'wp_interactivity_state' )->alias(
+		static function ( string $ns, array $state ) use ( &$captured ): void {
+			$captured = $state;
+		}
+	);
+
+	Render_Map::render(
+		[
+			'attachmentId'          => 88,
+			'mapId'                 => 'map-wheel-off',
+			'enableScrollWheelZoom' => false,
+		],
+		'',
+		map_fake_block(),
+	);
+
+	$settings = $captured['map-wheel-off']['settings'] ?? null;
+
+	expect( $settings )->not->toBeNull();
+	expect( $settings['enableScrollWheelZoom'] )->toBeFalse();
 
 } );
 

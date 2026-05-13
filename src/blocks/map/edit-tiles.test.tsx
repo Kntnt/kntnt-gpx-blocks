@@ -300,6 +300,7 @@ function buildAttributes(
 		showDownload: false,
 		enableDrag: true,
 		enablePinchZoom: true,
+		enableScrollWheelZoom: true,
 		enableDoubleClickZoom: true,
 		enableKeyboard: true,
 		enableTrackPositionCursor: true,

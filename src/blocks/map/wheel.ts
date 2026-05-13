@@ -18,6 +18,17 @@
 export interface WheelClassifierSettings {
 	/** Whether drag-to-pan is enabled. Gates the `'pan'` branch. */
 	readonly enableDrag: boolean;
+	/**
+	 * Whether scroll-wheel-driven zoom is enabled. Gates the `'zoom'` branch
+	 * for every wheel event — Cmd/Ctrl + wheel on a mouse and the trackpad-
+	 * pinch gesture that browsers deliver as a wheel event with
+	 * `ctrlKey: true`. Touchscreen pinch is a separate code path governed by
+	 * `enablePinchZoom` (Leaflet's `touchZoom`) and is unaffected. When this
+	 * flag is `false` the would-be zoom event falls through to `'hint'` so
+	 * the page scrolls past as if the map were a static image; the pan
+	 * branch continues to obey `enableDrag` independently. See issue #139.
+	 */
+	readonly enableScrollWheelZoom: boolean;
 }
 
 /**
@@ -58,10 +69,19 @@ export type WheelAction = 'zoom' | 'pan' | 'hint';
  * `'hint'`, which lets the page scroll and surfaces the same modifier-key
  * overlay shown for plain mouse wheel.
  *
+ * Zoom is gated on `settings.enableScrollWheelZoom` independently — when the
+ * editor turned that toggle off the map is fully passive to wheel events
+ * (mouse modifier + wheel and trackpad-pinch alike fall through to `'hint'`)
+ * so the page scrolls past as if the map were a static image. The pan branch
+ * keeps its own gate so unmodified trackpad two-finger pan still pans the
+ * map when *Drag to pan* is on — turning off scroll-wheel zoom does not turn
+ * off trackpad pan. See issue #139.
+ *
  * @since 0.4.4
  *
  * @param event    - The wheel event (or any object exposing the same surface).
- * @param settings - Map interaction settings. Only `enableDrag` is consulted.
+ * @param settings - Map interaction settings. `enableDrag` gates pan;
+ *                 `enableScrollWheelZoom` gates zoom.
  * @return One of `'zoom'`, `'pan'`, or `'hint'`.
  */
 export function classifyWheel(
@@ -69,7 +89,7 @@ export function classifyWheel(
 	settings: WheelClassifierSettings
 ): WheelAction {
 	if ( event.ctrlKey || event.metaKey ) {
-		return 'zoom';
+		return settings.enableScrollWheelZoom ? 'zoom' : 'hint';
 	}
 	if ( event.deltaMode === 0 ) {
 		return settings.enableDrag ? 'pan' : 'hint';

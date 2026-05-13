@@ -72,6 +72,10 @@
       "type": "boolean",
       "default": true
     },
+    "enableScrollWheelZoom": {
+      "type": "boolean",
+      "default": true
+    },
     "enableDoubleClickZoom": {
       "type": "boolean",
       "default": true

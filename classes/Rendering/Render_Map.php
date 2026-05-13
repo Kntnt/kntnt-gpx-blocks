@@ -99,12 +99,15 @@ final class Render_Map {
 		$show_fullscreen   = isset( $attributes['showFullscreen'] ) ? (bool) $attributes['showFullscreen'] : false;
 		$show_download     = isset( $attributes['showDownload'] ) ? (bool) $attributes['showDownload'] : false;
 
-		// Read the four interaction flags; coerce to bool with documented defaults.
-		// Scroll-wheel and box-zoom flags are intentionally absent — the view
-		// module replaces them with a fixed wheel-handler (see view.ts) and
-		// drops box zoom altogether.
+		// Read the five interaction flags; coerce to bool with documented defaults.
+		// Box-zoom is intentionally absent — the view module drops it altogether.
+		// Scroll-wheel zoom gates the wheel handler's `'zoom'` branch entirely
+		// (both Cmd/Ctrl + wheel and trackpad-pinch via `ctrlKey:true`); when
+		// off, the wheel handler also suppresses the modifier-key hint overlay.
+		// See issue #139.
 		$enable_drag  = isset( $attributes['enableDrag'] ) ? (bool) $attributes['enableDrag'] : true;
 		$enable_pinch_zoom  = isset( $attributes['enablePinchZoom'] ) ? (bool) $attributes['enablePinchZoom'] : true;
+		$enable_scroll_wheel_zoom = isset( $attributes['enableScrollWheelZoom'] ) ? (bool) $attributes['enableScrollWheelZoom'] : true;
 		$raw_dclk           = $attributes['enableDoubleClickZoom'] ?? null;
 		$enable_double_click_zoom = isset( $raw_dclk ) ? (bool) $raw_dclk : true;
 		$enable_keyboard    = isset( $attributes['enableKeyboard'] ) ? (bool) $attributes['enableKeyboard'] : true;
@@ -350,6 +353,7 @@ final class Render_Map {
 					'showDownload'              => $show_download,
 					'enableDrag'                => $enable_drag,
 					'enablePinchZoom'           => $enable_pinch_zoom,
+					'enableScrollWheelZoom'     => $enable_scroll_wheel_zoom,
 					'enableDoubleClickZoom'     => $enable_double_click_zoom,
 					'enableKeyboard'            => $enable_keyboard,
 					'enableTrackPositionCursor' => $enable_track_position_cursor,

@@ -240,6 +240,7 @@ interface MapAttributes {
 	showDownload: boolean;
 	enableDrag: boolean;
 	enablePinchZoom: boolean;
+	enableScrollWheelZoom: boolean;
 	enableDoubleClickZoom: boolean;
 	enableKeyboard: boolean;
 	enableTrackPositionCursor: boolean;
@@ -1154,6 +1155,7 @@ export const MapEdit = ( {
 		showDownload,
 		enableDrag,
 		enablePinchZoom,
+		enableScrollWheelZoom,
 		enableDoubleClickZoom,
 		enableKeyboard,
 		enableTrackPositionCursor,
@@ -1486,6 +1488,13 @@ export const MapEdit = ( {
 						checked={ enablePinchZoom }
 						onChange={ ( value ) =>
 							setAttributes( { enablePinchZoom: value } )
+						}
+					/>
+					<ToggleControl
+						label={ __( 'Scroll-wheel zoom', 'kntnt-gpx-blocks' ) }
+						checked={ enableScrollWheelZoom }
+						onChange={ ( value ) =>
+							setAttributes( { enableScrollWheelZoom: value } )
 						}
 					/>
 					<ToggleControl
