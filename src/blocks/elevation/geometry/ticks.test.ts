@@ -4,9 +4,9 @@
  * Pins the Step 4 contract:
  *
  *   - {@link computeTickCount} returns
- *     `floor((avail + 0.5em) / (refSize + 0.5em))`, clamped to `≥ 2`.
- *     Step 4 replaced Step 3's `× 1.5` proportional padding with an
- *     additive `0.5em` luft term.
+ *     `floor((avail + 1em) / (refSize + 1em))`, clamped to `≥ 2`. The
+ *     `1em` additive luft keeps adjacent labels visually separate on
+ *     both axes.
  *   - {@link niceStep} rounds to the nearest entry in
  *     `[1, 2, 5] × 10^n` with ties going downward.
  *   - {@link generateTicks} covers the requested range inclusively on
@@ -19,13 +19,13 @@
 import { computeTickCount, generateTicks, niceStep, niceTicks } from './ticks';
 
 describe( 'computeTickCount', () => {
-	it( 'applies the additive formula floor((avail + 0.5em) / (refSize + 0.5em))', () => {
-		// avail=600, refSize=50, em=16 → padding=8 → (608/58) = 10.48… → 10.
-		expect( computeTickCount( 600, 50, 16 ) ).toBe( 10 );
+	it( 'applies the additive formula floor((avail + 1em) / (refSize + 1em))', () => {
+		// avail=600, refSize=50, em=16 → padding=16 → (616/66) = 9.33… → 9.
+		expect( computeTickCount( 600, 50, 16 ) ).toBe( 9 );
 	} );
 
 	it( 'clamps to at least 2 on a very narrow chart', () => {
-		// (30 + 8) / (50 + 8) = 0.65 → floor=0 → clamped to 2.
+		// (30 + 16) / (50 + 16) = 46/66 ≈ 0.7 → floor=0 → clamped to 2.
 		expect( computeTickCount( 30, 50, 16 ) ).toBe( 2 );
 	} );
 
@@ -40,13 +40,13 @@ describe( 'computeTickCount', () => {
 	} );
 
 	it( 'scales the luft with em', () => {
-		// em=32 → padding=16 → (600+16)/(50+16) = 616/66 ≈ 9.33 → 9.
-		expect( computeTickCount( 600, 50, 32 ) ).toBe( 9 );
+		// em=32 → padding=32 → (600+32)/(50+32) = 632/82 ≈ 7.7 → 7.
+		expect( computeTickCount( 600, 50, 32 ) ).toBe( 7 );
 	} );
 
 	it( 'fits more ticks as the container widens', () => {
-		// em=16 → padding=8 → (1200+8)/(50+8) = 1208/58 ≈ 20.83 → 20.
-		expect( computeTickCount( 1200, 50, 16 ) ).toBe( 20 );
+		// em=16 → padding=16 → (1200+16)/(50+16) = 1216/66 ≈ 18.4 → 18.
+		expect( computeTickCount( 1200, 50, 16 ) ).toBe( 18 );
 	} );
 } );
 

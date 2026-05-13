@@ -11,9 +11,9 @@
  *
  *   1. Compute a target tick count `N` from the available plotting
  *      extent and a reference-label size
- *      (`N = floor((avail + 0.5em) / (refSize + 0.5em))`, clamped to
- *      ≥ 2). The additive `0.5em` is the constant luft Step 4 settled
- *      on after rejecting Step 3's proportional `× 1.5` factor.
+ *      (`N = floor((avail + 1em) / (refSize + 1em))`, clamped to
+ *      ≥ 2). The additive `1em` is the constant luft both axes use to
+ *      keep adjacent labels visually separate.
  *   2. Divide the data range by `N` to get a candidate step.
  *   3. Round the candidate to the nearest value of the form
  *      `[1, 2, 5] × 10^n` so the axis reads on a linear, easy-to-skim
@@ -32,11 +32,11 @@
  * Computes the target tick count `N` from the available plotting
  * extent and a reference-label size.
  *
- * Step 4 replaced the proportional `× 1.5` luft of Step 3 with an
- * additive `0.5em` term: at least `0.5em` of breathing room between
- * adjacent labels regardless of label width. Solving
- * `N · refSize + (N − 1) · 0.5em ≤ avail` for `N` gives the formula
- * encoded here. Constant luft is easier to reason about and keeps the
+ * Reserves at least `1em` of breathing room between adjacent labels
+ * regardless of label size. Solving
+ * `N · refSize + (N − 1) · 1em ≤ avail` for `N` gives the formula
+ * encoded here. Constant luft (as opposed to the proportional `× 1.5`
+ * variant Step 3 used) is easier to reason about and keeps the
  * visual gap consistent across very different label widths (`"0 m"`
  * vs `"1234 m"`).
  *
@@ -54,7 +54,7 @@
  *                worst-case X label for the X axis; height of the
  *                shared height-reference string for the Y axis.
  * @param em      Resolved font-size in pixels, used to scale the
- *                additive `0.5em` luft term.
+ *                additive `1em` luft term.
  * @return The target tick count, clamped to `≥ 2`.
  */
 export function computeTickCount(
@@ -65,7 +65,7 @@ export function computeTickCount(
 	if ( avail <= 0 || refSize <= 0 ) {
 		return 2;
 	}
-	const padding = 0.5 * em;
+	const padding = em;
 	const raw = Math.floor( ( avail + padding ) / ( refSize + padding ) );
 	return raw < 2 ? 2 : raw;
 }
