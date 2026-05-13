@@ -80,7 +80,7 @@
       "type": "boolean",
       "default": true
     },
-    "showTrackCursor": {
+    "enableTrackPositionCursor": {
       "type": "boolean",
       "default": true
     },

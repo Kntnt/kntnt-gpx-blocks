@@ -1025,7 +1025,7 @@ test( 'wp_interactivity_state propagates tooltipShowName and tooltipShowDesc whe
 // Track cursor toggle — defaults to true and propagates an explicit false
 // ---------------------------------------------------------------------------
 
-test( 'wp_interactivity_state includes showTrackCursor as true by default', function (): void {
+test( 'wp_interactivity_state includes enableTrackPositionCursor as true by default', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 85, $coords );
@@ -1053,11 +1053,11 @@ test( 'wp_interactivity_state includes showTrackCursor as true by default', func
 	$settings = $captured['map-cursor-default']['settings'] ?? null;
 
 	expect( $settings )->not->toBeNull();
-	expect( $settings['showTrackCursor'] )->toBeTrue();
+	expect( $settings['enableTrackPositionCursor'] )->toBeTrue();
 
 } );
 
-test( 'wp_interactivity_state propagates showTrackCursor when set to false', function (): void {
+test( 'wp_interactivity_state propagates enableTrackPositionCursor when set to false', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 86, $coords );
@@ -1077,7 +1077,7 @@ test( 'wp_interactivity_state propagates showTrackCursor when set to false', fun
 		[
 			'attachmentId'    => 86,
 			'mapId'           => 'map-cursor-off',
-			'showTrackCursor' => false,
+			'enableTrackPositionCursor' => false,
 		],
 		'',
 		map_fake_block(),
@@ -1086,7 +1086,7 @@ test( 'wp_interactivity_state propagates showTrackCursor when set to false', fun
 	$settings = $captured['map-cursor-off']['settings'] ?? null;
 
 	expect( $settings )->not->toBeNull();
-	expect( $settings['showTrackCursor'] )->toBeFalse();
+	expect( $settings['enableTrackPositionCursor'] )->toBeFalse();
 
 } );
 

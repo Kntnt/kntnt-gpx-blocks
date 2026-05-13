@@ -2,10 +2,10 @@
  * Jest tests for the `maybeCreateCursorMarker` gate.
  *
  * The gate decides whether the track cursor marker is mounted at all,
- * driven by the `showTrackCursor` setting hydrated from PHP. When the
- * flag is `false` the helper must return `null` without calling
- * `L.circleMarker`, suppressing the Map-side reflection of the cursor
- * for editors who use the Map without a paired Elevation block.
+ * driven by the `enableTrackPositionCursor` setting hydrated from PHP.
+ * When the flag is `false` the helper must return `null` without
+ * calling `L.circleMarker`, suppressing the Map-side reflection of the
+ * cursor for editors who use the Map without a paired Elevation block.
  *
  * @since 0.13.5
  */
@@ -49,7 +49,7 @@ function createBlockEl(): HTMLElement {
 const mapStub = {} as unknown as L.Map;
 
 describe( 'maybeCreateCursorMarker', () => {
-	test( 'returns null and skips L.circleMarker when showTrackCursor is false', () => {
+	test( 'returns null and skips L.circleMarker when enableTrackPositionCursor is false', () => {
 		const blockEl = createBlockEl();
 
 		const cursor = maybeCreateCursorMarker(
@@ -70,7 +70,7 @@ describe( 'maybeCreateCursorMarker', () => {
 		).not.toHaveBeenCalled();
 	} );
 
-	test( 'returns a CircleMarker and calls L.circleMarker when showTrackCursor is true', () => {
+	test( 'returns a CircleMarker and calls L.circleMarker when enableTrackPositionCursor is true', () => {
 		const blockEl = createBlockEl();
 
 		const cursor = maybeCreateCursorMarker(

@@ -302,7 +302,7 @@ function buildAttributes(
 		enablePinchZoom: true,
 		enableDoubleClickZoom: true,
 		enableKeyboard: true,
-		showTrackCursor: true,
+		enableTrackPositionCursor: true,
 		trackColor: '',
 		trackCursorColor: '',
 		waypointColor: '',

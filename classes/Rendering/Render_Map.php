@@ -113,7 +113,7 @@ final class Render_Map {
 		// an Elevation block keeps reflecting the cursor; setting it to false
 		// suppresses the Map-side cursor for layouts that use the Map without
 		// an adjacent Elevation block (issue #118).
-		$show_track_cursor = isset( $attributes['showTrackCursor'] ) ? (bool) $attributes['showTrackCursor'] : true;
+		$enable_track_position_cursor = isset( $attributes['enableTrackPositionCursor'] ) ? (bool) $attributes['enableTrackPositionCursor'] : true;
 
 		// Read and sanitize the two track colour attributes through the shared
 		// Color_Sanitizer (alpha-aware hex 3/4/6/8). PanelColorSettings on
@@ -344,17 +344,17 @@ final class Render_Map {
 				'tileProvider'  => $tile_provider,
 				'tileOverlays'  => $tile_overlays,
 				'settings'      => [
-					'showZoomButtons'       => $show_zoom_buttons,
-					'showScale'             => $show_scale,
-					'showFullscreen'        => $show_fullscreen,
-					'showDownload'          => $show_download,
-					'enableDrag'            => $enable_drag,
-					'enablePinchZoom'       => $enable_pinch_zoom,
-					'enableDoubleClickZoom' => $enable_double_click_zoom,
-					'enableKeyboard'        => $enable_keyboard,
-					'showTrackCursor'       => $show_track_cursor,
-					'tooltipShowName'       => $tooltip_show_name,
-					'tooltipShowDesc'       => $tooltip_show_desc,
+					'showZoomButtons'           => $show_zoom_buttons,
+					'showScale'                 => $show_scale,
+					'showFullscreen'            => $show_fullscreen,
+					'showDownload'              => $show_download,
+					'enableDrag'                => $enable_drag,
+					'enablePinchZoom'           => $enable_pinch_zoom,
+					'enableDoubleClickZoom'     => $enable_double_click_zoom,
+					'enableKeyboard'            => $enable_keyboard,
+					'enableTrackPositionCursor' => $enable_track_position_cursor,
+					'tooltipShowName'           => $tooltip_show_name,
+					'tooltipShowDesc'           => $tooltip_show_desc,
 				],
 				'fraction'      => null,
 				'scrollHint'    => [

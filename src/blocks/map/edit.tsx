@@ -242,7 +242,7 @@ interface MapAttributes {
 	enablePinchZoom: boolean;
 	enableDoubleClickZoom: boolean;
 	enableKeyboard: boolean;
-	showTrackCursor: boolean;
+	enableTrackPositionCursor: boolean;
 	trackColor: string;
 	trackCursorColor: string;
 	waypointColor: string;
@@ -1156,7 +1156,7 @@ export const MapEdit = ( {
 		enablePinchZoom,
 		enableDoubleClickZoom,
 		enableKeyboard,
-		showTrackCursor,
+		enableTrackPositionCursor,
 		trackColor,
 		trackCursorColor,
 		waypointColor,
@@ -1506,10 +1506,15 @@ export const MapEdit = ( {
 						}
 					/>
 					<ToggleControl
-						label={ __( 'Show track cursor', 'kntnt-gpx-blocks' ) }
-						checked={ showTrackCursor }
+						label={ __(
+							'Track position cursor',
+							'kntnt-gpx-blocks'
+						) }
+						checked={ enableTrackPositionCursor }
 						onChange={ ( value ) =>
-							setAttributes( { showTrackCursor: value } )
+							setAttributes( {
+								enableTrackPositionCursor: value,
+							} )
 						}
 					/>
 				</PanelBody>

@@ -117,7 +117,7 @@ interface MapSettings {
 	 * no-op for this map — the Elevation block's own pointer / hover
 	 * behaviour stays intact, only the Map-side reflection is suppressed.
 	 */
-	readonly showTrackCursor: boolean;
+	readonly enableTrackPositionCursor: boolean;
 	/** Show the waypoint name as the first line of the tooltip when present. */
 	readonly tooltipShowName: boolean;
 	/** Show the waypoint description as the second line of the tooltip when present. */
@@ -204,7 +204,7 @@ interface MapEntry {
 	/**
 	 * Cursor marker drawn on the polyline. Opacity 0 until first fraction.
 	 * `null` when the editor disabled the Map-side cursor via
-	 * `settings.showTrackCursor` (issue #118); callers that read this field
+	 * `settings.enableTrackPositionCursor` (issue #118); callers that read this field
 	 * must early-return on null rather than treating it as a mounting bug.
 	 */
 	cursor: L.CircleMarker | null;
@@ -680,12 +680,12 @@ function bootMount(
 
 			// Create the cursor marker at the track midpoint, initially
 			// invisible. Opacity is set to 1 on the first non-null fraction.
-			// Gated by the editor's `showTrackCursor` toggle (issue #118):
-			// when disabled, the helper returns `null` and the scrub
+			// Gated by the editor's `enableTrackPositionCursor` toggle (issue
+			// #118): when disabled, the helper returns `null` and the scrub
 			// handlers below are skipped, so the Map ships with no Map-side
 			// cursor reflection at all.
 			const cursor = maybeCreateCursorMarker(
-				settings.showTrackCursor,
+				settings.enableTrackPositionCursor,
 				map,
 				coords,
 				trackCumDist,
@@ -740,7 +740,7 @@ function bootMount(
 			// tooltip — the convention "tap outside to close" extended to
 			// the two outside surfaces this map exposes.
 			//
-			// Skipped entirely when `showTrackCursor === false` (issue
+			// Skipped entirely when `enableTrackPositionCursor === false` (issue
 			// #118): a Map without a paired Elevation block has no use for
 			// Map-driven scrubbing, and the editor opted out of the cursor
 			// reflection altogether.

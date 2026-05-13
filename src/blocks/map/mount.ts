@@ -34,7 +34,7 @@ export interface MapControlSettings {
 	readonly enablePinchZoom: boolean;
 	readonly enableDoubleClickZoom: boolean;
 	readonly enableKeyboard: boolean;
-	readonly showTrackCursor: boolean;
+	readonly enableTrackPositionCursor: boolean;
 	readonly tooltipShowName: boolean;
 	readonly tooltipShowDesc: boolean;
 }
@@ -420,8 +420,8 @@ export function createCursorMarker(
 }
 
 /**
- * Conditionally mount the cursor marker, gated by the `showTrackCursor`
- * setting hydrated from PHP.
+ * Conditionally mount the cursor marker, gated by the
+ * `enableTrackPositionCursor` setting hydrated from PHP.
  *
  * Returning `null` is the canonical "no Map-side cursor" state for blocks
  * whose editor opted out of the cursor reflection (issue #118). The caller
@@ -433,24 +433,24 @@ export function createCursorMarker(
  *
  * @since 0.13.5
  *
- * @param showTrackCursor - Whether the editor enabled the Map-side cursor.
- * @param map             - Leaflet map instance.
- * @param coords          - Flat [lat, lng] coordinate array for the track.
- * @param trackCumDist    - Per-vertex original-cumulative distances aligned
- *                        1:1 with `coords`.
- * @param totalDistance   - Total track distance in metres.
- * @param blockEl         - Block wrapper element.
+ * @param enableTrackPositionCursor - Whether the editor enabled the Map-side cursor.
+ * @param map                       - Leaflet map instance.
+ * @param coords                    - Flat [lat, lng] coordinate array for the track.
+ * @param trackCumDist              - Per-vertex original-cumulative distances aligned
+ *                                  1:1 with `coords`.
+ * @param totalDistance             - Total track distance in metres.
+ * @param blockEl                   - Block wrapper element.
  * @return The cursor marker when enabled, `null` when suppressed.
  */
 export function maybeCreateCursorMarker(
-	showTrackCursor: boolean,
+	enableTrackPositionCursor: boolean,
 	map: L.Map,
 	coords: Array< [ number, number ] >,
 	trackCumDist: number[],
 	totalDistance: number,
 	blockEl: HTMLElement
 ): L.CircleMarker | null {
-	if ( ! showTrackCursor ) {
+	if ( ! enableTrackPositionCursor ) {
 		return null;
 	}
 	return createCursorMarker(
