@@ -67,14 +67,13 @@ export type ElevationSample = readonly [ number, number ];
  * Props for {@link Chart}.
  *
  * The `typography` prop is the tick-labels typography bundle read
- * from the block's `tickLabel*` attributes. It is **not** consumed
- * by the chart's render output or by the measurer — those read the
- * active typography through CSS inheritance from the host SVG,
- * sourced from the eight `--kntnt-gpx-blocks-elevation-tick-label-*`
- * custom properties the wrapper carries. The prop is retained
- * because its eight fields populate the dep-list of the layout
- * effect that runs `computeMargins`; without it, a typography change
- * in the inspector would not trigger a re-measurement.
+ * from the block's `tickLabel*` attributes. The component applies
+ * it as inline style on the host `<svg>` element so the visible
+ * tick `<text>` labels and the measurer's hidden `<text>` nodes
+ * (both SVG descendants) inherit the user's choices regardless of
+ * which CSS-resolution path the Gutenberg editor exposes. The
+ * eight fields also populate the dep-list of the layout effect
+ * that runs `computeMargins`.
  *
  * @since 1.0.0
  */
@@ -82,6 +81,61 @@ export interface ChartProps {
 	readonly data: MarginsInput;
 	readonly samples: readonly ElevationSample[];
 	readonly typography: TypographyAttributes;
+}
+
+/**
+ * Maps a {@link TypographyAttributes} bundle to the React inline-style
+ * object the chart's `<svg>` host carries.
+ *
+ * Each field is forwarded only when non-empty; empty fields fall
+ * through to the SVG's inherited typography (which itself inherits
+ * from the wrapper's resolved typography). Returns an empty object
+ * when the bundle has no usable fields, so React serialises no
+ * `style` attribute at all in that case.
+ *
+ * Applying typography here (rather than relying on a SCSS rule
+ * keyed off the wrapper's tick-label custom properties) is what
+ * guarantees the user's choices reach the rendered labels in the
+ * Gutenberg editor: an inline `style` declaration wins against any
+ * editor-iframe rule that might otherwise target SVG text under a
+ * more specific selector. The frontend path keeps the SCSS rule for
+ * symmetry — both paths produce the same final `font-*` declarations
+ * on the SVG.
+ *
+ * @since 1.0.0
+ *
+ * @param typography Tick-labels typography bundle.
+ * @return React inline-style object suitable for the `<svg style={…}>` prop.
+ */
+function typographyToSvgStyle(
+	typography: TypographyAttributes
+): React.CSSProperties {
+	const style: Record< string, string > = {};
+	if ( typography.fontFamily ) {
+		style.fontFamily = typography.fontFamily;
+	}
+	if ( typography.fontSize ) {
+		style.fontSize = typography.fontSize;
+	}
+	if ( typography.fontWeight ) {
+		style.fontWeight = typography.fontWeight;
+	}
+	if ( typography.fontStyle ) {
+		style.fontStyle = typography.fontStyle;
+	}
+	if ( typography.lineHeight ) {
+		style.lineHeight = typography.lineHeight;
+	}
+	if ( typography.letterSpacing ) {
+		style.letterSpacing = typography.letterSpacing;
+	}
+	if ( typography.textTransform ) {
+		style.textTransform = typography.textTransform;
+	}
+	if ( typography.textDecoration ) {
+		style.textDecoration = typography.textDecoration;
+	}
+	return style as React.CSSProperties;
 }
 
 /**
@@ -184,15 +238,11 @@ export function Chart( {
 	// Compute margins after fonts are ready, on data/typography
 	// change. Margins do not depend on wrapper dimensions, so they
 	// are not invalidated by ResizeObserver. The dep list enumerates
-	// each typography field separately for two reasons: a fresh-object
-	// prop from a parent re-render does not trigger an unnecessary
-	// remeasure loop, *and* the measurer no longer takes typography
-	// as an argument — it reads the active typography through CSS
-	// inheritance from the host SVG (whose font-* declarations come
-	// from the wrapper's tick-label custom properties, written
-	// synchronously in the same React commit that delivers the new
-	// prop). useLayoutEffect runs after commit but before paint, so
-	// getBBox() observes the updated CSS.
+	// each typography field separately so a fresh-object prop from a
+	// parent re-render does not trigger an unnecessary remeasure loop.
+	// useLayoutEffect runs after commit but before paint, so when the
+	// effect observes the SVG with `getBBox()` the typography inline
+	// style (committed in the same render pass) is already in force.
 	useLayoutEffect( () => {
 		if ( ! fontsReady ) {
 			return;
@@ -283,6 +333,7 @@ export function Chart( {
 			viewBox={ `0 0 ${ w } ${ h }` }
 			role="img"
 			aria-label={ ariaLabel }
+			style={ typographyToSvgStyle( typography ) }
 		>
 			{ drawable && scale && (
 				<>

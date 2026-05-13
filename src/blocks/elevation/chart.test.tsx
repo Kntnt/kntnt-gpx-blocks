@@ -364,13 +364,61 @@ describe( 'Chart', () => {
 		expect( idxLabelsY ).toBeGreaterThan( idxTicksX );
 	} );
 
-	it( 'does not apply font-* inline to tick label <text> nodes (CSS inheritance is the contract)', async () => {
-		// Render with a non-default typography to make sure that even
-		// when the chart *does* know the user's choices, it never writes
-		// them as inline style on the <text> elements. Tick-label
-		// styling must arrive via CSS inheritance from the SVG host;
-		// inline attributes here would short-circuit the measurer/visible
-		// divergence guarantee Strategy B is built on.
+	it( 'applies typography inline on the <svg> host (visible labels and the measurer inherit from it)', async () => {
+		// The chart writes the user's typography choices as inline
+		// style declarations on the host <svg>. Both the visible tick
+		// <text> labels (under the <g> groups) and the measurer's
+		// hidden <text> nodes (direct SVG children) inherit those
+		// declarations. Applying typography here rather than relying
+		// on a SCSS rule keyed off custom properties on the wrapper
+		// is what guarantees the user's choices reach the rendered
+		// labels in the Gutenberg editor — an inline style declaration
+		// wins against any editor-iframe rule that might otherwise
+		// target SVG text under a more specific selector.
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+		await act( async () => {
+			root.render(
+				createElement( Chart, {
+					data: {
+						minElevation: 0,
+						maxElevation: 500,
+						distance: 5000,
+					},
+					samples: [
+						[ 0, 100 ],
+						[ 5000, 200 ],
+					],
+					typography: {
+						fontFamily: 'Inter',
+						fontSize: '20px',
+						fontWeight: '700',
+					},
+				} )
+			);
+		} );
+		await act( async () => {
+			await Promise.resolve();
+		} );
+		const svg = container.querySelector( 'svg' )!;
+		const svgStyle = svg.getAttribute( 'style' ) ?? '';
+		expect( svgStyle ).toContain( 'font-family' );
+		expect( svgStyle ).toContain( 'Inter' );
+		expect( svgStyle ).toContain( 'font-size' );
+		expect( svgStyle ).toContain( '20px' );
+		expect( svgStyle ).toContain( 'font-weight' );
+		expect( svgStyle ).toContain( '700' );
+	} );
+
+	it( 'does not duplicate font-* inline onto the tick label <text> nodes themselves', async () => {
+		// The <svg> carries the typography. The <text> descendants
+		// inherit it. Writing typography directly onto each <text>
+		// (or onto the parent <g> groups) would be either redundant
+		// or — worse — desynchronised with the SVG host, so the
+		// chart deliberately leaves the descendants un-styled. This
+		// test pins that contract so a future "cleaner" who tries
+		// to push typography down the tree gets caught.
 		const container = document.createElement( 'div' );
 		document.body.appendChild( container );
 		const root = createRoot( container );
