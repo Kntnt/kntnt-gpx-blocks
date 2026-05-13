@@ -55,6 +55,16 @@
 	// a different colour set Color → Axis labels independently.
 	--kntnt-gpx-blocks-elevation-axis-label: #1e1e1e;
 
+	// Step 5 plot defaults. The two `<path>` elements drawn by view.ts
+	// and chart.tsx reference these custom properties directly. The
+	// fill default is `transparent` so the closed fill path is present
+	// in the DOM but invisible until the editor picks a Plot fill
+	// colour. The line default is the same neutral grey as Axis so a
+	// chart with no Color overrides reads as a coherent monochrome
+	// drawing.
+	--kntnt-gpx-blocks-elevation-plot-line: #1e1e1e;
+	--kntnt-gpx-blocks-elevation-plot-fill: transparent;
+
 	// The chart SVG fills the wrapper's rendered content box via
 	// absolute positioning so its viewBox-derived intrinsic ratio
 	// does not influence the wrapper's height. Three concrete bugs

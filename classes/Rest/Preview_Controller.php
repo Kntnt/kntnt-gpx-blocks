@@ -23,6 +23,7 @@ namespace Kntnt\Gpx_Blocks\Rest;
 
 use Kntnt\Gpx_Blocks\Cache\Attachment_Cache;
 use Kntnt\Gpx_Blocks\Plugin;
+use Kntnt\Gpx_Blocks\Rendering\Elevation_Samples;
 use Kntnt\Gpx_Blocks\Rendering\Render_Error;
 
 /**
@@ -151,16 +152,26 @@ final class Preview_Controller {
 			return new \WP_Error( $payload->code, $payload->message, [ 'status' => 422 ] );
 		}
 
-		// Return the GeoJSON FeatureCollection plus the cached statistics
-		// array. Step 2 of the Elevation rebuild added `statistics` so the
-		// Elevation block's editor preview can read min/max elevation for
-		// its placeholder info-box without a second round-trip. The Map
-		// block's preview ignores the new field; the Elevation block's
-		// `useBoundMapPayload` consumes it. See
-		// `docs/elevation-rebuild.md` § *Editor data fetching (Q8b)*.
+		// Return the GeoJSON FeatureCollection, the cached statistics
+		// array, and the LTTB-downsampled (distance, elevation)
+		// samples Step 5 needs for the editor preview's elevation
+		// curve. The samples array is computed by the shared
+		// `Elevation_Samples` helper so editor and frontend receive a
+		// byte-identical payload for the same attachment.
+		$target_raw = apply_filters(
+			'kntnt_gpx_blocks_elevation_target_points',
+			Elevation_Samples::DEFAULT_TARGET
+		);
+		$target  = is_int( $target_raw ) && $target_raw > 0
+			? $target_raw
+			: Elevation_Samples::DEFAULT_TARGET;
+		$geojson = is_array( $payload['geojson'] ?? null ) ? $payload['geojson'] : [];
+		$samples = Elevation_Samples::compute( $geojson, $target );
+
 		return new \WP_REST_Response( [
 			'geojson'    => $payload['geojson'],
 			'statistics' => $payload['statistics'],
+			'samples'    => $samples,
 		] );
 
 	}

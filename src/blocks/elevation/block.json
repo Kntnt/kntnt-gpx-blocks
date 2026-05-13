@@ -52,6 +52,10 @@
 			"type": "string",
 			"default": ""
 		},
+		"plotFillColor": {
+			"type": "string",
+			"default": ""
+		},
 		"cursorColor": {
 			"type": "string",
 			"default": ""

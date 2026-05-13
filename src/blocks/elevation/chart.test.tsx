@@ -138,18 +138,29 @@ function installSvgStubs( widthPerChar: number, height: number ): void {
  * @param data.minElevation
  * @param data.maxElevation
  * @param data.distance
+ * @param samples
  * @return The rendered SVG element.
  */
-async function renderChart( data: {
-	minElevation: number;
-	maxElevation: number;
-	distance: number;
-} ): Promise< SVGSVGElement > {
+async function renderChart(
+	data: {
+		minElevation: number;
+		maxElevation: number;
+		distance: number;
+	},
+	samples: ReadonlyArray< readonly [ number, number ] > = [
+		[ 0, 100 ],
+		[ 1000, 200 ],
+		[ 2500, 150 ],
+		[ 5000, 300 ],
+	]
+): Promise< SVGSVGElement > {
 	const container = document.createElement( 'div' );
 	document.body.appendChild( container );
 	const root = createRoot( container );
 	await act( async () => {
-		root.render( createElement( Chart, { data, typography: {} } ) );
+		root.render(
+			createElement( Chart, { data, samples, typography: {} } )
+		);
 	} );
 	// Allow effects to run (fonts.ready Promise resolves on the next
 	// microtask).
@@ -290,6 +301,67 @@ describe( 'Chart', () => {
 		expect(
 			Number.parseFloat( firstXTickMark!.getAttribute( 'x1' ) ?? 'NaN' )
 		).toBeCloseTo( wLeft, 5 );
+	} );
+
+	it( 'renders the plot-fill and plot-line <path> elements (Step 5)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const fill = svg.querySelector(
+			'path.kntnt-gpx-blocks-elevation-plot-fill'
+		);
+		const line = svg.querySelector(
+			'path.kntnt-gpx-blocks-elevation-plot-line'
+		);
+		expect( fill ).not.toBeNull();
+		expect( line ).not.toBeNull();
+		expect( line!.getAttribute( 'stroke' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-plot-line)'
+		);
+		expect( line!.getAttribute( 'stroke-width' ) ).toBe( '2' );
+		expect( line!.getAttribute( 'stroke-linejoin' ) ).toBe( 'round' );
+		expect( line!.getAttribute( 'stroke-linecap' ) ).toBe( 'round' );
+		// React lowercases `vectorEffect` to `vector-effect` on SVG paths.
+		expect( line!.getAttribute( 'vector-effect' ) ).toBe(
+			'non-scaling-stroke'
+		);
+		expect( line!.getAttribute( 'fill' ) ).toBe( 'none' );
+		expect( fill!.getAttribute( 'fill' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-plot-fill)'
+		);
+		expect( fill!.getAttribute( 'stroke' ) ).toBe( 'none' );
+		// Fill path is always emitted (independent of plotFillColor).
+		expect( fill!.getAttribute( 'd' ) ).toMatch( /^M/ );
+		expect( fill!.getAttribute( 'd' ) ).toMatch( / Z$/ );
+		expect( line!.getAttribute( 'd' ) ).toMatch( /^M/ );
+		expect( line!.getAttribute( 'd' ) ).not.toMatch( / Z$/ );
+	} );
+
+	it( 'layers axes → fill → line → ticks → labels in document order', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const order = Array.from( svg.children ).map(
+			( el ) => el.classList[ 0 ]
+		);
+		const idxAxisX = order.indexOf( 'kntnt-gpx-blocks-elevation-axis-x' );
+		const idxAxisY = order.indexOf( 'kntnt-gpx-blocks-elevation-axis-y' );
+		const idxFill = order.indexOf( 'kntnt-gpx-blocks-elevation-plot-fill' );
+		const idxLine = order.indexOf( 'kntnt-gpx-blocks-elevation-plot-line' );
+		const idxTicksX = order.indexOf( 'kntnt-gpx-blocks-elevation-ticks-x' );
+		const idxLabelsY = order.indexOf(
+			'kntnt-gpx-blocks-elevation-tick-labels-y'
+		);
+		expect( idxAxisX ).toBeGreaterThanOrEqual( 0 );
+		expect( idxAxisY ).toBeGreaterThan( idxAxisX );
+		expect( idxFill ).toBeGreaterThan( idxAxisY );
+		expect( idxLine ).toBeGreaterThan( idxFill );
+		expect( idxTicksX ).toBeGreaterThan( idxLine );
+		expect( idxLabelsY ).toBeGreaterThan( idxTicksX );
 	} );
 
 	it( 'never plots an X tick whose value exceeds distance', async () => {

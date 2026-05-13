@@ -115,15 +115,27 @@ final class Render_Elevation {
 			return self::wrap_warning( $attributes, self::render_warning( 'zero-distance' ) );
 		}
 
-		// Healthy state. Emit the per-mapId state slice carrying the
-		// statistics the JS view module reads, then render the chart
-		// wrapper. The state is merged onto whatever the Map block's
-		// own `Render_Map` has already written under the same key, so
-		// both `geojson` (Map) and `statistics` (Elevation) live on
-		// `state[mapId]` for the JS to consume.
+		// Healthy state. Compute the LTTB-downsampled (distance,
+		// elevation) samples once and emit the per-mapId state slice
+		// carrying both the statistics and the samples the JS view
+		// module reads. The state is merged onto whatever the Map
+		// block's own `Render_Map` has already written under the same
+		// key, so `geojson` (Map), `statistics` and `samples`
+		// (Elevation) co-exist on `state[mapId]` for the JS to consume.
 		$min      = (float) $min_raw;
 		$max      = (float) $max_raw;
 		$distance = (float) $distance_raw;
+
+		$target_raw = apply_filters(
+			'kntnt_gpx_blocks_elevation_target_points',
+			Elevation_Samples::DEFAULT_TARGET
+		);
+		$target  = is_int( $target_raw ) && $target_raw > 0
+			? $target_raw
+			: Elevation_Samples::DEFAULT_TARGET;
+		$geojson = is_array( $payload['geojson'] ?? null ) ? $payload['geojson'] : [];
+		$samples = Elevation_Samples::compute( $geojson, $target );
+
 		wp_interactivity_state( 'kntnt-gpx-blocks', [
 			$resolved['map_id'] => [
 				'statistics' => [
@@ -131,6 +143,7 @@ final class Render_Elevation {
 					'max_elevation' => $max,
 					'distance'      => $distance,
 				],
+				'samples'    => $samples,
 			],
 		] );
 
@@ -286,6 +299,10 @@ final class Render_Elevation {
 	 *     `attributes.axisColor`.
 	 *   - `--kntnt-gpx-blocks-elevation-axis-label` from
 	 *     `attributes.axisLabelColor`.
+	 *   - `--kntnt-gpx-blocks-elevation-plot-line` from
+	 *     `attributes.plotLineColor` (Step 5).
+	 *   - `--kntnt-gpx-blocks-elevation-plot-fill` from
+	 *     `attributes.plotFillColor` (Step 5).
 	 *
 	 * @since 1.0.0
 	 *
@@ -316,6 +333,20 @@ final class Render_Elevation {
 		);
 		if ( '' !== $axis_label ) {
 			$parts[] = '--kntnt-gpx-blocks-elevation-axis-label: ' . esc_attr( $axis_label );
+		}
+
+		$plot_line = Color_Sanitizer::sanitize(
+			is_string( $attributes['plotLineColor'] ?? null ) ? (string) $attributes['plotLineColor'] : ''
+		);
+		if ( '' !== $plot_line ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-plot-line: ' . esc_attr( $plot_line );
+		}
+
+		$plot_fill = Color_Sanitizer::sanitize(
+			is_string( $attributes['plotFillColor'] ?? null ) ? (string) $attributes['plotFillColor'] : ''
+		);
+		if ( '' !== $plot_fill ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-plot-fill: ' . esc_attr( $plot_fill );
 		}
 
 		// Append a trailing `;` so the joined declarations always end

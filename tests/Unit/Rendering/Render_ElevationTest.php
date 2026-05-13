@@ -31,6 +31,7 @@
 declare( strict_types = 1 );
 
 use Brain\Monkey\Functions;
+use Kntnt\Gpx_Blocks\Cache\Cache_Version;
 use Kntnt\Gpx_Blocks\Rendering\Render_Elevation;
 
 beforeEach( function (): void {
@@ -189,6 +190,97 @@ test( 'render dispatches to bound-deleted when the explicit mapId does not match
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// render() — Step 5 healthy state: samples emitted into the interactivity
+// state slice.
+// ---------------------------------------------------------------------------
+
+test( 'render emits the samples key in wp_interactivity_state in the healthy state', function (): void {
+
+	// Resolve a bound configured Map block on the host post.
+	$post                = new stdClass();
+	$post->ID            = 1;
+	$post->post_content  = '';
+	Functions\when( 'get_the_ID' )->justReturn( 1 );
+	Functions\when( 'get_post' )->justReturn( $post );
+	Functions\when( 'parse_blocks' )->alias(
+		static fn ( string $content ): array => [
+			[
+				'blockName'   => 'kntnt-gpx-blocks/map',
+				'attrs'       => [ 'attachmentId' => 99, 'mapId' => 'map-aaa' ],
+				'innerBlocks' => [],
+				'innerHTML'   => '',
+			],
+		]
+	);
+
+	// Stub the attachment cache to return a healthy payload. A real
+	// temp file + matching md5 keeps Attachment_Cache's freshness
+	// check happy on the way in.
+	$geojson = [
+		'type'     => 'FeatureCollection',
+		'features' => [
+			[
+				'type'     => 'Feature',
+				'geometry' => [
+					'type'        => 'LineString',
+					'coordinates' => [
+						[ 18, 59, 100 ],
+						[ 18, 59, 110 ],
+						[ 18, 59, 120 ],
+					],
+				],
+			],
+		],
+	];
+	$temp = tempnam( sys_get_temp_dir(), 'render_elev_test_' );
+	expect( $temp )->toBeString();
+	file_put_contents( (string) $temp, '<gpx></gpx>' );
+	$hash = md5_file( (string) $temp );
+	Functions\when( 'get_post_meta' )->alias(
+		static function ( int $object_id, string $key, bool $single ) use ( $geojson, $hash ): mixed {
+			return match ( $key ) {
+				'_kntnt_gpx_blocks_error'       => '',
+				'_kntnt_gpx_blocks_version'     => Cache_Version::CURRENT,
+				'_kntnt_gpx_blocks_source_hash' => $hash,
+				'_kntnt_gpx_blocks_geojson'     => (string) json_encode( $geojson ),
+				'_kntnt_gpx_blocks_statistics'  => [
+					'distance'      => 100.0,
+					'min_elevation' => 100.0,
+					'max_elevation' => 120.0,
+					'ascent'        => 20.0,
+					'descent'       => 0.0,
+				],
+				default                         => '',
+			};
+		}
+	);
+	Functions\when( 'get_attached_file' )->justReturn( $temp );
+
+	try {
+		$attributes = [ 'mapId' => 'map-aaa' ];
+		$block      = new stdClass();
+		Render_Elevation::render( $attributes, '', $block );
+
+		// One wp_interactivity_state() call was captured.
+		expect( $GLOBALS['kntnt_test_interactivity_state'] )->not->toBeEmpty();
+		$entry = $GLOBALS['kntnt_test_interactivity_state'][0];
+		expect( $entry['namespace'] )->toBe( 'kntnt-gpx-blocks' );
+		expect( $entry['state'] )->toHaveKey( 'map-aaa' );
+		$slice = $entry['state']['map-aaa'];
+		expect( $slice )->toHaveKey( 'samples' );
+		expect( $slice['samples'] )->toBeArray();
+		// Statistics survives alongside samples.
+		expect( $slice )->toHaveKey( 'statistics' );
+		expect( $slice['statistics']['min_elevation'] )->toBe( 100.0 );
+		expect( $slice['statistics']['max_elevation'] )->toBe( 120.0 );
+		expect( $slice['statistics']['distance'] )->toBe( 100.0 );
+	} finally {
+		unlink( (string) $temp );
+	}
+
+} );
+
+// ---------------------------------------------------------------------------
 // render_chart_wrapper() — directives and structure.
 // ---------------------------------------------------------------------------
 
@@ -220,12 +312,16 @@ test( 'render_chart_wrapper threads sanitised colour custom properties through t
 		'backgroundColor' => '#abcdef',
 		'axisColor'       => '#123456',
 		'axisLabelColor'  => '#789abc',
+		'plotLineColor'   => '#00ff00',
+		'plotFillColor'   => '#ff000080',
 	];
 	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-background: #abcdef' );
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-axis: #123456' );
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-axis-label: #789abc' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-plot-line: #00ff00' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-plot-fill: #ff000080' );
 } );
 
 test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', function (): void {
@@ -233,15 +329,20 @@ test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', func
 		'backgroundColor' => 'javascript:alert(1)',
 		'axisColor'       => '#GGG',
 		'axisLabelColor'  => 'expression(alert(1))',
+		'plotLineColor'   => 'url(http://evil/)',
+		'plotFillColor'   => 'javascript:void(0)',
 	];
 	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
 	expect( $html )->not->toContain( 'javascript:' );
 	expect( $html )->not->toContain( '#GGG' );
 	expect( $html )->not->toContain( 'expression(' );
+	expect( $html )->not->toContain( 'url(http' );
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-background' );
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-axis:' );
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-axis-label' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-plot-line' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-plot-fill' );
 } );
 
 test( 'render_chart_wrapper escapes the data-wp-context attribute value', function (): void {

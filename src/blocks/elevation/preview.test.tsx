@@ -119,6 +119,10 @@ describe( 'ElevationPreview', () => {
 		const html = renderToHtml( {
 			kind: 'healthy',
 			data: { minElevation: 100, maxElevation: 200, distance: 5000 },
+			samples: [
+				[ 0, 100 ],
+				[ 5000, 200 ],
+			],
 			typography: {},
 		} );
 		expect( html ).not.toContain(

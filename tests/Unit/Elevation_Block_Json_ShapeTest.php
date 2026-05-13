@@ -2,12 +2,13 @@
 /**
  * Structural assertions over the GPX Elevation block.json file.
  *
- * Step 1 of the rebuild plan (`docs/elevation-rebuild.md`) fixes the
+ * Step 1 of the rebuild plan (`docs/elevation-rebuild.md`) fixed the
  * block's surface area at 35 attributes (3 behavioural + 8 colour + 24
- * typography) and 6 supports blocks. These tests lock that contract so
- * later steps cannot drift away from it accidentally, and so an editor
- * post saved against the Step 1 schema continues to round-trip cleanly
- * through subsequent step releases.
+ * typography) and 6 supports blocks; Step 5 added the `plotFillColor`
+ * row, raising the total to 36 (3 + 9 + 24). These tests lock that
+ * contract so later steps cannot drift away from it accidentally, and
+ * so an editor post saved against the schema continues to round-trip
+ * cleanly through subsequent step releases.
  *
  * The supports tests in particular lock two non-obvious facts: the use
  * of the experimental `__experimentalBorder` key (the unprefixed
@@ -44,7 +45,7 @@ function elevation_block_json_decoded(): array {
 	return $decoded;
 }
 
-test( 'block.json declares exactly the 35 attributes fixed by Step 1', function (): void {
+test( 'block.json declares exactly the 36 attributes fixed by Step 1 + Step 5', function (): void {
 
 	$decoded    = elevation_block_json_decoded();
 	$attributes = $decoded['attributes'] ?? [];
@@ -56,9 +57,10 @@ test( 'block.json declares exactly the 35 attributes fixed by Step 1', function 
 		'mapId',
 		'tooltipShowDistance',
 		'tooltipShowHeight',
-		// Colours (8).
+		// Colours (9 — Step 5 adds plotFillColor).
 		'backgroundColor',
 		'plotLineColor',
+		'plotFillColor',
 		'cursorColor',
 		'axisColor',
 		'axisLabelColor',
@@ -85,7 +87,7 @@ test( 'block.json declares exactly the 35 attributes fixed by Step 1', function 
 		}
 	}
 
-	expect( count( $expected ) )->toBe( 35 );
+	expect( count( $expected ) )->toBe( 36 );
 
 	sort( $expected );
 	$actual = array_keys( $attributes );
@@ -114,6 +116,7 @@ test( 'every colour attribute defaults to an empty string', function (): void {
 	$colour_attrs = [
 		'backgroundColor',
 		'plotLineColor',
+		'plotFillColor',
 		'cursorColor',
 		'axisColor',
 		'axisLabelColor',

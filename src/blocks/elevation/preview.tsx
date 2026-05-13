@@ -43,7 +43,7 @@
 
 import { __ } from '@wordpress/i18n';
 
-import { Chart } from './chart';
+import { Chart, type ElevationSample } from './chart';
 import type { MarginsInput } from './geometry/margins';
 import type { TypographyAttributes } from './geometry/measure';
 
@@ -71,6 +71,7 @@ export type PreviewState =
 	| {
 			readonly kind: 'healthy';
 			readonly data: MarginsInput;
+			readonly samples: readonly ElevationSample[];
 			readonly typography: TypographyAttributes;
 	  };
 
@@ -170,7 +171,11 @@ export function ElevationPreview( {
 			return null;
 		case 'healthy':
 			return (
-				<Chart data={ state.data } typography={ state.typography } />
+				<Chart
+					data={ state.data }
+					samples={ state.samples }
+					typography={ state.typography }
+				/>
 			);
 	}
 }

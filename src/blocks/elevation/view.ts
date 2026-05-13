@@ -3,9 +3,11 @@
  *
  * Registers the `kntnt-gpx-blocks` store's `initElevation` callback and
  * mounts the chart's SVG into the block wrapper. Step 3 ships the two
- * axis lines; Step 4 layers tick marks and labels onto the same SVG.
- * Step 5 will add the elevation curve, Step 6 the cursor with cross-
- * block sync, Step 7 the tooltip.
+ * axis lines; Step 4 layers tick marks and labels onto the same SVG;
+ * Step 5 layers the elevation curve (a filled area under the curve
+ * plus the open stroke on top) by reading the per-mapId `samples`
+ * array from the Interactivity state slice and projecting through the
+ * shared {@link ChartScale} helper.
  *
  * The frontend keeps the chart geometry in lock-step with the editor
  * preview by sharing the pure helpers under `./geometry/`. The host
@@ -13,7 +15,7 @@
  * identical, so the rendered output is byte-faithful across editor
  * and frontend for any given data + typography combination.
  *
- * Step 4 makes no store writes and does not yet read
+ * Step 5 makes no store writes and does not yet read
  * `state[mapId].fraction`; Step 6 wires those in.
  *
  * @since 1.0.0
@@ -21,7 +23,7 @@
 
 import { getContext, getElement, store } from '@wordpress/interactivity';
 
-import { formatXLabels, formatYLabels } from './geometry/format';
+import { buildFillPathD, buildStrokePathD } from './geometry/curve';
 import {
 	computeMargins,
 	type Margins,
@@ -31,7 +33,7 @@ import {
 	createTextMeasurer,
 	type TypographyAttributes,
 } from './geometry/measure';
-import { computeTickCount, niceTicks } from './geometry/ticks';
+import { computeChartScale, type ChartScale } from './geometry/scale';
 
 /**
  * SVG namespace constant.
@@ -53,26 +55,26 @@ interface ElevationStatistics {
 }
 
 /**
+ * A single LTTB-downsampled `(distance, elevation)` sample, as emitted
+ * by `Rendering\Elevation_Samples::compute()` server-side.
+ *
+ * @since 1.0.0
+ */
+type ElevationSample = readonly [ number, number ];
+
+/**
  * Shape of the per-mapId state slice the Elevation module reads.
  *
- * Only the fields Step 3 / Step 4 cares about are listed; the rest of
- * the slice (the Map block's geojson, fraction, etc.) is left untyped
- * at this surface because the elevation chart never reads it directly.
+ * Only the fields Step 3 / Step 4 / Step 5 care about are listed; the
+ * rest of the slice (the Map block's geojson, fraction, etc.) is left
+ * untyped at this surface because the elevation chart never reads it
+ * directly.
  *
  * @since 1.0.0
  */
 interface ElevationStateSlice {
 	readonly statistics?: ElevationStatistics;
-}
-
-/**
- * One projected tick — SVG-space coordinate plus formatted label.
- *
- * @since 1.0.0
- */
-interface ProjectedTick {
-	readonly position: number;
-	readonly label: string;
+	readonly samples?: ReadonlyArray< ElevationSample >;
 }
 
 /**
@@ -133,94 +135,11 @@ function statisticsToMarginsInput(
 }
 
 /**
- * Builds the projected X-axis tick set for the redraw.
- *
- * Generates a nice tick set over `[0, distance]`, filters to
- * `value ≤ distance` (Strava-style bounds), formats with the m/km
- * unit chosen for the distance, and projects each value to its SVG
- * x-coordinate.
- *
- * @since 1.0.0
- *
- * @param distance Track distance in metres.
- * @param availX   Plot width in user units.
- * @param refWidth Width of the worst-case X reference label.
- * @param em       Resolved Tick-labels font-size in pixels.
- * @param wLeft    Left margin in user units.
- * @return Projected ticks in ascending order.
- */
-function buildXTicks(
-	distance: number,
-	availX: number,
-	refWidth: number,
-	em: number,
-	wLeft: number
-): readonly ProjectedTick[] {
-	const n = computeTickCount( availX, refWidth, em );
-	const raw = niceTicks( 0, distance, n );
-	const values = raw.values.filter( ( v ) => v <= distance );
-	const labels = formatXLabels( values, raw.step, distance );
-	return values.map( ( v, i ) => ( {
-		position: wLeft + ( v / distance ) * availX,
-		label: labels[ i ] as string,
-	} ) );
-}
-
-/**
- * Builds the projected Y-axis tick set for the redraw.
- *
- * @since 1.0.0
- *
- * @param yMin      Inflated-where-needed Y range minimum.
- * @param yMax      Inflated-where-needed Y range maximum.
- * @param availY    Plot height in user units.
- * @param refHeight Height of the reference label.
- * @param em        Resolved Tick-labels font-size in pixels.
- * @param wTop      Top margin in user units.
- * @param hBottom   Bottom margin in user units.
- * @param H         SVG rendered height in user units.
- * @return Projected ticks ordered from low (bottom) to high (top).
- */
-function buildYTicks(
-	yMin: number,
-	yMax: number,
-	availY: number,
-	refHeight: number,
-	em: number,
-	wTop: number,
-	hBottom: number,
-	H: number
-): readonly ProjectedTick[] {
-	const n = computeTickCount( availY, refHeight, em );
-	const raw = niceTicks( yMin, yMax, n );
-	const labels = formatYLabels( raw.values, raw.step );
-	const firstValue = raw.values[ 0 ] ?? yMin;
-	const lastValue = raw.values[ raw.values.length - 1 ] ?? yMax;
-	const span = lastValue - firstValue;
-	const bottom = H - hBottom;
-
-	if ( span <= 0 ) {
-		return raw.values.map( ( _, i ) => ( {
-			position: bottom,
-			label: labels[ i ] as string,
-		} ) );
-	}
-
-	// Suppress unused parameter warnings — wTop participates in span
-	// computation through the caller's availY = H - wTop - h.
-	void wTop;
-
-	return raw.values.map( ( v, i ) => ( {
-		position: bottom - ( ( v - firstValue ) / span ) * availY,
-		label: labels[ i ] as string,
-	} ) );
-}
-
-/**
  * Removes every existing child element under `svg` whose class
  * matches the supplied selector. Used between redraws to wipe the
- * Step 3 axis lines and the Step 4 tick / label groups before
- * inserting fresh ones — cheaper than diffing for ≤ 20 elements.
+ * Step 3 axis lines, the Step 4 tick / label groups, and the Step 5
+ * plot paths before inserting fresh ones — cheaper than diffing for
+ * ≤ 20 elements.
  *
  * @since 1.0.0
  *
@@ -254,74 +173,24 @@ function createSvg(
 }
 
 /**
- * Replaces the chart's axis lines, tick mark groups, and tick label
- * groups inside the SVG.
- *
- * The viewBox is resynced on every redraw because the SVG's rendered
- * size and its user-unit space share a 1:1 mapping.
+ * Appends the two axis lines to the SVG. Layer order: axis lines sit
+ * below every other surface so a curve peak or a tick label can paint
+ * over them.
  *
  * @since 1.0.0
  *
- * @param svg     The SVG host.
- * @param w       Current rendered width in CSS pixels.
- * @param h       Current rendered height in CSS pixels.
- * @param data    Chart input data (elevation range + distance).
- * @param margins Resolved margin scalars from the margin algorithm.
+ * @param svg   SVG host.
+ * @param scale The resolved chart scale.
  */
-function drawChart(
-	svg: SVGSVGElement,
-	w: number,
-	h: number,
-	data: MarginsInput,
-	margins: Margins
-): void {
-	svg.setAttribute( 'viewBox', `0 0 ${ w } ${ h }` );
-
-	// Wipe any previous run's elements. Selecting on the documented
-	// class names keeps us from clobbering future curve / cursor
-	// surfaces that share the same SVG host.
-	removeMatching(
-		svg,
-		[
-			'.kntnt-gpx-blocks-elevation-axis-x',
-			'.kntnt-gpx-blocks-elevation-axis-y',
-			'.kntnt-gpx-blocks-elevation-ticks-x',
-			'.kntnt-gpx-blocks-elevation-ticks-y',
-			'.kntnt-gpx-blocks-elevation-tick-labels-x',
-			'.kntnt-gpx-blocks-elevation-tick-labels-y',
-		].join( ',' )
-	);
-
-	const em = margins.em;
-	const halfEm = 0.5 * em;
-	const refXWidth = 2 * ( margins.wRight - halfEm );
-	const refHeight = margins.h - halfEm;
-	const availX = w - margins.wLeft - margins.wRight;
-	const availY = h - margins.wTop - margins.h;
-
-	if ( availX <= 0 || availY <= 0 ) {
-		return;
-	}
-
-	const plotLeft = margins.wLeft;
-	const plotRight = w - margins.wRight;
-	const plotTop = margins.wTop;
-	const plotBottom = h - margins.h;
-	const tickMarkLength = 0.2 * em;
-	const labelOffset = halfEm;
-
+function appendAxes( svg: SVGSVGElement, scale: ChartScale ): void {
 	const axisStroke = 'var(--kntnt-gpx-blocks-elevation-axis)';
-	const labelFill = 'var(--kntnt-gpx-blocks-elevation-axis-label)';
-
-	// Two axis lines anchored to the plot rectangle's bottom-left
-	// corner (plotLeft, plotBottom).
 	svg.appendChild(
 		createSvg( 'line', {
 			class: 'kntnt-gpx-blocks-elevation-axis-x',
-			x1: String( plotLeft ),
-			y1: String( plotBottom ),
-			x2: String( plotRight ),
-			y2: String( plotBottom ),
+			x1: String( scale.plotLeft ),
+			y1: String( scale.plotBottom ),
+			x2: String( scale.plotRight ),
+			y2: String( scale.plotBottom ),
 			stroke: axisStroke,
 			'stroke-width': '1',
 		} )
@@ -329,49 +198,95 @@ function drawChart(
 	svg.appendChild(
 		createSvg( 'line', {
 			class: 'kntnt-gpx-blocks-elevation-axis-y',
-			x1: String( plotLeft ),
-			y1: String( plotBottom ),
-			x2: String( plotLeft ),
-			y2: String( plotTop ),
+			x1: String( scale.plotLeft ),
+			y1: String( scale.plotBottom ),
+			x2: String( scale.plotLeft ),
+			y2: String( scale.plotTop ),
 			stroke: axisStroke,
 			'stroke-width': '1',
 		} )
 	);
+}
 
-	// Build the Step 4 tick sets. Y range honours the Step 3 Case-B
-	// inflation around a flat track so niceTicks emits a usable set.
-	const flatY = data.minElevation === data.maxElevation;
-	const yMin = flatY ? data.minElevation - 1 : data.minElevation;
-	const yMax = flatY ? data.maxElevation + 1 : data.maxElevation;
-	const xTicks = buildXTicks(
-		data.distance,
-		availX,
-		refXWidth,
-		em,
-		plotLeft
+/**
+ * Appends the two `<path>` elements that draw the elevation curve —
+ * a closed fill path under the curve and an open stroke path on top.
+ *
+ * Both are always emitted regardless of `plotFillColor`; the fill
+ * path's visibility is governed by the resolved CSS variable
+ * (`transparent` default; the user's colour engages it). Skips
+ * emission entirely when `samples.length < 2` — the curve builders
+ * return `''` and the SVG carries axes/ticks but no `<path>` markup.
+ *
+ * @since 1.0.0
+ *
+ * @param svg     SVG host.
+ * @param scale   The resolved chart scale.
+ * @param samples LTTB-downsampled (distance, elevation) pairs.
+ */
+function appendCurvePaths(
+	svg: SVGSVGElement,
+	scale: ChartScale,
+	samples: ReadonlyArray< ElevationSample >
+): void {
+	if ( samples.length < 2 ) {
+		return;
+	}
+	const fillD = buildFillPathD(
+		samples,
+		scale.projectX,
+		scale.projectY,
+		scale.plotBottom
 	);
-	const yTicks = buildYTicks(
-		yMin,
-		yMax,
-		availY,
-		refHeight,
-		em,
-		plotTop,
-		margins.h,
-		h
+	const strokeD = buildStrokePathD( samples, scale.projectX, scale.projectY );
+	svg.appendChild(
+		createSvg( 'path', {
+			class: 'kntnt-gpx-blocks-elevation-plot-fill',
+			d: fillD,
+			fill: 'var(--kntnt-gpx-blocks-elevation-plot-fill)',
+			stroke: 'none',
+		} )
 	);
+	svg.appendChild(
+		createSvg( 'path', {
+			class: 'kntnt-gpx-blocks-elevation-plot-line',
+			d: strokeD,
+			fill: 'none',
+			stroke: 'var(--kntnt-gpx-blocks-elevation-plot-line)',
+			'stroke-width': '2',
+			'stroke-linejoin': 'round',
+			'stroke-linecap': 'round',
+			'vector-effect': 'non-scaling-stroke',
+		} )
+	);
+}
 
-	// X tick marks (downward from the X axis).
+/**
+ * Appends the four tick groups (two tick-mark groups + two tick-label
+ * groups) to the SVG. Layer order: tick scaffolding sits above the
+ * curve so labels stay legible where the curve passes through them.
+ *
+ * @since 1.0.0
+ *
+ * @param svg   SVG host.
+ * @param scale The resolved chart scale.
+ */
+function appendTicks( svg: SVGSVGElement, scale: ChartScale ): void {
+	const tickMarkLength = 0.2 * scale.em;
+	const labelOffset = 0.5 * scale.em;
+	const axisStroke = 'var(--kntnt-gpx-blocks-elevation-axis)';
+	const labelFill = 'var(--kntnt-gpx-blocks-elevation-axis-label)';
+
 	const xMarks = createSvg( 'g', {
 		class: 'kntnt-gpx-blocks-elevation-ticks-x',
 	} );
-	for ( const t of xTicks ) {
+	for ( const t of scale.xTicks ) {
 		xMarks.appendChild(
 			createSvg( 'line', {
 				x1: String( t.position ),
-				y1: String( plotBottom ),
+				y1: String( scale.plotBottom ),
 				x2: String( t.position ),
-				y2: String( plotBottom + tickMarkLength ),
+				y2: String( scale.plotBottom + tickMarkLength ),
 				stroke: axisStroke,
 				'stroke-width': '1',
 			} )
@@ -379,16 +294,15 @@ function drawChart(
 	}
 	svg.appendChild( xMarks );
 
-	// Y tick marks (leftward from the Y axis).
 	const yMarks = createSvg( 'g', {
 		class: 'kntnt-gpx-blocks-elevation-ticks-y',
 	} );
-	for ( const t of yTicks ) {
+	for ( const t of scale.yTicks ) {
 		yMarks.appendChild(
 			createSvg( 'line', {
-				x1: String( plotLeft ),
+				x1: String( scale.plotLeft ),
 				y1: String( t.position ),
-				x2: String( plotLeft - tickMarkLength ),
+				x2: String( scale.plotLeft - tickMarkLength ),
 				y2: String( t.position ),
 				stroke: axisStroke,
 				'stroke-width': '1',
@@ -397,15 +311,14 @@ function drawChart(
 	}
 	svg.appendChild( yMarks );
 
-	// X tick labels (centred under the X axis with `hanging` baseline).
 	const xLabels = createSvg( 'g', {
 		class: 'kntnt-gpx-blocks-elevation-tick-labels-x',
 		fill: labelFill,
 	} );
-	for ( const t of xTicks ) {
+	for ( const t of scale.xTicks ) {
 		const text = createSvg( 'text', {
 			x: String( t.position ),
-			y: String( plotBottom + labelOffset ),
+			y: String( scale.plotBottom + labelOffset ),
 			'text-anchor': 'middle',
 			'dominant-baseline': 'hanging',
 		} );
@@ -414,15 +327,13 @@ function drawChart(
 	}
 	svg.appendChild( xLabels );
 
-	// Y tick labels (right-anchored at the Y axis with `central`
-	// baseline so the visible glyph centres on the tick mark).
 	const yLabels = createSvg( 'g', {
 		class: 'kntnt-gpx-blocks-elevation-tick-labels-y',
 		fill: labelFill,
 	} );
-	for ( const t of yTicks ) {
+	for ( const t of scale.yTicks ) {
 		const text = createSvg( 'text', {
-			x: String( plotLeft - labelOffset ),
+			x: String( scale.plotLeft - labelOffset ),
 			y: String( t.position ),
 			'text-anchor': 'end',
 			'dominant-baseline': 'central',
@@ -431,6 +342,69 @@ function drawChart(
 		yLabels.appendChild( text );
 	}
 	svg.appendChild( yLabels );
+}
+
+/**
+ * Replaces the chart's axis lines, curve paths, tick mark groups, and
+ * tick label groups inside the SVG.
+ *
+ * The viewBox is resynced on every redraw because the SVG's rendered
+ * size and its user-unit space share a 1:1 mapping. Layer order
+ * matches the Step 5 spec: axes → fill → stroke → tick marks → tick
+ * labels.
+ *
+ * @since 1.0.0
+ *
+ * @param svg     The SVG host.
+ * @param w       Current rendered width in CSS pixels.
+ * @param h       Current rendered height in CSS pixels.
+ * @param data    Chart input data (elevation range + distance).
+ * @param samples LTTB-downsampled (distance, elevation) pairs.
+ * @param margins Resolved margin scalars from the margin algorithm.
+ */
+function drawChart(
+	svg: SVGSVGElement,
+	w: number,
+	h: number,
+	data: MarginsInput,
+	samples: ReadonlyArray< ElevationSample >,
+	margins: Margins
+): void {
+	svg.setAttribute( 'viewBox', `0 0 ${ w } ${ h }` );
+
+	// Wipe any previous run's elements. Selecting on the documented
+	// class names keeps us from clobbering future cursor / tooltip
+	// surfaces that share the same SVG host.
+	removeMatching(
+		svg,
+		[
+			'.kntnt-gpx-blocks-elevation-axis-x',
+			'.kntnt-gpx-blocks-elevation-axis-y',
+			'.kntnt-gpx-blocks-elevation-plot-fill',
+			'.kntnt-gpx-blocks-elevation-plot-line',
+			'.kntnt-gpx-blocks-elevation-ticks-x',
+			'.kntnt-gpx-blocks-elevation-ticks-y',
+			'.kntnt-gpx-blocks-elevation-tick-labels-x',
+			'.kntnt-gpx-blocks-elevation-tick-labels-y',
+		].join( ',' )
+	);
+
+	const scale = computeChartScale( {
+		distance: data.distance,
+		minElevation: data.minElevation,
+		maxElevation: data.maxElevation,
+		margins,
+		width: w,
+		height: h,
+	} );
+
+	if ( scale.xTicks.length === 0 ) {
+		return;
+	}
+
+	appendAxes( svg, scale );
+	appendCurvePaths( svg, scale, samples );
+	appendTicks( svg, scale );
 }
 
 /**
@@ -452,6 +426,35 @@ function readSize( svg: SVGSVGElement ): {
 		w: rect.width > 0 ? rect.width : 0,
 		h: rect.height > 0 ? rect.height : 0,
 	};
+}
+
+/**
+ * Coerces an unknown value into the `(distance, elevation)` samples
+ * array `Elevation_Samples` emits. Drops malformed entries silently.
+ *
+ * @since 1.0.0
+ *
+ * @param value Candidate value from the state slice.
+ * @return The validated array (possibly empty).
+ */
+function readSamples( value: unknown ): ReadonlyArray< ElevationSample > {
+	if ( ! Array.isArray( value ) ) {
+		return [];
+	}
+	const result: ElevationSample[] = [];
+	for ( const entry of value ) {
+		if (
+			Array.isArray( entry ) &&
+			entry.length >= 2 &&
+			typeof entry[ 0 ] === 'number' &&
+			typeof entry[ 1 ] === 'number' &&
+			Number.isFinite( entry[ 0 ] ) &&
+			Number.isFinite( entry[ 1 ] )
+		) {
+			result.push( [ entry[ 0 ], entry[ 1 ] ] );
+		}
+	}
+	return result;
 }
 
 store( 'kntnt-gpx-blocks', {
@@ -498,6 +501,7 @@ store( 'kntnt-gpx-blocks', {
 			if ( ! data ) {
 				return;
 			}
+			const samples = readSamples( slice?.samples );
 
 			// Wait for fonts before the first measurement. `document.fonts`
 			// is universally present in modern browsers; the guard is a
@@ -513,7 +517,8 @@ store( 'kntnt-gpx-blocks', {
 
 			// Mount the SVG host. The wrapper carries the
 			// `--kntnt-gpx-blocks-elevation-axis` /
-			// `--kntnt-gpx-blocks-elevation-axis-label` custom properties
+			// `--kntnt-gpx-blocks-elevation-axis-label` /
+			// `--kntnt-gpx-blocks-elevation-plot-*` custom properties
 			// and any inline typography the SCSS rule converts into the
 			// SVG's font-* declarations; the measurer's hidden <text>
 			// nodes inherit those values through the standard CSS
@@ -539,7 +544,7 @@ store( 'kntnt-gpx-blocks', {
 				if ( w === 0 || h === 0 ) {
 					return;
 				}
-				drawChart( svg, w, h, data, margins );
+				drawChart( svg, w, h, data, samples, margins );
 			};
 
 			redraw();

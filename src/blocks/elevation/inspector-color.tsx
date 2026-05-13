@@ -39,8 +39,10 @@ interface ColorRow {
 }
 
 /**
- * Returns the eight Color panel rows in the order documented in the
- * Step 1 spec table. Order matters — it is the contract subsequent
+ * Returns the nine Color panel rows in the order documented in the
+ * Step 1 spec table — with the `Plot fill` row inserted by Step 5
+ * directly after `Plot line` per the Step 5 amendment of the original
+ * eight-row contract. Order matters — it is the contract subsequent
  * steps wire into and the order the editor displays.
  *
  * The function is exported so future tests (and the Step 8 Map
@@ -50,7 +52,7 @@ interface ColorRow {
  *
  * @since 1.0.0
  *
- * @return Eight rows, top-to-bottom, in display order.
+ * @return Nine rows, top-to-bottom, in display order.
  */
 export function elevationColorRows(): readonly ColorRow[] {
 	return [
@@ -61,6 +63,10 @@ export function elevationColorRows(): readonly ColorRow[] {
 		{
 			attribute: 'plotLineColor',
 			label: __( 'Plot line', 'kntnt-gpx-blocks' ),
+		},
+		{
+			attribute: 'plotFillColor',
+			label: __( 'Plot fill', 'kntnt-gpx-blocks' ),
 		},
 		{
 			attribute: 'cursorColor',

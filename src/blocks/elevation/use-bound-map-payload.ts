@@ -43,6 +43,7 @@ export interface BoundMapPayload {
 		readonly ascent: number | null;
 		readonly descent: number | null;
 	};
+	readonly samples: ReadonlyArray< readonly [ number, number ] >;
 }
 
 /**

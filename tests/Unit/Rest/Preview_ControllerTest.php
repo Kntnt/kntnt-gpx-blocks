@@ -328,3 +328,49 @@ test( 'get_preview includes the statistics array in the response payload', funct
 	}
 
 } );
+
+test( 'get_preview includes the samples array in the response payload (Step 5)', function (): void {
+
+	// A real 3D LineString so Elevation_Samples::compute() emits a
+	// non-empty samples array we can pin against the spec.
+	$geojson = [
+		'type'     => 'FeatureCollection',
+		'features' => [
+			[
+				'type'       => 'Feature',
+				'geometry'   => [
+					'type'        => 'LineString',
+					'coordinates' => [
+						[ 18, 59, 100 ],
+						[ 18, 59, 110 ],
+						[ 18, 59, 120 ],
+					],
+				],
+				'properties' => null,
+			],
+		],
+	];
+
+	Functions\when( 'get_post' )->justReturn(
+		preview_fake_attachment( 42, 'application/gpx+xml' )
+	);
+	$temp = preview_stub_meta_for_happy_path( (string) json_encode( $geojson ) );
+
+	try {
+		$controller = new Preview_Controller( new Attachment_Cache() );
+		$response   = $controller->get_preview( preview_fake_request( 42 ) );
+
+		expect( $response )->toBeInstanceOf( WP_REST_Response::class );
+		$data = $response->get_data();
+		expect( $data )->toHaveKey( 'samples' );
+		expect( $data['samples'] )->toBeArray();
+		// Every entry is a [distance, elevation] tuple.
+		foreach ( $data['samples'] as $sample ) {
+			expect( $sample )->toBeArray();
+			expect( count( $sample ) )->toBe( 2 );
+		}
+	} finally {
+		unlink( $temp );
+	}
+
+} );

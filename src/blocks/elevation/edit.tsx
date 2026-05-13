@@ -245,6 +245,7 @@ function resolveBinding(
 				maxElevation: maxRaw,
 				distance: distanceRaw,
 			},
+			samples: payload.samples,
 			typography,
 		},
 		bindingBroken: false,
@@ -290,6 +291,18 @@ export function ElevationEdit( {
 		'axisLabelColor',
 		''
 	);
+	const plotLine = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'plotLineColor',
+		''
+	);
+	const plotFill = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'plotFillColor',
+		''
+	);
 	const inlineStyle: Record< string, string > = {};
 	if ( bg.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-background' ] = bg.resolved;
@@ -301,6 +314,14 @@ export function ElevationEdit( {
 	if ( axisLabel.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-axis-label' ] =
 			axisLabel.resolved;
+	}
+	if ( plotLine.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-plot-line' ] =
+			plotLine.resolved;
+	}
+	if ( plotFill.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-plot-fill' ] =
+			plotFill.resolved;
 	}
 
 	// Inject the Step 3 default min-height (15vh) only when the user
