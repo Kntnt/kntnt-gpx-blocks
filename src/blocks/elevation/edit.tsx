@@ -324,6 +324,34 @@ export function ElevationEdit( {
 			plotFill.resolved;
 	}
 
+	// Tick-labels typography. Mirrors Render_Elevation::build_inline_style
+	// PHP-side so the editor preview and the server-rendered frontend
+	// emit identical custom properties on the wrapper. Each pair maps
+	// an attribute name to the CSS custom-property suffix; empty values
+	// are omitted so the SCSS rule falls back to `inherit`. Sanitisation
+	// is intentionally delegated to PHP — the editor's TypographyToolsPanel
+	// already constrains the value space to what Typography_Sanitizer
+	// would accept, and trying to mirror the regex set client-side would
+	// be both duplication and inheritance-vs-sanitisation surface area.
+	const tickLabelMap: ReadonlyArray< readonly [ string, string ] > = [
+		[ 'tickLabelFontFamily', 'font-family' ],
+		[ 'tickLabelFontSize', 'font-size' ],
+		[ 'tickLabelFontWeight', 'font-weight' ],
+		[ 'tickLabelFontStyle', 'font-style' ],
+		[ 'tickLabelLineHeight', 'line-height' ],
+		[ 'tickLabelLetterSpacing', 'letter-spacing' ],
+		[ 'tickLabelTextTransform', 'text-transform' ],
+		[ 'tickLabelTextDecoration', 'text-decoration' ],
+	];
+	for ( const [ attrKey, cssSuffix ] of tickLabelMap ) {
+		const value = readString( attributes, attrKey );
+		if ( value !== '' ) {
+			inlineStyle[
+				`--kntnt-gpx-blocks-elevation-tick-label-${ cssSuffix }`
+			] = value;
+		}
+	}
+
 	// Inject the Step 3 default min-height (15vh) only when the user
 	// has not set their own. The condition is centralised in
 	// `getDefaultMinHeight()` so editor and PHP stay in lock-step.

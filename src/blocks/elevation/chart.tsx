@@ -66,6 +66,16 @@ export type ElevationSample = readonly [ number, number ];
 /**
  * Props for {@link Chart}.
  *
+ * The `typography` prop is the tick-labels typography bundle read
+ * from the block's `tickLabel*` attributes. It is **not** consumed
+ * by the chart's render output or by the measurer — those read the
+ * active typography through CSS inheritance from the host SVG,
+ * sourced from the eight `--kntnt-gpx-blocks-elevation-tick-label-*`
+ * custom properties the wrapper carries. The prop is retained
+ * because its eight fields populate the dep-list of the layout
+ * effect that runs `computeMargins`; without it, a typography change
+ * in the inspector would not trigger a re-measurement.
+ *
  * @since 1.0.0
  */
 export interface ChartProps {
@@ -172,10 +182,17 @@ export function Chart( {
 	}, [] );
 
 	// Compute margins after fonts are ready, on data/typography
-	// change. Margins do not depend on wrapper dimensions, so they are
-	// not invalidated by ResizeObserver. The dep list reads each
-	// primitive separately so a fresh-object prop from a parent
-	// re-render does not trigger an unnecessary remeasure loop.
+	// change. Margins do not depend on wrapper dimensions, so they
+	// are not invalidated by ResizeObserver. The dep list enumerates
+	// each typography field separately for two reasons: a fresh-object
+	// prop from a parent re-render does not trigger an unnecessary
+	// remeasure loop, *and* the measurer no longer takes typography
+	// as an argument — it reads the active typography through CSS
+	// inheritance from the host SVG (whose font-* declarations come
+	// from the wrapper's tick-label custom properties, written
+	// synchronously in the same React commit that delivers the new
+	// prop). useLayoutEffect runs after commit but before paint, so
+	// getBBox() observes the updated CSS.
 	useLayoutEffect( () => {
 		if ( ! fontsReady ) {
 			return;
@@ -185,7 +202,7 @@ export function Chart( {
 			return;
 		}
 		const measure = createTextMeasurer( svg );
-		setMargins( computeMargins( data, typography, measure ) );
+		setMargins( computeMargins( data, measure ) );
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		data.minElevation,

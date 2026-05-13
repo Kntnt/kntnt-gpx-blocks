@@ -24,11 +24,7 @@
 
 import { xReferenceString } from './format';
 import { computeMargins } from './margins';
-import type {
-	TextMeasurement,
-	TextMeasurer,
-	TypographyAttributes,
-} from './measure';
+import type { TextMeasurement, TextMeasurer } from './measure';
 
 /**
  * Builds a measurer that returns predictable widths and a fixed
@@ -38,8 +34,8 @@ import type {
  * @param widthPerChar Pixels of width per character.
  * @param height       Reported height for every string.
  * @param fontSize     Reported font-size for every string.
- * @return The mock measurer plus a recorded list of every (text,
- *         typography) call made through it.
+ * @return The mock measurer plus a recorded list of every text the
+ *         caller passed through it.
  */
 function makeMeasurer(
 	widthPerChar: number,
@@ -47,15 +43,11 @@ function makeMeasurer(
 	fontSize: number
 ): {
 	measure: TextMeasurer;
-	calls: Array< { text: string; typography: TypographyAttributes } >;
+	calls: string[];
 } {
-	const calls: Array< { text: string; typography: TypographyAttributes } > =
-		[];
-	const measure: TextMeasurer = (
-		text: string,
-		typography: TypographyAttributes
-	): TextMeasurement => {
-		calls.push( { text, typography } );
+	const calls: string[] = [];
+	const measure: TextMeasurer = ( text: string ): TextMeasurement => {
+		calls.push( text );
 		return {
 			width: text.length * widthPerChar,
 			height,
@@ -70,7 +62,6 @@ describe( 'computeMargins', () => {
 		const { measure } = makeMeasurer( 10, 20, 16 );
 		const m = computeMargins(
 			{ minElevation: 0, maxElevation: 1000, distance: 5000 },
-			{},
 			measure
 		);
 		// Y labels: ['0 m', '200 m', '400 m', '600 m', '800 m', '1000 m'].
@@ -82,7 +73,6 @@ describe( 'computeMargins', () => {
 		const { measure } = makeMeasurer( 10, 20, 16 );
 		const m = computeMargins(
 			{ minElevation: 0, maxElevation: 1000, distance: 5000 },
-			{},
 			measure
 		);
 		// distance=5000 → km-mode refString = '88,8 km' under sv-SE.
@@ -95,7 +85,6 @@ describe( 'computeMargins', () => {
 		const { measure } = makeMeasurer( 10, 22, 16 );
 		const m = computeMargins(
 			{ minElevation: 0, maxElevation: 1000, distance: 5000 },
-			{},
 			measure
 		);
 		// 0.5 × 22 + 0.5 × 16 = 11 + 8 = 19.
@@ -106,7 +95,6 @@ describe( 'computeMargins', () => {
 		const { measure } = makeMeasurer( 10, 22, 16 );
 		const m = computeMargins(
 			{ minElevation: 0, maxElevation: 1000, distance: 5000 },
-			{},
 			measure
 		);
 		// h = 22 + 0.5 * 16 = 30.
@@ -117,7 +105,6 @@ describe( 'computeMargins', () => {
 		const { measure } = makeMeasurer( 10, 20, 24 );
 		const m = computeMargins(
 			{ minElevation: 0, maxElevation: 100, distance: 1000 },
-			{},
 			measure
 		);
 		expect( m.em ).toBe( 24 );
@@ -127,55 +114,35 @@ describe( 'computeMargins', () => {
 		const { measure, calls } = makeMeasurer( 10, 20, 16 );
 		computeMargins(
 			{ minElevation: 250, maxElevation: 250, distance: 5000 },
-			{},
 			measure
 		);
 		// Y labels should cover [249, 251]. The widest measured Y label
 		// must include 249 or 250 or 251 — never 250 alone — proving
 		// the range was inflated.
-		const yLabelTexts = calls.map( ( c ) => c.text );
 		expect(
-			yLabelTexts.some(
+			calls.some(
 				( t ) => t.startsWith( '249' ) || t.startsWith( '251' )
 			)
 		).toBe( true );
-	} );
-
-	it( 'forwards the typography bundle to every measurement', () => {
-		const { measure, calls } = makeMeasurer( 10, 20, 16 );
-		const typography: TypographyAttributes = {
-			fontSize: '14px',
-			fontWeight: '700',
-		};
-		computeMargins(
-			{ minElevation: 0, maxElevation: 100, distance: 500 },
-			typography,
-			measure
-		);
-		expect( calls.every( ( c ) => c.typography === typography ) ).toBe(
-			true
-		);
 	} );
 
 	it( 'measures the height-reference string', () => {
 		const { measure, calls } = makeMeasurer( 10, 20, 16 );
 		computeMargins(
 			{ minElevation: 0, maxElevation: 100, distance: 500 },
-			{},
 			measure
 		);
-		expect( calls.map( ( c ) => c.text ) ).toContain( '-0,123456789' );
+		expect( calls ).toContain( '-0,123456789' );
 	} );
 
 	it( 'measures the X reference string for the given distance', () => {
 		const { measure, calls } = makeMeasurer( 10, 20, 16 );
 		computeMargins(
 			{ minElevation: 0, maxElevation: 100, distance: 5000 },
-			{},
 			measure
 		);
 		// distance=5000 → km-mode refString = '88,8 km' under sv-SE.
 		const refString = xReferenceString( 5000 );
-		expect( calls.map( ( c ) => c.text ) ).toContain( refString );
+		expect( calls ).toContain( refString );
 	} );
 } );

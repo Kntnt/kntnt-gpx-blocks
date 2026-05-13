@@ -83,4 +83,31 @@ describe( 'elevation style.scss', () => {
 		// reason.
 		expect( SCSS ).toMatch( /min-height:\s*15vh/ );
 	} );
+
+	it( 'exposes the eight tick-label typography custom properties on the chart SVG with inherit fallback', () => {
+		// Tick-label typography reaches both the visible <text>
+		// labels and the measurer's hidden <text> nodes through CSS
+		// inheritance from the chart SVG. Each of the eight CSS
+		// properties is declared on `.kntnt-gpx-blocks-elevation-chart-svg`
+		// as `var(--kntnt-gpx-blocks-elevation-tick-label-<prop>,
+		// inherit)`. The fallback is `inherit` so an unset attribute
+		// falls through to the wrapper's resolved typography rather
+		// than to a hardcoded default.
+		const props = [
+			'font-family',
+			'font-size',
+			'font-weight',
+			'font-style',
+			'line-height',
+			'letter-spacing',
+			'text-transform',
+			'text-decoration',
+		];
+		for ( const prop of props ) {
+			const re = new RegExp(
+				`\\.kntnt-gpx-blocks-elevation-chart-svg[^{]*\\{[\\s\\S]*?${ prop }:\\s*var\\(\\s*--kntnt-gpx-blocks-elevation-tick-label-${ prop }\\s*,\\s*inherit\\s*\\)`
+			);
+			expect( SCSS ).toMatch( re );
+		}
+	} );
 } );

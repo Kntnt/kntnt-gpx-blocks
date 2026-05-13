@@ -345,6 +345,53 @@ test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', func
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-plot-fill' );
 } );
 
+test( 'render_chart_wrapper threads sanitised tick-label typography custom properties through the wrapper style', function (): void {
+	$attributes = [
+		'tickLabelFontFamily'     => 'var(--wp--preset--font-family--system-ui)',
+		'tickLabelFontSize'       => '14px',
+		'tickLabelFontWeight'     => '700',
+		'tickLabelFontStyle'      => 'italic',
+		'tickLabelLineHeight'     => '1.4',
+		'tickLabelLetterSpacing'  => '0.05em',
+		'tickLabelTextTransform'  => 'uppercase',
+		'tickLabelTextDecoration' => 'underline',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-family: var(--wp--preset--font-family--system-ui)' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-size: 14px' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-weight: 700' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-style: italic' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-line-height: 1.4' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-letter-spacing: 0.05em' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-text-transform: uppercase' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tick-label-text-decoration: underline' );
+} );
+
+test( 'render_chart_wrapper rejects malformed tick-label typography values via Typography_Sanitizer', function (): void {
+	$attributes = [
+		'tickLabelFontFamily'     => 'Arial; background: red',
+		'tickLabelFontSize'       => '14pt',
+		'tickLabelFontWeight'     => '350',
+		'tickLabelFontStyle'      => 'oblique 10deg',
+		'tickLabelLineHeight'     => '-1',
+		'tickLabelLetterSpacing'  => '2',
+		'tickLabelTextTransform'  => 'inherit',
+		'tickLabelTextDecoration' => 'underline dotted red',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-family' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-size' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-weight' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-font-style' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-line-height' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-letter-spacing' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-text-transform' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tick-label-text-decoration' );
+	expect( $html )->not->toContain( 'background: red' );
+} );
+
 test( 'render_chart_wrapper escapes the data-wp-context attribute value', function (): void {
 	$captured = [];
 	Functions\when( 'esc_attr' )->alias(

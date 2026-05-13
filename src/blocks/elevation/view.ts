@@ -29,10 +29,7 @@ import {
 	type Margins,
 	type MarginsInput,
 } from './geometry/margins';
-import {
-	createTextMeasurer,
-	type TypographyAttributes,
-} from './geometry/measure';
+import { createTextMeasurer } from './geometry/measure';
 import { computeChartScale, type ChartScale } from './geometry/scale';
 
 /**
@@ -515,14 +512,14 @@ store( 'kntnt-gpx-blocks', {
 				}
 			}
 
-			// Mount the SVG host. The wrapper carries the
-			// `--kntnt-gpx-blocks-elevation-axis` /
-			// `--kntnt-gpx-blocks-elevation-axis-label` /
-			// `--kntnt-gpx-blocks-elevation-plot-*` custom properties
-			// and any inline typography the SCSS rule converts into the
-			// SVG's font-* declarations; the measurer's hidden <text>
-			// nodes inherit those values through the standard CSS
-			// inheritance chain.
+			// Mount the SVG host. The wrapper carries the colour
+			// custom properties (axis / axis-label / plot-*) and the
+			// eight tick-label typography custom properties; SCSS
+			// converts the latter into font-* declarations on the
+			// SVG. The measurer's hidden <text> nodes (direct SVG
+			// children) and the visible tick <text> labels (under
+			// the `<g class="…-tick-labels-x/y">` groups) inherit
+			// those declarations through the standard CSS chain.
 			const svg = document.createElementNS(
 				SVG_NS,
 				'svg'
@@ -533,11 +530,15 @@ store( 'kntnt-gpx-blocks', {
 			ref.appendChild( svg );
 
 			// Compute margins once. ResizeObserver does not invalidate
-			// them — margins depend only on data + typography, neither
-			// of which a wrapper-size change implies.
+			// them — margins depend only on data and on the chart
+			// SVG's resolved typography, neither of which a wrapper-
+			// size change implies. The measurer reads the typography
+			// through CSS inheritance from the SVG host (whose font-*
+			// declarations come from the wrapper's tick-label custom
+			// properties emitted by Render_Elevation server-side), so
+			// no typography bundle has to be threaded through the API.
 			const measure = createTextMeasurer( svg );
-			const typography: TypographyAttributes = {};
-			let margins = computeMargins( data, typography, measure );
+			let margins = computeMargins( data, measure );
 
 			const redraw = (): void => {
 				const { w, h } = readSize( svg );
@@ -550,13 +551,12 @@ store( 'kntnt-gpx-blocks', {
 			redraw();
 
 			// Re-measure when late-loaded fonts replace the fallback
-			// metrics. The dep list above does not include typography
-			// because the wrapper's resolved typography is constant
-			// for a single block instance — fonts.loadingdone is the
-			// one event that can change measurement results in place.
+			// metrics. The frontend has no other event that can
+			// change measurement results in place — block attributes
+			// are baked into the server-rendered HTML at request time.
 			if ( typeof document !== 'undefined' && document.fonts ) {
 				document.fonts.addEventListener( 'loadingdone', () => {
-					margins = computeMargins( data, typography, measure );
+					margins = computeMargins( data, measure );
 					redraw();
 				} );
 			}

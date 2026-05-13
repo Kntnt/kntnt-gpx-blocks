@@ -29,7 +29,10 @@
  *
  * The function is pure with respect to a passed-in measurer — DOM
  * access is delegated entirely to that callable, which makes
- * `computeMargins()` fully unit-testable with a mock measurer.
+ * `computeMargins()` fully unit-testable with a mock measurer. The
+ * measurer reads the active tick-label typography through CSS
+ * inheritance from the host SVG (see `measure.ts`), so the algorithm
+ * itself does not thread a typography bundle through its API.
  *
  * The Step 3 Case-B substitution lives here: when `minElevation ===
  * maxElevation` the Y range inflates to `[min−1, min+1]` so the
@@ -42,7 +45,7 @@
  */
 
 import { formatYLabels, xReferenceString } from './format';
-import type { TextMeasurer, TypographyAttributes } from './measure';
+import type { TextMeasurer } from './measure';
 import { niceTicks } from './ticks';
 
 /**
@@ -113,19 +116,17 @@ const DEFAULT_TARGET_TICK_COUNT = 5;
  *
  * @since 1.0.0
  *
- * @param labels     Label strings to measure.
- * @param typography Typography applied to every measurement.
- * @param measure    Measurer callback.
+ * @param labels  Label strings to measure.
+ * @param measure Measurer callback.
  * @return The widest measured width in user units.
  */
 function widestWidth(
 	labels: readonly string[],
-	typography: TypographyAttributes,
 	measure: TextMeasurer
 ): number {
 	let widest = 0;
 	for ( const label of labels ) {
-		const m = measure( label, typography );
+		const m = measure( label );
 		if ( m.width > widest ) {
 			widest = m.width;
 		}
@@ -134,13 +135,11 @@ function widestWidth(
 }
 
 /**
- * Computes the margin scalars for the given data + typography.
+ * Computes the margin scalars for the given data.
  *
  * @since 1.0.0
  *
  * @param data        Raw chart data (elevation range + distance).
- * @param typography  Tick-labels typography bundle (the chart wrapper's
- *                    resolved typography).
  * @param measure     Text measurer (typically returned by
  *                    `createTextMeasurer()`; tests inject a mock).
  * @param targetCount Optional tick-count hint for the Y-label
@@ -150,7 +149,6 @@ function widestWidth(
  */
 export function computeMargins(
 	data: MarginsInput,
-	typography: TypographyAttributes,
 	measure: TextMeasurer,
 	targetCount: number = DEFAULT_TARGET_TICK_COUNT
 ): Margins {
@@ -168,17 +166,17 @@ export function computeMargins(
 	const yLabels = formatYLabels( yTicks.values, yTicks.step );
 
 	// Measure the widest Y label and the worst-case X reference string.
-	const widestY = widestWidth( yLabels, typography, measure );
-	const xRef = measure( xReferenceString( data.distance ), typography );
+	const widestY = widestWidth( yLabels, measure );
+	const xRef = measure( xReferenceString( data.distance ) );
 
 	// Measure the height reference string. The same character height
 	// applies to any realistic numeric label, so no per-axis height
 	// computation is needed.
-	const ref = measure( HEIGHT_REFERENCE, typography );
+	const ref = measure( HEIGHT_REFERENCE );
 
 	// Resolve the `em` base. Every measurement reports the same
-	// resolved font-size (the typography is constant across the call),
-	// so the reference string's value is the canonical source.
+	// resolved font-size (typography is constant across the call), so
+	// the reference string's value is the canonical source.
 	const em = ref.fontSize;
 	const halfEm = 0.5 * em;
 

@@ -5,16 +5,27 @@
  * height of the eventual tick labels. Doing that reliably means
  * measuring real text under the same rendering pipeline that will
  * paint the labels — SVG's, not HTML's, because the labels are SVG
- * `<text>` nodes in Step 4. HTML-vs-SVG metrics differ subtly (line-
- * height handling, sub-pixel rounding, fallback-font selection), so
- * sharing the pipeline avoids margin drift.
+ * `<text>` nodes. HTML-vs-SVG metrics differ subtly (line-height
+ * handling, sub-pixel rounding, fallback-font selection), so sharing
+ * the pipeline avoids margin drift.
  *
- * The measurer is created against an existing `<svg>` element and
- * returns a closure that synchronously measures one string + one
- * typography bundle at a time:
+ * Typography is applied through CSS inheritance from the host SVG.
+ * `style.scss` declares the eight `font-*` / `letter-spacing` /
+ * `text-*` properties on `.kntnt-gpx-blocks-elevation-chart-svg`,
+ * sourcing them from the eight `--kntnt-gpx-blocks-elevation-tick-label-*`
+ * custom properties that PHP `Render_Elevation::build_inline_style()`
+ * and the editor's `inlineStyle` builder emit on the wrapper. Both
+ * the visible tick `<text>` labels (nested inside `<g>` groups) and
+ * the measurer's hidden `<text>` nodes (direct SVG children) inherit
+ * from the same declarations, which is what guarantees the margin
+ * algorithm measures under exactly the typography the user sees.
  *
- *   1. A hidden `<text>` node is inserted with the typography applied
- *      inline.
+ * The measurer therefore takes a single argument — the text to
+ * measure — and inserts a hidden `<text>` node whose only role is to
+ * give `getBBox()` a real geometry to read:
+ *
+ *   1. A hidden `<text>` node is inserted as a direct child of the
+ *      SVG.
  *   2. `getBBox()` reads the width and height.
  *   3. `getComputedStyle(node).fontSize` reads the resolved CSS
  *      font-size in pixels — that value is the `em` base the margin
@@ -22,24 +33,23 @@
  *   4. The node is removed.
  *
  * The DOM round-trip is intentional. SVG `getBBox()` is the only
- * cross-browser primitive that returns the exact rendered geometry for
- * an SVG `<text>` node; computing the same metric from font metrics +
- * character widths would require duplicating each font's metrics on
- * the client side, which is exactly the brittleness the Step 3
- * grilling decided against (see *Rendering architecture* in
+ * cross-browser primitive that returns the exact rendered geometry
+ * for an SVG `<text>` node; computing the same metric from font
+ * metrics + character widths would require duplicating each font's
+ * metrics on the client side, which is exactly the brittleness the
+ * Step 3 grilling decided against (see *Rendering architecture* in
  * `docs/elevation-rebuild.md`).
  *
  * @since 1.0.0
  */
 
 /**
- * Subset of the Tick-labels typography that affects measurement.
- *
- * Every field is optional; missing fields fall through to the SVG's
- * inherited typography, which is the editor-chosen value on the
- * wrapper. Keys mirror the corresponding CSS properties so the
- * measurer can apply them with a one-to-one `style.X = value`
- * assignment.
+ * Subset of the Tick-labels typography that the editor's inspector
+ * surfaces. Kept here purely as a structural type for the `<Chart>`
+ * component's prop — the measurer itself does not consume it any
+ * more (see the module header). Each field corresponds to one of the
+ * eight CSS custom properties the wrapper emits and the SVG's SCSS
+ * rule consumes.
  *
  * @since 1.0.0
  */
@@ -77,10 +87,7 @@ export interface TextMeasurement {
  *
  * @since 1.0.0
  */
-export type TextMeasurer = (
-	text: string,
-	typography: TypographyAttributes
-) => TextMeasurement;
+export type TextMeasurer = ( text: string ) => TextMeasurement;
 
 /**
  * SVG namespace constant. Inlined here so the module has no other
@@ -100,68 +107,26 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const FALLBACK_FONT_SIZE_PX = 16;
 
 /**
- * Applies a {@link TypographyAttributes} bundle to an SVG `<text>`
- * node. Exposed for unit tests so the typography-application code
- * path can be exercised independently of `getBBox`.
- *
- * @since 1.0.0
- *
- * @param node       The SVG text node to mutate.
- * @param typography Typography fields to apply.
- */
-export function applyTypography(
-	node: SVGTextElement,
-	typography: TypographyAttributes
-): void {
-	if ( typography.fontFamily ) {
-		node.style.fontFamily = typography.fontFamily;
-	}
-	if ( typography.fontSize ) {
-		node.style.fontSize = typography.fontSize;
-	}
-	if ( typography.fontWeight ) {
-		node.style.fontWeight = typography.fontWeight;
-	}
-	if ( typography.fontStyle ) {
-		node.style.fontStyle = typography.fontStyle;
-	}
-	if ( typography.lineHeight ) {
-		node.style.lineHeight = typography.lineHeight;
-	}
-	if ( typography.letterSpacing ) {
-		node.style.letterSpacing = typography.letterSpacing;
-	}
-	if ( typography.textTransform ) {
-		node.style.textTransform = typography.textTransform;
-	}
-	if ( typography.textDecoration ) {
-		node.style.textDecoration = typography.textDecoration;
-	}
-}
-
-/**
  * Creates a measurer bound to the supplied SVG host.
  *
- * The returned closure is safe to call repeatedly; each call inserts a
- * fresh hidden `<text>` node, measures it, and removes it. The host
- * SVG is never permanently mutated.
+ * The returned closure is safe to call repeatedly; each call inserts
+ * a fresh hidden `<text>` node, measures it, and removes it. The
+ * host SVG is never permanently mutated.
  *
  * @since 1.0.0
  *
  * @param svg Host SVG element. The measurement node is inserted here
- *            so it inherits the same typography pipeline the eventual
- *            visible labels will use.
+ *            so it inherits the same typography pipeline the visible
+ *            tick `<text>` labels render under.
  * @return Synchronous measurement callback.
  */
 export function createTextMeasurer( svg: SVGSVGElement ): TextMeasurer {
-	return (
-		text: string,
-		typography: TypographyAttributes
-	): TextMeasurement => {
-		// Build a hidden, off-screen <text> node. Negative coordinates
-		// keep it visually out of the chart even if the SVG is briefly
-		// painted before removal. `aria-hidden` keeps assistive tech
-		// from announcing the measurement string.
+	return ( text: string ): TextMeasurement => {
+		// Build a hidden, off-screen <text> node as a direct SVG
+		// child. Negative coordinates keep it visually out of the
+		// chart even if the SVG is briefly painted before removal.
+		// `aria-hidden` keeps assistive tech from announcing the
+		// measurement string.
 		const node = document.createElementNS(
 			SVG_NS,
 			'text'
@@ -169,7 +134,6 @@ export function createTextMeasurer( svg: SVGSVGElement ): TextMeasurer {
 		node.setAttribute( 'x', '-10000' );
 		node.setAttribute( 'y', '-10000' );
 		node.setAttribute( 'aria-hidden', 'true' );
-		applyTypography( node, typography );
 		node.textContent = text;
 		svg.appendChild( node );
 

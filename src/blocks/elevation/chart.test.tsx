@@ -364,6 +364,121 @@ describe( 'Chart', () => {
 		expect( idxLabelsY ).toBeGreaterThan( idxTicksX );
 	} );
 
+	it( 'does not apply font-* inline to tick label <text> nodes (CSS inheritance is the contract)', async () => {
+		// Render with a non-default typography to make sure that even
+		// when the chart *does* know the user's choices, it never writes
+		// them as inline style on the <text> elements. Tick-label
+		// styling must arrive via CSS inheritance from the SVG host;
+		// inline attributes here would short-circuit the measurer/visible
+		// divergence guarantee Strategy B is built on.
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+		await act( async () => {
+			root.render(
+				createElement( Chart, {
+					data: {
+						minElevation: 0,
+						maxElevation: 500,
+						distance: 5000,
+					},
+					samples: [
+						[ 0, 100 ],
+						[ 5000, 200 ],
+					],
+					typography: {
+						fontFamily: 'Inter',
+						fontSize: '20px',
+						fontWeight: '700',
+					},
+				} )
+			);
+		} );
+		await act( async () => {
+			await Promise.resolve();
+		} );
+		const svg = container.querySelector( 'svg' )!;
+		const labels = svg.querySelectorAll(
+			'g.kntnt-gpx-blocks-elevation-tick-labels-x text, g.kntnt-gpx-blocks-elevation-tick-labels-y text'
+		);
+		expect( labels.length ).toBeGreaterThan( 0 );
+		for ( const t of labels ) {
+			expect( t.getAttribute( 'style' ) ?? '' ).not.toContain( 'font-' );
+			expect( t.getAttribute( 'font-family' ) ).toBeNull();
+			expect( t.getAttribute( 'font-size' ) ).toBeNull();
+			expect( t.getAttribute( 'font-weight' ) ).toBeNull();
+		}
+	} );
+
+	it( 'remeasures when the typography prop changes (Strategy B re-trigger)', async () => {
+		// Strategy B: typography is not threaded through computeMargins
+		// or the measurer — the SVG's CSS-inherited font-* is the input.
+		// The typography prop's only remaining role is to populate the
+		// useLayoutEffect dep-list so a new typography choice triggers
+		// a fresh round of measurement. This test pins that contract
+		// against a future "cleaner" who would otherwise see the prop
+		// as unused and remove it.
+		const data = { minElevation: 0, maxElevation: 500, distance: 5000 };
+		const samples = [
+			[ 0, 100 ],
+			[ 5000, 200 ],
+		] as const;
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+
+		// Count getBBox invocations as a proxy for "a measurement pass
+		// happened". The chart calls getBBox at least once per
+		// measurement (Y labels + X reference + height reference).
+		const originalGetBBox = (
+			SVGElement.prototype as unknown as { getBBox: () => DOMRect }
+		 ).getBBox;
+		let bboxCalls = 0;
+		(
+			SVGElement.prototype as unknown as { getBBox: () => DOMRect }
+		 ).getBBox = function ( this: SVGElement ): DOMRect {
+			bboxCalls += 1;
+			return originalGetBBox.call( this );
+		};
+
+		try {
+			await act( async () => {
+				root.render(
+					createElement( Chart, {
+						data,
+						samples,
+						typography: { fontSize: '14px' },
+					} )
+				);
+			} );
+			await act( async () => {
+				await Promise.resolve();
+			} );
+			const callsAfterFirstMount = bboxCalls;
+			expect( callsAfterFirstMount ).toBeGreaterThan( 0 );
+
+			await act( async () => {
+				root.render(
+					createElement( Chart, {
+						data,
+						samples,
+						typography: { fontSize: '20px' },
+					} )
+				);
+			} );
+			await act( async () => {
+				await Promise.resolve();
+			} );
+			expect( bboxCalls ).toBeGreaterThan( callsAfterFirstMount );
+		} finally {
+			(
+				SVGElement.prototype as unknown as {
+					getBBox: () => DOMRect;
+				}
+			 ).getBBox = originalGetBBox;
+		}
+	} );
+
 	it( 'never plots an X tick whose value exceeds distance', async () => {
 		// distance = 4500 → niceTicks(0, 4500, N) can produce 5000 if
 		// the nice step is 1000 (since ceil(4500/1000)*1000 = 5000). The

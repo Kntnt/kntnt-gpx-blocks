@@ -133,24 +133,24 @@ final class Render_Map {
 		// Read and sanitize the per-line tooltip styling attributes — colour
 		// plus the seven aspects of WordPress's standard TypographyToolsPanel.
 		$tooltip_name_color           = Color_Sanitizer::sanitize( $attributes['tooltipNameColor'] ?? '' );
-		$tooltip_name_family          = self::sanitize_font_family( $attributes['tooltipNameFontFamily'] ?? '' );
-		$tooltip_name_size            = self::sanitize_font_size( $attributes['tooltipNameFontSize'] ?? '' );
-		$tooltip_name_weight          = self::sanitize_font_weight( $attributes['tooltipNameFontWeight'] ?? '' );
-		$tooltip_name_style           = self::sanitize_font_style( $attributes['tooltipNameFontStyle'] ?? '' );
-		$tooltip_name_line_height     = self::sanitize_line_height( $attributes['tooltipNameLineHeight'] ?? '' );
-		$tooltip_name_letter_spacing  = self::sanitize_length( $attributes['tooltipNameLetterSpacing'] ?? '' );
-		$tooltip_name_text_decoration = self::sanitize_text_decoration( $attributes['tooltipNameTextDecoration'] ?? '' );
-		$tooltip_name_text_transform  = self::sanitize_text_transform( $attributes['tooltipNameTextTransform'] ?? '' );
+		$tooltip_name_family          = Typography_Sanitizer::font_family( $attributes['tooltipNameFontFamily'] ?? '' );
+		$tooltip_name_size            = Typography_Sanitizer::font_size( $attributes['tooltipNameFontSize'] ?? '' );
+		$tooltip_name_weight          = Typography_Sanitizer::font_weight( $attributes['tooltipNameFontWeight'] ?? '' );
+		$tooltip_name_style           = Typography_Sanitizer::font_style( $attributes['tooltipNameFontStyle'] ?? '' );
+		$tooltip_name_line_height     = Typography_Sanitizer::line_height( $attributes['tooltipNameLineHeight'] ?? '' );
+		$tooltip_name_letter_spacing  = Typography_Sanitizer::letter_spacing( $attributes['tooltipNameLetterSpacing'] ?? '' );
+		$tooltip_name_text_decoration = Typography_Sanitizer::text_decoration( $attributes['tooltipNameTextDecoration'] ?? '' );
+		$tooltip_name_text_transform  = Typography_Sanitizer::text_transform( $attributes['tooltipNameTextTransform'] ?? '' );
 
 		$tooltip_desc_color           = Color_Sanitizer::sanitize( $attributes['tooltipDescColor'] ?? '' );
-		$tooltip_desc_family          = self::sanitize_font_family( $attributes['tooltipDescFontFamily'] ?? '' );
-		$tooltip_desc_size            = self::sanitize_font_size( $attributes['tooltipDescFontSize'] ?? '' );
-		$tooltip_desc_weight          = self::sanitize_font_weight( $attributes['tooltipDescFontWeight'] ?? '' );
-		$tooltip_desc_style           = self::sanitize_font_style( $attributes['tooltipDescFontStyle'] ?? '' );
-		$tooltip_desc_line_height     = self::sanitize_line_height( $attributes['tooltipDescLineHeight'] ?? '' );
-		$tooltip_desc_letter_spacing  = self::sanitize_length( $attributes['tooltipDescLetterSpacing'] ?? '' );
-		$tooltip_desc_text_decoration = self::sanitize_text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
-		$tooltip_desc_text_transform  = self::sanitize_text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
+		$tooltip_desc_family          = Typography_Sanitizer::font_family( $attributes['tooltipDescFontFamily'] ?? '' );
+		$tooltip_desc_size            = Typography_Sanitizer::font_size( $attributes['tooltipDescFontSize'] ?? '' );
+		$tooltip_desc_weight          = Typography_Sanitizer::font_weight( $attributes['tooltipDescFontWeight'] ?? '' );
+		$tooltip_desc_style           = Typography_Sanitizer::font_style( $attributes['tooltipDescFontStyle'] ?? '' );
+		$tooltip_desc_line_height     = Typography_Sanitizer::line_height( $attributes['tooltipDescLineHeight'] ?? '' );
+		$tooltip_desc_letter_spacing  = Typography_Sanitizer::letter_spacing( $attributes['tooltipDescLetterSpacing'] ?? '' );
+		$tooltip_desc_text_decoration = Typography_Sanitizer::text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
+		$tooltip_desc_text_transform  = Typography_Sanitizer::text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
 
 		// Read the saved tile-provider id, style id, and the per-provider
 		// API-key map. The provider/style ids are resolved against the
@@ -721,236 +721,6 @@ final class Render_Map {
 				],
 			],
 		];
-
-	}
-
-	/**
-	 * Validates a CSS font-family value against a strict whitelist.
-	 *
-	 * Accepts common font name strings and theme-preset CSS variable references.
-	 * Returns empty string on anything that could inject CSS or HTML.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-family string or empty string.
-	 */
-	private static function sanitize_font_family( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// Accept a CSS theme-preset font-family reference.
-		if ( preg_match( '/^var\(--wp--preset--font-family--[a-z0-9-]+\)$/', $raw ) ) {
-			return $raw;
-		}
-
-		// Accept font family names composed of letters, digits, spaces, commas,
-		// hyphens, quotes, and parentheses — the characters that appear in valid
-		// CSS font-family stacks.
-		if ( preg_match( "/^[A-Za-z0-9\\s,\\-'\"()]+$/", $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS font-size value against a strict whitelist.
-	 *
-	 * Accepts numeric CSS length values (px, em, rem, %) and theme-preset
-	 * font-size references. Returns empty string on anything unsafe.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-size string or empty string.
-	 */
-	private static function sanitize_font_size( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		// Accept a CSS theme-preset font-size reference.
-		if ( preg_match( '/^var\(--wp--preset--font-size--[a-z0-9-]+\)$/', $raw ) ) {
-			return $raw;
-		}
-
-		// Accept numeric lengths: optional decimal followed by a CSS length unit.
-		if ( preg_match( '/^(\d+(\.\d+)?)(px|em|rem|%)?$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS font-weight value against the accepted keyword/numeric whitelist.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-weight string or empty string.
-	 */
-	private static function sanitize_font_weight( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( preg_match( '/^(normal|bold|lighter|bolder|[1-9]00)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS font-style value against the accepted keyword whitelist.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated font-style string or empty string.
-	 */
-	private static function sanitize_font_style( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( preg_match( '/^(normal|italic|oblique)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS line-height value.
-	 *
-	 * Accepts unitless multipliers (e.g. `1.5`), numeric lengths with the
-	 * common length units, and the keyword `normal`. Returns empty string on
-	 * anything else so the CSS falls back to the SCSS default.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated line-height string or empty string.
-	 */
-	private static function sanitize_line_height( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( 'normal' === $raw ) {
-			return $raw;
-		}
-
-		// Unitless multiplier or a numeric length with px/em/rem/%.
-		if ( preg_match( '/^(\d+(\.\d+)?)(px|em|rem|%)?$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a generic CSS length used for letter-spacing.
-	 *
-	 * Accepts numeric values with `px`, `em`, `rem`, or `%`, an optional leading
-	 * minus sign (negative letter-spacing is meaningful), and the keyword
-	 * `normal`. Anything else is rejected.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated length string or empty string.
-	 */
-	private static function sanitize_length( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( 'normal' === $raw ) {
-			return $raw;
-		}
-
-		// Optional leading minus, then digits with optional fraction, with px/em/rem/%.
-		if ( preg_match( '/^-?\d+(\.\d+)?(px|em|rem|%)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS text-decoration value against the accepted keyword whitelist.
-	 *
-	 * Limited to the four single-keyword values core's TypographyToolsPanel
-	 * surfaces (`none`, `underline`, `overline`, `line-through`). Composite
-	 * values like `underline dotted red` are not exposed by the panel and are
-	 * rejected here for safety.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated text-decoration string or empty string.
-	 */
-	private static function sanitize_text_decoration( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( preg_match( '/^(none|underline|overline|line-through)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
-
-	}
-
-	/**
-	 * Validates a CSS text-transform value against the accepted keyword whitelist.
-	 *
-	 * Matches the keyword set core's TypographyToolsPanel offers (`none`,
-	 * `uppercase`, `lowercase`, `capitalize`).
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param mixed $raw Raw attribute value.
-	 *
-	 * @return string Validated text-transform string or empty string.
-	 */
-	private static function sanitize_text_transform( mixed $raw ): string {
-
-		if ( ! is_string( $raw ) || '' === $raw ) {
-			return '';
-		}
-
-		if ( preg_match( '/^(none|uppercase|lowercase|capitalize)$/', $raw ) ) {
-			return $raw;
-		}
-
-		return '';
 
 	}
 

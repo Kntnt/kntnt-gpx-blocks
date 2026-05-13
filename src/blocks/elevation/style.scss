@@ -98,13 +98,38 @@
 	//
 	// The font-* family inheritance still flows through normally so
 	// the measurer's hidden <text> nodes measure under the same
-	// typography pipeline that later steps use for the visible
-	// labels.
+	// typography pipeline the visible labels use.
 	.kntnt-gpx-blocks-elevation-chart-svg {
 		position: absolute;
 		inset: 0;
 		display: block;
 		width: 100%;
 		height: 100%;
+
+		// Tick-label typography pipeline. Eight custom properties on
+		// the wrapper (emitted by Render_Elevation::build_inline_style
+		// server-side and by ElevationEdit's inlineStyle in the editor)
+		// resolve into actual font-* declarations on the chart SVG.
+		// `inherit` is the fallback so an unset property falls through
+		// to the wrapper's resolved typography (theme + Settings tab).
+		//
+		// Putting the declarations on the SVG host rather than on the
+		// <g class="…-tick-labels-x/y"> groups is deliberate: the
+		// measurer's hidden <text> nodes are direct SVG children, not
+		// nested inside the label groups. Both the visible labels and
+		// the hidden measurement nodes share the SVG as their nearest
+		// font-* declarer, which is what guarantees the margin
+		// algorithm measures under exactly the typography the user
+		// will see. The other SVG content (axis lines, plot paths,
+		// tick marks) ignores font-* declarations, so the broad scope
+		// has no collateral effect.
+		font-family: var(--kntnt-gpx-blocks-elevation-tick-label-font-family, inherit);
+		font-size: var(--kntnt-gpx-blocks-elevation-tick-label-font-size, inherit);
+		font-weight: var(--kntnt-gpx-blocks-elevation-tick-label-font-weight, inherit);
+		font-style: var(--kntnt-gpx-blocks-elevation-tick-label-font-style, inherit);
+		line-height: var(--kntnt-gpx-blocks-elevation-tick-label-line-height, inherit);
+		letter-spacing: var(--kntnt-gpx-blocks-elevation-tick-label-letter-spacing, inherit);
+		text-transform: var(--kntnt-gpx-blocks-elevation-tick-label-text-transform, inherit);
+		text-decoration: var(--kntnt-gpx-blocks-elevation-tick-label-text-decoration, inherit);
 	}
 }

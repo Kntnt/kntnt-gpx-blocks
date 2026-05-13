@@ -286,29 +286,42 @@ final class Render_Elevation {
 
 	/**
 	 * Builds the wrapper's inline style string from the block's
-	 * sanitised colour attributes.
+	 * sanitised colour and typography attributes.
 	 *
-	 * Step 3 introduced two custom properties; Step 4 adds the
-	 * `axis-label` colour that drives tick label fills. Subsequent
-	 * steps will append the remaining colour custom properties here
-	 * as their chart surfaces land.
+	 * Five colour custom properties (Steps 3 and 5) drive the chart's
+	 * stroke and fill surfaces; eight tick-label typography custom
+	 * properties (this step) feed into a SCSS rule on the chart SVG
+	 * that turns them into actual `font-*` declarations. Both the
+	 * visible tick `<text>` labels and the measurer's hidden
+	 * measurement `<text>` nodes inherit the resulting typography
+	 * through standard CSS inheritance, which is what guarantees that
+	 * the margin algorithm measures under exactly the typography the
+	 * user will see rendered.
 	 *
-	 *   - `--kntnt-gpx-blocks-elevation-background` from
-	 *     `attributes.backgroundColor`.
-	 *   - `--kntnt-gpx-blocks-elevation-axis` from
-	 *     `attributes.axisColor`.
-	 *   - `--kntnt-gpx-blocks-elevation-axis-label` from
-	 *     `attributes.axisLabelColor`.
-	 *   - `--kntnt-gpx-blocks-elevation-plot-line` from
-	 *     `attributes.plotLineColor` (Step 5).
-	 *   - `--kntnt-gpx-blocks-elevation-plot-fill` from
-	 *     `attributes.plotFillColor` (Step 5).
+	 *   - `--kntnt-gpx-blocks-elevation-background`         ← `backgroundColor`
+	 *   - `--kntnt-gpx-blocks-elevation-axis`               ← `axisColor`
+	 *   - `--kntnt-gpx-blocks-elevation-axis-label`         ← `axisLabelColor`
+	 *   - `--kntnt-gpx-blocks-elevation-plot-line`          ← `plotLineColor`
+	 *   - `--kntnt-gpx-blocks-elevation-plot-fill`          ← `plotFillColor`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-family`     ← `tickLabelFontFamily`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-size`       ← `tickLabelFontSize`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-weight`     ← `tickLabelFontWeight`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-style`      ← `tickLabelFontStyle`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-line-height`     ← `tickLabelLineHeight`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-letter-spacing`  ← `tickLabelLetterSpacing`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-text-transform`  ← `tickLabelTextTransform`
+	 *   - `--kntnt-gpx-blocks-elevation-tick-label-text-decoration` ← `tickLabelTextDecoration`
+	 *
+	 * Each typography attribute is run through {@see Typography_Sanitizer};
+	 * values that fail the per-property allow-list are dropped and the
+	 * corresponding custom property is omitted, so the SCSS rule falls
+	 * back to `inherit` from the wrapper's resolved typography.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param array<string,mixed> $attributes Block attributes.
 	 * @return string Semicolon-terminated declaration string or `''`
-	 *                when no colour attributes are set.
+	 *                when no attribute resolves to a non-empty value.
 	 */
 	private static function build_inline_style( array $attributes ): string {
 
@@ -347,6 +360,31 @@ final class Render_Elevation {
 		);
 		if ( '' !== $plot_fill ) {
 			$parts[] = '--kntnt-gpx-blocks-elevation-plot-fill: ' . esc_attr( $plot_fill );
+		}
+
+		// Tick-label typography. Each row pairs the attribute key with
+		// the corresponding Typography_Sanitizer callable (first-class
+		// callable syntax keeps the dispatch statically verifiable) and
+		// the CSS custom-property suffix.
+		$typography_map = [
+			[ 'tickLabelFontFamily',     Typography_Sanitizer::font_family(...),     'font-family' ],
+			[ 'tickLabelFontSize',       Typography_Sanitizer::font_size(...),       'font-size' ],
+			[ 'tickLabelFontWeight',     Typography_Sanitizer::font_weight(...),     'font-weight' ],
+			[ 'tickLabelFontStyle',      Typography_Sanitizer::font_style(...),      'font-style' ],
+			[ 'tickLabelLineHeight',     Typography_Sanitizer::line_height(...),     'line-height' ],
+			[ 'tickLabelLetterSpacing',  Typography_Sanitizer::letter_spacing(...),  'letter-spacing' ],
+			[ 'tickLabelTextTransform',  Typography_Sanitizer::text_transform(...),  'text-transform' ],
+			[ 'tickLabelTextDecoration', Typography_Sanitizer::text_decoration(...), 'text-decoration' ],
+		];
+		foreach ( $typography_map as [ $attr_key, $sanitize, $css_suffix ] ) {
+			$value = $sanitize( $attributes[ $attr_key ] ?? '' );
+			if ( '' !== $value ) {
+				$parts[] = sprintf(
+					'--kntnt-gpx-blocks-elevation-tick-label-%s: %s',
+					$css_suffix,
+					esc_attr( $value )
+				);
+			}
 		}
 
 		// Append a trailing `;` so the joined declarations always end
