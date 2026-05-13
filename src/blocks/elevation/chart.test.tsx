@@ -364,17 +364,20 @@ describe( 'Chart', () => {
 		expect( idxLabelsY ).toBeGreaterThan( idxTicksX );
 	} );
 
-	it( 'applies typography inline on the <svg> host (visible labels and the measurer inherit from it)', async () => {
-		// The chart writes the user's typography choices as inline
-		// style declarations on the host <svg>. Both the visible tick
-		// <text> labels (under the <g> groups) and the measurer's
-		// hidden <text> nodes (direct SVG children) inherit those
-		// declarations. Applying typography here rather than relying
-		// on a SCSS rule keyed off custom properties on the wrapper
-		// is what guarantees the user's choices reach the rendered
-		// labels in the Gutenberg editor — an inline style declaration
-		// wins against any editor-iframe rule that might otherwise
-		// target SVG text under a more specific selector.
+	it( "renders the SVG without inline typography (SCSS path on the wrapper's custom properties is the single mechanism)", async () => {
+		// The chart does not write inline font-* declarations onto the
+		// <svg> host. The user's typography choices flow through eight
+		// `--kntnt-gpx-blocks-elevation-tick-label-*` custom properties
+		// emitted on the wrapper (by `Render_Elevation::build_inline_style`
+		// server-side and `ElevationEdit`'s inlineStyle builder editor-
+		// side); a SCSS rule on `.kntnt-gpx-blocks-elevation-chart-svg`
+		// resolves each into the corresponding `font-*` / `letter-spacing`
+		// / `text-*` declaration. Inline-styling the SVG from React is the
+		// pl.3 hack we removed — empirical measurement on the live and
+		// DDEV sites confirmed the SCSS path reaches the rendered labels
+		// in the editor without it. This test pins the absence of an
+		// inline-style attribute so a future "fix" doesn't quietly
+		// reintroduce the hack.
 		const container = document.createElement( 'div' );
 		document.body.appendChild( container );
 		const root = createRoot( container );
@@ -402,23 +405,17 @@ describe( 'Chart', () => {
 			await Promise.resolve();
 		} );
 		const svg = container.querySelector( 'svg' )!;
-		const svgStyle = svg.getAttribute( 'style' ) ?? '';
-		expect( svgStyle ).toContain( 'font-family' );
-		expect( svgStyle ).toContain( 'Inter' );
-		expect( svgStyle ).toContain( 'font-size' );
-		expect( svgStyle ).toContain( '20px' );
-		expect( svgStyle ).toContain( 'font-weight' );
-		expect( svgStyle ).toContain( '700' );
+		expect( svg.getAttribute( 'style' ) ).toBeNull();
 	} );
 
-	it( 'does not duplicate font-* inline onto the tick label <text> nodes themselves', async () => {
-		// The <svg> carries the typography. The <text> descendants
-		// inherit it. Writing typography directly onto each <text>
-		// (or onto the parent <g> groups) would be either redundant
-		// or — worse — desynchronised with the SVG host, so the
-		// chart deliberately leaves the descendants un-styled. This
-		// test pins that contract so a future "cleaner" who tries
-		// to push typography down the tree gets caught.
+	it( 'tick label <text> nodes carry no inline font-* — they inherit from the SVG host', async () => {
+		// The SCSS rule sets font-* on the SVG; tick <text> descendants
+		// inherit through the standard CSS chain. Writing font-* onto
+		// each <text> (or onto the parent <g> groups) would be either
+		// redundant or — worse — desynchronised with the SVG host, so
+		// the chart deliberately leaves the descendants un-styled. This
+		// test pins that contract so a future "cleaner" who tries to
+		// push typography down the tree gets caught.
 		const container = document.createElement( 'div' );
 		document.body.appendChild( container );
 		const root = createRoot( container );
@@ -457,6 +454,30 @@ describe( 'Chart', () => {
 			expect( t.getAttribute( 'font-weight' ) ).toBeNull();
 		}
 	} );
+
+	// Note: an editor-surface integration test that combines the
+	// wrapper's `--…tick-label-*` custom properties + the compiled SCSS
+	// rule on `.kntnt-gpx-blocks-elevation-chart-svg` would be the
+	// strongest possible regression-pin for the pl.1 → pl.3 → pl.7 arc,
+	// but jsdom does not reliably resolve `var( --x, fallback )` for
+	// `getComputedStyle` so the assertion `cs.fontFamily ===
+	// 'Inter, sans-serif'` cannot be made deterministic in this runner.
+	// The regression scope is instead covered by three separate pins:
+	//   1. This file's `'renders the SVG without inline typography'`
+	//      pin, which catches a reintroduction of pl.3's hack.
+	//   2. `style.test.ts`'s eight pins that the SCSS rule on
+	//      `.kntnt-gpx-blocks-elevation-chart-svg` reads each of the
+	//      eight `--…tick-label-*` custom properties with `inherit`
+	//      fallback.
+	//   3. `Render_ElevationTest`'s assertions that the eight wrapper
+	//      custom properties are emitted server-side when the
+	//      corresponding sanitised attribute is non-empty; equivalent
+	//      coverage for the editor's `inlineStyle` builder lives in
+	//      `edit.tsx`'s test surface.
+	// Together those three guarantee the pl.7 architecture (one SCSS
+	// mechanism, wrapper-level custom properties as the data input)
+	// stays intact. Empirical end-to-end verification belongs in the
+	// Playground integration test surface, not in jsdom.
 
 	it( 'remeasures when the typography prop changes (Strategy B re-trigger)', async () => {
 		// Strategy B: typography is not threaded through computeMargins
