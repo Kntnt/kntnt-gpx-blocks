@@ -90,35 +90,325 @@ Full Step 3 specification (design rationale, the Q-by-Q grilling outcomes, accep
 
 ## Step 4: Tick marks and tick labels
 
-**Goal.** The axes carry tick marks and numeric labels driven by the GPX data range.
+**Goal.** Both axes carry tick marks and numeric labels driven by the GPX data range. The X axis runs from 0 to the bound track's distance and switches between metres and kilometres on a deterministic distance threshold. The Y axis runs from a rounded-down floor to a rounded-up ceiling of the elevation range and stays in metres. The cursor (Step 6), tooltip (Step 7), and the curve itself (Step 5) all layer on top of this scaffold.
 
 **Load list:** `docs/blocks.md`
 
-1. **Decide tick count `N`:**
-   - Available plotting width: `W_avail = W − w_left − w_right`.
-   - Measure the width of an average label.
-   - `N = floor(W_avail / (label_width × 1.5))`. The factor 1.5 prevents labels from crowding.
-2. **Generate nice tick values (step size `S`):**
-   - Divide the data range by `N` to get a candidate step.
-   - Round the candidate to the nearest "nice" value from the series `[1, 2, 5] × 10^n` (i.e. 0.2, 0.5, 1, 2, 5, 10, 20, 50, …). This gives a linear, easy-to-read scale.
-3. **X axis unit logic (m / km):**
-   - Generate all X tick values (e.g. 0, 500, 1000, 1500, 2000).
-   - **Rule:** if more than half of the non-zero tick values are ≥ 1000, convert the whole X axis to kilometres.
-   - When in kilometres: divide values by 1000, allow one decimal place where needed (e.g. `"1,5"`), and suffix only the **last** label with `" km"`.
-4. **Tick marker geometry:**
-   - Length **`0.2em`**.
-   - X tick markers start at the axis line and extend **downward**.
-   - Y tick markers start at the axis line and extend **leftward**.
-5. **Tick label placement:**
-   - **X labels:** centred horizontally under their marker; top of text `0.5em` below the axis line; include the unit ` m` (or only `" km"` on the last label per Rule 3).
-   - **Y labels:** right-aligned so the text ends `0.5em` left of the Y axis; vertically centred on the marker; include the unit ` m` or ` km`.
-6. **Safety margin:** the `w_right` margin from Step 3 guarantees the last X label can be drawn centred without being clipped by the container's right edge.
+**v0.12.0 references:** none. v0.12.0 rendered ticks server-side in PHP — superseded by the *Rendering architecture* decision near the top of this document. v0.12.0's `geometry.ts` covers cursor mapping only, not tick rendering, and is consulted in Step 6 — not here.
 
-### Notes
+### Design rationale (locked by the Step 4 grilling)
 
-1. All tick label text is rendered with the typography settings from the **Tick labels** panel.
-2. Tick markers use the colour from `Color → Axis`.
-3. Tick labels use the colour from `Color → Axis labels`.
+This spec's algorithm overturns three pieces of the original prose (the spec at `v0.13.3:docs/elevation-rebuild.md` lines 91–122). The overturned pieces are listed first so a reader of the old spec can locate them.
+
+**Overturned: "× 1.5" multiplier for tick crowding.** The original formula `N = floor(W_avail / (label_width × 1.5))` produces *proportional* spacing — wider labels get more luft. Step 4's grilling replaced this with an *additive* minimum: at least `0.5em` of luft between adjacent labels regardless of label width. Adopted formula: `N = floor((avail + 0.5em) / (refWidth + 0.5em))`, clamped to ≥ 2. Constant luft is easier to reason about and gives a more consistent visual across very different etikett-bredder (e.g. `"0 m"` vs `"1234 m"`).
+
+**Overturned: m/km switch based on tick values.** The original "more than half of the non-zero tick values ≥ 1000" rule (still present in `format.ts`'s `chooseXUnit(values)`) couples the unit choice to the count of ticks Step 4 renders. Step 4's grilling replaced this with a distance-only threshold: `distance < 2000 ? 'm' : 'km'`. Decoupling unit from N makes the unit choice deterministic at design time, which in turn lets Step 4 build a worst-case reference string before `niceTicks` is called.
+
+**Overturned: "measure the width of an average label".** The original formula needed labels before it could compute N, but `niceTicks` needs N to produce labels. The grilling broke the chicken-and-egg by introducing a **worst-case reference string** keyed off `distance` alone. The reference string is typographically ≥ the bredaste actual label by construction, so measuring it once gives a safe upper bound for N and (newly) for `wRight` in `margins.ts`.
+
+### Reference strings (locked by Q2 + Q3 grilling)
+
+`xReferenceString(distance, locale)` returns the worst-case-bredd label given the chosen distance threshold:
+
+```ts
+function xReferenceString( distance: number, locale?: string ): string {
+    if ( distance < 2000 ) {
+        // m-mode. +2 (not +1) buffer covers niceTicks rounding-up to the
+        // next decade (e.g. distance=888 → last tick=1000). Capped at 4
+        // digits because distance < 2000 bounds the last tick to ≤ 2000.
+        const digits = Math.min(
+            4,
+            Math.floor( Math.log10( Math.max( distance, 1 ) ) ) + 2
+        );
+        const num = formatNumber( parseInt( '8'.repeat( digits ), 10 ), 0, locale );
+        return `${ num } m`;
+    }
+    // km-mode. +1 buffer (formula is `floor(log10(distance)) - 1` instead
+    // of `-2`) covers niceTicks rounding past the next power of 10
+    // (e.g. distance=9999 → last tick=10000).
+    const n = Math.max( 1, Math.floor( Math.log10( distance ) ) - 1 );
+    const num = formatNumber( parseFloat( '8'.repeat( n ) + '.8' ), 1, locale );
+    return `${ num } km`;
+}
+```
+
+All `"8"` digits chosen typographically because `8` is the bredaste digit in the proportional fonts the project supports (Inter, Source Sans, Roboto, Open Sans, etc.). The leading `"1" + "888"` variant considered during grilling was rejected because the actual label `"2000 m"` (which can appear when `distance ∈ [1500, 1999]`) is wider than `"1888 m"` in those fonts. Reference strings route through `formatNumber` from `format.ts` so the decimal separator matches the visitor's locale (komma in sv-SE, dot in en-US).
+
+Verification table for m-mode (`distance < 2000`):
+
+| `distance` | last nice tick | last label | refString | outcome |
+|---|---|---|---|---|
+| 99 | 100 | `"100 m"` | `"888 m"` | exact |
+| 100 | 100 | `"100 m"` | `"8888 m"` | overreserves ~0.55em |
+| 500 | 500 | `"500 m"` | `"8888 m"` | overreserves ~0.55em |
+| 888 | 1000 | `"1000 m"` | `"8888 m"` | exact |
+| 999 | 1000 | `"1000 m"` | `"8888 m"` | exact |
+| 1500 | 1500 | `"1500 m"` | `"8888 m"` | exact |
+| 1999 | 2000 | `"2000 m"` | `"8888 m"` | exact |
+
+Verification table for km-mode (`distance ≥ 2000`):
+
+| `distance` | last nice tick | last label | refString | outcome |
+|---|---|---|---|---|
+| 2000 | 2000 | `"2,0 km"` | `"88,8 km"` | overreserves ~0.55em |
+| 9999 | 10000 | `"10,0 km"` | `"88,8 km"` | exact |
+| 20000 | 20000 | `"20,0 km"` | `"888,8 km"` | overreserves ~0.55em |
+| 99999 | 100000 | `"100,0 km"` | `"888,8 km"` | exact |
+| 100000 | 100000 | `"100,0 km"` | `"8888,8 km"` | overreserves ~0.55em |
+
+Overreservation costs at most one digit-width (~0.55em) of right-side luft on the X axis, translating in practice to one fewer tick than the theoretical maximum. Acceptable.
+
+`chooseXUnit` is rewritten as a oneliner taking distance (not the values array):
+
+```ts
+export function chooseXUnit( distance: number ): XAxisUnit {
+    return distance < 2000 ? 'm' : 'km';
+}
+```
+
+The existing `chooseXUnit( values )` signature is removed. Both call sites (`formatXLabels` and any new tick-rendering code) pass `distance` instead.
+
+### N derivation (locked by Q1 + Q4 grilling)
+
+For each axis, N is the number of ticks that fits when adjacent labels are kept ≥ `0.5em` apart. From the additive rule `N · labelW + (N − 1) · 0.5em ≤ avail` solved for N:
+
+```
+N = floor( ( avail + 0.5em ) / ( refSize + 0.5em ) )
+N = max( 2, N )                                       // never fewer than start/end ticks
+```
+
+For X: `avail = W − wLeft − wRight`, `refSize = measure( xReferenceString( distance ), typography ).width`.
+
+For Y: `avail = H − wTop − h`, `refSize = ref.height` (the height of `"-0,123456789"` already measured by Step 3's margin algorithm). The Y axis stacks labels vertically; what limits N is etikett-höjd, not bredd.
+
+Step 3's `geometry/ticks.ts:computeTickCount( availableWidth, labelWidth )` is rewritten with a new signature and the additive formula:
+
+```ts
+export function computeTickCount(
+    avail: number,
+    refSize: number,
+    em: number,
+): number {
+    if ( avail <= 0 || refSize <= 0 ) {
+        return 2;
+    }
+    const padding = 0.5 * em;
+    const raw = Math.floor( ( avail + padding ) / ( refSize + padding ) );
+    return raw < 2 ? 2 : raw;
+}
+```
+
+Callers update accordingly. The previous `× 1.5` arithmetic is gone.
+
+### Margin amendments (locked by Q4 + Q6a grilling)
+
+The `Margins` type gains a new field `wTop` and the `wRight` field changes derivation:
+
+```ts
+export interface Margins {
+    readonly wLeft: number;
+    readonly wRight: number;
+    readonly wTop: number;        // NEW: reserves upper half of topmost Y label
+    readonly h: number;
+    readonly em: number;
+}
+```
+
+Updated formulas in `computeMargins`:
+
+- **`wRight = measure( xReferenceString( distance ), typography ).width / 2 + 0.5em`** — replaces `last( niceXLabels ).width / 2 + 0.5em`. Eliminates the dependency on the rendered tick count: refString is a function of `distance` alone, so `wRight` is stable across resize and Step 4 can compute N within already-determined margins.
+- **`wTop = 0.5 · ref.height + 0.5em`** — new. The topmost Y label is centred vertically on its tick mark at `y = wTop`; without a top margin its upper half would be clipped against the SVG viewBox top edge. `wTop` reserves half the label height (because the label is centred, not anchored at top) plus the same `0.5em` buffer used by `wLeft`, `wRight`, and `h`. Symmetric with `h = ref.height + 0.5em` which reserves the *full* label height (the X labels are top-anchored, not centred).
+- **`wLeft = measure( widest( niceYLabels ) ).width + 0.5em`** — unchanged. The bredaste Y label is robust against N variations because all generated Y labels are measured, not just one extreme. Keeping `wLeft` data-derived saves a Y-axis reference-string function. (If a future bug surfaces a `wLeft` underestimate at extreme N, a Y refString can be added then; not worth the up-front code.)
+- **`h = ref.height + 0.5em`** — unchanged.
+
+Step 3's `DEFAULT_TARGET_TICK_COUNT = 5` is retained for the `wLeft` computation only (`niceTicks(yMin, yMax, 5)` for the Y-label set whose widest drives `wLeft`). The X tick set previously generated to derive `wRight` is no longer needed in `computeMargins`.
+
+The plot area becomes `[ wTop, H − h ]` vertically, `[ wLeft, W − wRight ]` horizontally. Y axis line endpoints change: `y1 = wTop` (was `y1 = 0`) in both `chart.tsx` and `view.ts`. X axis line endpoints are unchanged.
+
+### Axis bounds and tick filtering (locked by Q5 grilling)
+
+**Strava-style mixed bounds.** Elevation profiles treat distance and elevation asymmetrically, and Step 4 follows the convention of Strava, Garmin, and Komoot:
+
+- **X axis: data-bound, range `[0, distance]`.** The curve in Step 5 fills the full plot width. Ticks generated by `niceTicks(0, distance, N_x)` are **filtered** to `value ≤ distance` before rendering. The last rendered X tick is the largest nice value ≤ distance and sits somewhere inside the plot area, not necessarily at the right edge. Distance is a concrete endpoint the user cares about; extending the axis past it adds no signal.
+- **Y axis: nice-bound, range `[floor(yMin/step) · step, ceil(yMax/step) · step]`.** All generated Y ticks render. The lowest Y tick sits exactly on the X axis line; the highest sits at `y = wTop`. Elevation values are rarely round; rounding the axis bounds gives clean tick values and lets the bottom and top ticks anchor the axis visually.
+
+Consequences for the curve (Step 5): it fills the plot width but is offset from the bottom — the bottom of the plot at `y = H − h` represents the rounded floor `floor(yMin/step) · step`, slightly below the actual data minimum `yMin`. The curve starts above the X axis line.
+
+**First X tick at `x = 0`** is always rendered with both tick mark and `"0 m"` (or `"0"` in km-mode) label. It anchors the scale at the origin.
+
+**Origin corner.** The lowest Y label is centred vertically on the X axis line; the `"0 m"` X label sits with its top `0.5em` below the X axis line. These two labels are *vertically tangent* (Y label bottom at `H − h + 0.5em`, X label top at the same `H − h + 0.5em`) but do not overlap given the spec's geometry. Step 4 accepts the tangential contact; if font rendering exposes a one-pixel visual collision in practice, address it with a small later patch rather than re-deriving the algorithm.
+
+### SVG mechanics (locked by Q6 grilling)
+
+**Tick marks** are rendered as one `<line>` element per tick, grouped:
+
+```html
+<g class="kntnt-gpx-blocks-elevation-ticks-x">
+    <line x1="…" y1="…" x2="…" y2="…"
+          stroke="var(--kntnt-gpx-blocks-elevation-axis)"
+          stroke-width="1" />
+    …
+</g>
+<g class="kntnt-gpx-blocks-elevation-ticks-y">
+    …
+</g>
+```
+
+Mark geometry:
+
+- **X tick mark:** vertical line from `( xTick, H − h )` to `( xTick, H − h + 0.2em )`. Extends *downward* from the X axis.
+- **Y tick mark:** horizontal line from `( wLeft, yTick )` to `( wLeft − 0.2em, yTick )`. Extends *leftward* from the Y axis.
+
+Stroke width `1` (px under the 1:1 viewBox mapping), same colour and CSS variable as the axis lines.
+
+**Tick labels** are rendered as `<text>` elements grouped similarly:
+
+```html
+<g class="kntnt-gpx-blocks-elevation-tick-labels-x"
+   fill="var(--kntnt-gpx-blocks-elevation-axis-label)">
+    <text x="…" y="…" text-anchor="middle" dominant-baseline="hanging">2000 m</text>
+    …
+</g>
+<g class="kntnt-gpx-blocks-elevation-tick-labels-y"
+   fill="var(--kntnt-gpx-blocks-elevation-axis-label)">
+    <text x="…" y="…" text-anchor="end" dominant-baseline="central">200 m</text>
+    …
+</g>
+```
+
+Label positioning:
+
+- **X label:** `text-anchor="middle"`, `dominant-baseline="hanging"`. `x = xTick`, `y = ( H − h ) + 0.5em`. The `hanging` baseline places the top of the visible glyph at `y`, so the top of the label sits `0.5em` below the X axis line per spec.
+- **Y label:** `text-anchor="end"`, `dominant-baseline="central"`. `x = wLeft − 0.5em`, `y = yTick`. The `central` baseline centres the visible glyph vertically on `y`, aligned with the tick mark.
+
+Browser support: `dominant-baseline: hanging` and `central` are supported in all evergreens since 2019 (Chrome 80+, Safari 12+, Firefox 70+).
+
+**Colour wiring:**
+
+- Tick marks use `var(--kntnt-gpx-blocks-elevation-axis)` — the existing CSS variable that already drives the axis lines (wired in Step 3).
+- Tick labels use a *new* CSS variable `var(--kntnt-gpx-blocks-elevation-axis-label)`. The `axisLabelColor` block attribute already exists in `block.json` (added by Step 1). Step 4 wires it through three surfaces:
+  - In `edit.tsx`, alongside the existing `axisColor` wiring at `edit.tsx:281–294`:
+    ```ts
+    const axisLabel = usefulValue< string >(
+        attributes,
+        setAttributes,
+        'axisLabelColor',
+        '',
+    );
+    if ( axisLabel.resolved !== '' ) {
+        inlineStyle[ '--kntnt-gpx-blocks-elevation-axis-label' ] =
+            axisLabel.resolved;
+    }
+    ```
+  - In `Render_Elevation::render_chart_wrapper()`, the matching server-side emission (mirror of the existing axisColor inline-style line).
+  - In `style.scss`, a default value next to the existing `--kntnt-gpx-blocks-elevation-axis: #1e1e1e;`. Default for `--kntnt-gpx-blocks-elevation-axis-label`: `#1e1e1e` (same as axis), letting users override either independently.
+
+### Resize behaviour (locked by Q4 grilling)
+
+Step 3's contract — margins cached separately from SVG dimensions, ResizeObserver triggers axis redraw but not margin recomputation — extends naturally:
+
+- **Margins remain cached across resize.** `wRight` and `wTop` are functions of `distance` and `typography` alone (not of `W_avail` or `H_avail`), so their values are stable. `wLeft` depends on the Y data range and typography. `h` depends on typography. None depends on N.
+- **N, step, labels, and tick positions recompute on resize.** ResizeObserver triggers a redraw that recomputes `N_x` and `N_y` from current `W_avail` / `H_avail`, regenerates the tick set with `niceTicks`, and re-renders the tick-mark and tick-label groups. The axis lines reposition (their endpoints move with `W` and `H`), but their start positions (anchored to `wLeft`, `H − h`, `wTop`) stand still in pixel space.
+
+Visual consequence: during a drag-resize the *number of ticks* jumps between discrete values (e.g. 5 → 6 → 7) when the formula's threshold is passed, and the *label values* change with each jump. Between jumps everything stands still. This matches the behaviour of D3, Recharts, and Plotly auto-scaled charts.
+
+### Redraw sequence (one shape for both hosts)
+
+The redraw path runs the same sequence in both `chart.tsx` (React) and `view.ts` (vanilla DOM under Interactivity). Step numbers cross-reference the helpers under `geometry/`:
+
+1. Read `W`, `H` from `svg.getBoundingClientRect()`. Skip if either is zero (not yet laid out).
+2. Compute `availX = W − margins.wLeft − margins.wRight` and `availY = H − margins.wTop − margins.h`.
+3. Compute `N_x = computeTickCount( availX, refXWidth, margins.em )` and `N_y = computeTickCount( availY, ref.height, margins.em )`. `refXWidth` is the cached measurement of `xReferenceString( distance )`, performed once when margins are computed and reused here. `ref.height` is already in `margins`.
+4. Generate tick sets:
+   - X: `niceTicks( 0, distance, N_x ).values.filter( v => v <= distance )`.
+   - Y: `niceTicks( yMin, yMax, N_y ).values` (no filter; nice-bound range).
+   Capture each axis's `step` for use in formatting.
+5. Format labels: `formatXLabels( xValues, xStep )` and `formatYLabels( yValues, yStep )` from `format.ts`.
+6. Project tick values to SVG coordinates:
+   - `xScale( v ) = margins.wLeft + ( v / distance ) * availX`.
+   - `yScale( v ) = ( H − margins.h ) − ( v − niceYMin ) / ( niceYMax − niceYMin ) * availY`, where `niceYMin = floor(yMin/yStep) · yStep` and `niceYMax = ceil(yMax/yStep) · yStep`.
+7. Replace any existing `<g class="kntnt-gpx-blocks-elevation-ticks-*">` and `<g class="kntnt-gpx-blocks-elevation-tick-labels-*">` groups (remove + reinsert; cheaper than diffing for ≤ 20 elements).
+
+Step 1–6 are pure (no DOM mutation). Step 7 is host-specific: React JSX in `chart.tsx`, `document.createElementNS` in `view.ts`. The two hosts share Steps 1–6 byte-faithfully through the helpers under `geometry/`.
+
+### File layout for Step 4
+
+```
+src/blocks/elevation/
+├── chart.tsx                                 — modified: tick + label rendering; Y axis y1 = margins.wTop
+├── chart.test.tsx                            — modified: new assertions for tick groups, label positioning
+├── view.ts                                   — modified: tick + label rendering; Y axis y1 = margins.wTop
+├── edit.tsx                                  — modified: axisLabelColor CSS-variable wiring
+├── style.scss                                — modified: default for --kntnt-gpx-blocks-elevation-axis-label
+└── geometry/
+    ├── format.ts                             — modified: chooseXUnit takes distance; new xReferenceString
+    ├── format.test.ts                        — modified: chooseXUnit + xReferenceString tables
+    ├── ticks.ts                              — modified: computeTickCount signature + additive 0.5em formula
+    ├── ticks.test.ts                         — modified: matching test updates
+    ├── margins.ts                            — modified: wRight from xReferenceString; new wTop field
+    └── margins.test.ts                       — modified: wTop assertions; wRight from xReferenceString
+
+classes/Rendering/
+└── Render_Elevation.php                      — modified: --kntnt-gpx-blocks-elevation-axis-label inline emission
+```
+
+No new files in Step 4. The seam between pure geometry and DOM-bound work is preserved: `format.ts`, `ticks.ts`, and `margins.ts` add no DOM dependencies; the rendering logic lives in `chart.tsx` and `view.ts`.
+
+### Test-driven development
+
+Write the helper-level tests first, watch them go red, implement until green:
+
+- `format.test.ts` — new cases for `chooseXUnit( distance )` (`1`, `1999`, `2000`, `100000`) and `xReferenceString( distance, locale )` covering the verification tables above plus a sv-SE / en-US locale pair (decimal separator switch).
+- `ticks.test.ts` — `computeTickCount( avail, refSize, em )` cases including narrow containers (clamp ≥ 2), large containers, `em` scaling, and `avail ≤ 0` / `refSize ≤ 0` sentinel.
+- `margins.test.ts` — `computeMargins` returns `{ wLeft, wRight, wTop, h, em }`; `wRight` matches `measure( xReferenceString( distance ), typography ).width / 2 + 0.5em`; `wTop` matches `0.5 · ref.height + 0.5em`; `wLeft` and `h` unchanged from Step 3 assertions.
+
+Then write the integration test for the React preview:
+
+- `chart.test.tsx` — `<Chart>` renders the expected `<g class="kntnt-gpx-blocks-elevation-ticks-x">` / `…-y` and `…-tick-labels-x` / `…-y` groups for known data shape and mocked typography. First X tick at `x = margins.wLeft`. Y axis line starts at `y = margins.wTop` (not `0`). X-tick values filtered when a generated nice value exceeds `distance`.
+
+Implementation follows the tests until all are green. PHP-side: `Render_ElevationTest` gains an `axisLabelColor` wiring assertion analogous to the existing `axisColor` one.
+
+### Acceptance criteria
+
+Step 4 is done — and `v0.13.4` may be tagged — when **all** of the following hold.
+
+**Behaviour:**
+
+1. The Step 3 healthy-state chart now carries tick marks and labels on both axes. Step 3's degenerate-case warnings (`no-map`, `bound-deleted`, `bound-unconfigured`, `no-elevation-data`, `zero-distance`) are unaffected.
+2. `chooseXUnit( distance )` returns `'m'` when `distance < 2000` and `'km'` otherwise. The old values-list signature is gone.
+3. `xReferenceString( distance, locale )` exists in `format.ts` and matches the verification tables in this spec. Locale-aware decimal separator (`,` in sv-SE, `.` in en-US) via `formatNumber`.
+4. `computeTickCount( avail, refSize, em )` implements the additive formula `floor( ( avail + 0.5em ) / ( refSize + 0.5em ) )`, clamped to ≥ 2.
+5. `Margins` carries `wTop`. `wRight = measure( xReferenceString( distance ), typography ).width / 2 + 0.5em`. `wLeft` and `h` unchanged. Plot area is `[ margins.wTop, H − margins.h ]` vertically, `[ margins.wLeft, W − margins.wRight ]` horizontally.
+6. **Strava-style bounds:** X axis range `[0, distance]` with ticks filtered to `value ≤ distance`. Y axis range `[ floor( yMin / step ) · step, ceil( yMax / step ) · step ]`; all generated Y ticks render.
+7. **First X tick at `x = 0`** is always rendered: tick mark and `"0 m"` (m-mode) or `"0"` (km-mode) label.
+8. **Tick mark geometry:** length `0.2em`. X marks extend *downward* from `( xTick, H − margins.h )`. Y marks extend *leftward* from `( margins.wLeft, yTick )`. `stroke="var(--kntnt-gpx-blocks-elevation-axis)"`, `stroke-width="1"`.
+9. **Tick label positioning:** X labels `text-anchor="middle"`, `dominant-baseline="hanging"`, `y = ( H − margins.h ) + 0.5em`. Y labels `text-anchor="end"`, `dominant-baseline="central"`, `x = margins.wLeft − 0.5em`.
+10. **Tick label colour:** `fill="var(--kntnt-gpx-blocks-elevation-axis-label)"`. New CSS variable wired through `edit.tsx`, `Render_Elevation::render_chart_wrapper()`, and `style.scss` (default `#1e1e1e`). `axisLabelColor` attribute drives the inline custom property.
+11. **m/km switch:** when `distance ≥ 2000`, X labels render in kilometres with one decimal, only the last label carries the `" km"` suffix, intermediate labels are unitless. Existing `formatXLabels` behaviour, unchanged.
+12. **Resize:** ResizeObserver triggers a redraw that recomputes `N_x`, `N_y`, tick sets, and label positions. Margins do not recompute (cached across resize). Axis line start positions (anchored to `wLeft`, `wTop`, `H − h`) are pixel-stable across resize; only their endpoints move with `W` / `H`.
+
+**Gates (must all pass at HEAD before tagging):**
+
+13. `npm run build`.
+14. `composer test` (Pest) — including the extended `Render_ElevationTest` for the `axisLabelColor` wiring.
+15. `vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M`.
+16. `npm run test:js` — including the extended `format.test.ts`, `ticks.test.ts`, `margins.test.ts`, and `chart.test.tsx`.
+17. `npx wp-scripts lint-js src/blocks/`.
+
+**Manual verification in WordPress Playground (`@wp-playground/cli`):**
+
+18. Insert one configured Map with a multi-kilometre GPX, then insert Elevation: chart shows axes with tick marks and locale-formatted labels in both editor preview and frontend. The X axis carries kilometre labels (e.g. `"0,5"`, `"1,0"`, …, `"5,0 km"` for a 5 km track) with `" km"` only on the last label.
+19. Use a short GPX (`distance < 2000 m`): X axis switches to metres (e.g. `"0 m"`, `"500 m"`, `"1000 m"`, `"1500 m"`).
+20. Edit the **Tick labels** font-size to double the default: labels grow visibly, margins recompute, tick count drops accordingly (fewer ticks fit per unit width).
+21. Resize the browser window during inspection: the *number* of ticks changes at thresholds, the axis line *start positions* remain pixel-stable, and nothing jitters between jumps.
+22. Change **Color → Axis labels** in the inspector: tick label colour updates live in editor and on frontend after save. **Color → Axis** continues to control axis lines and tick marks independently.
+23. **Case B verification** — flat-elevation GPX (`min_elevation === max_elevation`): chart renders Y ticks symmetric around the constant value (via Step 3's `[ min − 1, min + 1 ]` substitution).
+24. Two Elevation blocks bound to *different* Map blocks on the same page: each block's tick count adapts independently to its own size; per-mapId state slices stay decoupled.
+25. **Webfont verification** — theme that lazy-loads a Google Font for **Tick labels** typography: ticks and labels are repainted when `loadingdone` fires; no permanent margin error based on fallback-font metrics.
+
+### Release
+
+When all acceptance criteria hold, follow the six-step release procedure documented in `AGENTS.md` (section *Cutting a release*). Tag `v0.13.4`. Commit message: `Release v0.13.4 — Step 4: tick marks and tick labels`.
 
 ---
 
