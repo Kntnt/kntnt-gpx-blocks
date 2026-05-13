@@ -414,14 +414,441 @@ When all acceptance criteria hold, follow the six-step release procedure documen
 
 ## Step 5: Elevation curve
 
-**Goal.** The elevation profile is drawn inside the plotting area.
+**Goal.** The elevation profile is drawn inside the plot rectangle as two SVG `<path>` elements — an optional filled area below the curve and the line itself on top. Both render client-side from a server-emitted, LTTB-downsampled (distance, elevation) samples array, computed once in PHP and consumed byte-identically by the editor preview (`chart.tsx`) and the frontend Interactivity host (`view.ts`) through a new shared chart-scale helper that subsumes Step 4's inline projection math.
 
-**Load list:** `docs/blocks.md`
+**Load list:** `docs/blocks.md`, `docs/hooks.md`
 
-- Map GPX data (distance, elevation) to SVG coordinates using the dynamic margins and current container dimensions from Steps 3–4.
-- Re-render on every container resize.
-- Render the entire curve as a **single `<path>` element** for rendering performance.
-- Stroke colour comes from `Color → Plot line`.
+**v0.12.0 references:** `classes/Rendering/Lttb.php`, `tests/Unit/LttbTest.php` (both resurrected verbatim in this step). v0.12.0's `Render_Elevation::extract_line_coordinates()` and `build_distance_elevation_series()` private static methods are consulted for the (distance, elevation) extraction pattern, then ported into the new `Rendering\Elevation_Samples` class. v0.12.0's server-rendered `<polyline>` is **not** reborn — JS owns the SVG per the *Rendering architecture* decision near the top of this document. The orphaned filter `kntnt_gpx_blocks_elevation_target_points` documented in `docs/hooks.md:47` is reactivated by this step without a doc edit.
+
+### Design rationale (locked by the Step 5 grilling)
+
+**Server-side downsampling, not client-side.** The (distance, elevation) extraction runs in PHP at render time, then passes through LTTB to a target point count (default 300, filter-tunable) before being emitted into the per-mapId Interactivity state slice. The alternative — emit full-fidelity GeoJSON and let JS run Haversine + simplification at mount — was rejected for three reasons. First, the client would pay the Haversine pass on every page load by every visitor while PHP pays it once per render. Second, the full-fidelity payload for a typical 3-hour 1 Hz recording is ~240 KB raw JSON / ~75 KB gzipped vs ~7 KB raw / ~2 KB gzipped for 300 LTTB-reduced points — a meaningful difference on mobile budgets. Third, keeping the JS mount work small keeps the perceived "block ready" latency tight. Visual fidelity is preserved by LTTB: the algorithm preserves peaks and valleys deterministically, and at typical chart widths (300–1500 CSS pixels) the rendered curve is visually indistinguishable from the full-fidelity version.
+
+**Reusing Map's already-simplified GeoJSON was rejected.** `Render_Map` emits a Douglas-Peucker-simplified GeoJSON (default 5 m tolerance) plus a parallel `trackCumDist` array. Piggy-backing on that payload would save one extraction pass but would couple Elevation's fidelity to Map's DP tolerance, which operates in lon/lat space — a stretch of GPX that runs in a straight line on the map but rolls vertically would be simplified to a single map-segment by Map's DP, hiding exactly the elevation features the chart needs to show. The two blocks need independent simplification driven by their own rendering domain.
+
+**LTTB resurrection, not rewrite.** v0.12.0 shipped `classes/Rendering/Lttb.php` (~190 LOC) plus `tests/Unit/LttbTest.php` (~260 LOC) under the project's coding standard, with a documented algorithm contract (`downsample(array $points, int $target): array`, endpoints preserved, deterministic tie-breaks). The algorithm is unit-agnostic — it sees `[x, y]` pairs without knowing what they mean — and the implementation has not been superseded by any change in the literature. Resurrecting both files verbatim from the `v0.12.0` tag costs zero code-review surface and yields a tested helper from minute one.
+
+**Linear path segments, not smoothed curves.** Modern data-visualisation convention renders elevation profiles with straight line segments between samples (Strava, Garmin, Komoot, Highcharts, Recharts, d3's default `curveLinear`). Cubic Bezier or Catmull-Rom smoothing introduces overshoot at sharp peaks and implies invented detail between measurements — the opposite of what an LTTB-preserved peak should look like. The path's `d` attribute is built as `M x0 y0 L x1 y1 L x2 y2 …` with `toFixed( 1 )` precision (10 cm on a typical 1000-px-wide chart) and explicit `L` per segment for devtools readability.
+
+**Plot fill as its own attribute, not derived from plot line.** Step 1 declared `plotLineColor` (singular) without a separate fill attribute. Step 5 adds a 9th colour row, `Plot fill`, positioned directly after `Plot line` in the Color panel. Default value is the empty string, which means no inline custom property is emitted and the SCSS default of `transparent` applies — the fill `<path>` is in the DOM but renders invisibly. The user opts in to fill by picking a colour (typically with reduced alpha via the panel's `enableAlpha`, e.g. `rgba( 34, 197, 94, 0.25 )` for a translucent fill that doesn't overpower the line). Rejected alternatives: (a) deriving the fill from `plotLineColor` via `color-mix` with a hardcoded alpha — opinionated and locks the user out of decoupled control; (b) skipping fill entirely — leaves a real visual style choice off the table to preserve Step 1's eight-row count. The pre-1.0 policy explicitly permits breaking the Step 1-locked inspector surface, and the cost is ~30 lines distributed over six files. Step 1's recap in this document is **not** retroactively edited; Step 5's spec records the amendment.
+
+**Two `<path>` elements, not one combined.** A single `<path>` carrying both `fill` and `stroke` would draw the stroke along the closing baseline edge, painting a horizontal line under the curve that visually pollutes the X axis. Emitting fill and stroke as two separate `<path>` elements keeps the stroke open (`M x0 y0 L … L xn yn`) and the fill closed (`M x0 plotBottom L x0 y0 L … L xn yn L xn plotBottom Z`). The fill path is always emitted; its visibility is governed by the CSS variable resolving to `transparent` (default) vs a real colour (user-set), which keeps the SVG host code free of conditional emission logic.
+
+**Shared `ChartScale` helper, not duplicated projection math.** Step 4's `buildXTicks` and `buildYTicks` compute tick positions inline using projection formulas (`plotLeft + (v/distance) · availX`, `plotBottom − ((v − niceYMin) / (niceYMax − niceYMin)) · availY`). Step 5 needs the same projection functions to project samples onto the SVG canvas. Three alternatives were considered: (i) both helpers call `niceTicks` independently — relies on determinism, an implicit "must stay consistent" coupling; (ii) hoist `niceYMin` / `niceYMax` to the redraw loop and pass to both helpers as scalars — explicit shared value but no abstraction; (iii) extract a `ChartScale` object bundling `projectX`, `projectY`, `availX`, `availY`, `plotLeft`/`plotRight`/`plotTop`/`plotBottom`, `niceYMin`/`niceYMax`, and the X/Y tick sets. Step 5 adopts (iii) because Step 6's cursor (`projectX` + `projectY` for cursor positioning) and Step 7's tooltip (`availX`, `plotLeft`/`plotRight` for flip-on-overflow logic) both naturally consume the same object. Introducing it now amortises across three steps; deferring it would require extracting `projectY` separately for Step 6 anyway. The cost is ~50 lines of new helper code plus a refactor of `chart.tsx` and `view.ts` that *removes* their local `buildXTicks` / `buildYTicks` functions in favour of the consolidated `computeChartScale()` call — net change in those two files is roughly neutral.
+
+### Server-side samples pipeline (locked by Q1 + Q3 + Q5 grilling)
+
+**LTTB resurrection.** Both files come back verbatim from the `v0.12.0` tag:
+
+```
+git show v0.12.0:classes/Rendering/Lttb.php > classes/Rendering/Lttb.php
+git show v0.12.0:tests/Unit/LttbTest.php > tests/Unit/LttbTest.php
+```
+
+The algorithm contract is unchanged: `Lttb::downsample( array $points, int $target ): array`, endpoints preserved, deterministic tie-breaks on lowest source index, pass-through when `count( $points ) <= $target`. Both files were authored under HEAD's coding standard and pass HEAD's PHPCS / PHPStan configurations as-is; if either lints with a warning the resolution is to fix in place, not to rewrite the algorithm.
+
+**New `Rendering\Elevation_Samples` class.** v0.12.0 had the (distance, elevation) extraction as two private static methods on `Render_Elevation`. With both `Render_Elevation` and `Preview_Controller` now needing the same logic, the methods promote to a new class:
+
+```php
+namespace Kntnt\Gpx_Blocks\Rendering;
+
+final class Elevation_Samples {
+
+    public const DEFAULT_TARGET = 300;
+
+    /**
+     * Extracts the (distance, elevation) series from a GeoJSON
+     * FeatureCollection. Walks the first LineString feature's coordinate
+     * chain summing Haversine distance over every consecutive pair,
+     * emitting a [distance, elevation] tuple whenever the coordinate
+     * carries a third dimension. Distance continues to accumulate
+     * across coords that lack elevation — defensive carry-over for the
+     * rare hybrid case where Geo_Json_Converter's interpolation didn't
+     * fill every gap. No WordPress functions; pure deterministic logic.
+     * Both fields are rounded to one decimal (10 cm precision) before
+     * emission.
+     *
+     * @param array<int|string, mixed> $geojson Decoded GeoJSON.
+     * @return array<int, array{0: float, 1: float}>
+     */
+    public static function compute_full( array $geojson ): array;
+
+    /**
+     * Composition of compute_full() and Lttb::downsample(). Returns
+     * the downsampled (distance, elevation) array ready for emission
+     * into the per-mapId Interactivity state slice.
+     *
+     * @param array<int|string, mixed> $geojson Decoded GeoJSON.
+     * @param int                      $target  LTTB target (≥ 2).
+     * @return array<int, array{0: float, 1: float}>
+     */
+    public static function compute( array $geojson, int $target ): array;
+
+}
+```
+
+`compute_full()` is the port of v0.12.0's `extract_line_coordinates()` + `build_distance_elevation_series()`, calling the existing `Conversion\Distance::haversine_meters()` helper. `compute()` is the trivial composition `Lttb::downsample( self::compute_full( $geojson ), $target )`.
+
+**Filter at the call site.** `kntnt_gpx_blocks_elevation_target_points` is read at each call site rather than wrapped inside `Elevation_Samples`. The four-line boilerplate is duplicated:
+
+```php
+$target_raw = apply_filters( 'kntnt_gpx_blocks_elevation_target_points', Elevation_Samples::DEFAULT_TARGET );
+$target     = is_int( $target_raw ) && $target_raw > 0 ? $target_raw : Elevation_Samples::DEFAULT_TARGET;
+$samples    = Elevation_Samples::compute( $payload['geojson'], $target );
+```
+
+Rejected alternative: a `Elevation_Samples::filtered_target()` static method calling `apply_filters` internally — that couples the class to WordPress and forces Brain Monkey into its unit tests. The four-line duplication is the right side of the trade-off.
+
+**Payload precision.** `compute_full()` rounds both fields to **one decimal** via `round( $value, 1 )` before emission. Rationale: chart display precision is at finest 1 m (Y tick labels) or 100 m (X km-mode tick labels); the cursor tooltip never exceeds those precisions; sub-decimetre source-data precision survives through LTTB but adds no UI-visible detail. The rounding reduces the inline payload by ~60% (300 samples × two scalars: ~10 KB raw JSON → ~4 KB raw JSON; ~3 KB → ~1 KB gzipped). The 10 cm precision is ~100× finer than any display value, leaving margin for future zoom-in renderings without needing to re-emit.
+
+**Edge cases.** `compute_full()` returns `[]` when (a) no `LineString` feature is present in the FeatureCollection, (b) the LineString has fewer than two coordinates, or (c) all coordinates are 2D (no third element). The 2D case occurs for tracks where `Geo_Json_Converter` dropped elevation outright (>50% missing per its `MAX_MISSING_ELEVATION_FRACTION` rule) and is already caught upstream by `Render_Elevation::render()`'s `no-elevation-data` warning — `compute_full()`'s `[]` return is defense-in-depth. `compute()` propagates an empty result from `compute_full()`. The JS-side defensive guards in `chart.tsx` / `view.ts` (Q4) treat `samples.length < 2` as "render axes only, skip the curve" rather than crashing.
+
+### Per-mapId state slice and REST shape (locked by Q1 grilling)
+
+`Render_Elevation::render()` extends the existing `wp_interactivity_state` block to carry the new `samples` field:
+
+```php
+wp_interactivity_state( 'kntnt-gpx-blocks', [
+    $resolved['map_id'] => [
+        'statistics' => [
+            'min_elevation' => $min,
+            'max_elevation' => $max,
+            'distance'      => $distance,
+        ],
+        'samples' => $samples,  // NEW: Array<[float, float]>, rounded to 1 decimal.
+    ],
+] );
+```
+
+`Preview_Controller::get_preview()` returns the same field in the REST response:
+
+```php
+return new \WP_REST_Response( [
+    'geojson'    => $payload['geojson'],
+    'statistics' => $payload['statistics'],
+    'samples'    => $samples,  // NEW: same Elevation_Samples helper.
+] );
+```
+
+The shared helper guarantees editor and frontend receive byte-identical samples arrays for the same attachment, preserving Step 3's "one shape for both hosts" discipline through Step 5. **`yMin` / `yMax` are not added to the state slice** — Step 4's redraw loop computes `niceYMin` / `niceYMax` per redraw via `niceTicks`, and both the tick set and the curve project against the same JS-computed values. v0.12.0's `yMin` / `yMax` state fields were needed because PHP rendered the polyline server-side; they are obsolete now.
+
+### Plot fill colour attribute (locked by Q2b grilling)
+
+A new block attribute `plotFillColor` is added in `block.json`:
+
+```json
+"plotFillColor": {
+    "type": "string",
+    "default": ""
+}
+```
+
+The inspector's Color panel grows from 8 rows to 9. The new row inserts at position 3 (after `Plot line`, before `Cursor`), labelled `Plot fill` (translatable, text domain `kntnt-gpx-blocks`). The existing `enableAlpha` on the panel lets the user pick a colour with custom alpha directly.
+
+Wiring mirrors the `axisLabelColor` template established in Step 4:
+
+- **`src/blocks/elevation/inspector-color.tsx`** — `elevationColorRows()` gains a new entry between `plotLineColor` and `cursorColor`. Docstring "eight rows" → "nine rows".
+- **`src/blocks/elevation/edit.tsx`** — adds a `usefulValue` wiring parallel to `axisLabelColor` (lines 281–294), reading `attributes.plotFillColor` and assigning to the inline CSS custom property `--kntnt-gpx-blocks-elevation-plot-fill` when non-empty.
+- **`classes/Rendering/Render_Elevation::build_inline_style()`** — adds the mirror PHP-side emission, parallel to the `axisLabelColor` block at lines 314–319.
+- **`src/blocks/elevation/style.scss`** — declares the SCSS default `--kntnt-gpx-blocks-elevation-plot-fill: transparent;`. A second default lands too: `--kntnt-gpx-blocks-elevation-plot-line: #1e1e1e;` (same neutral default as axis / axis-label).
+- **`src/blocks/elevation/block.json`** — declares the attribute.
+
+`tests/Unit/Elevation_Block_Json_ShapeTest.php` updates: the expected attribute count rises from 35 to 36, and `plotFillColor` is added to both the master attribute list and the "every colour attribute defaults to empty string" list.
+
+### Chart scale helper (locked by Q4-iii-b grilling)
+
+`src/blocks/elevation/geometry/scale.ts` — new module:
+
+```ts
+export interface ProjectedTick {
+    readonly position: number;
+    readonly label: string;
+}
+
+export interface ChartScale {
+    readonly distance: number;
+    readonly niceYMin: number;
+    readonly niceYMax: number;
+    readonly plotLeft: number;
+    readonly plotRight: number;
+    readonly plotTop: number;
+    readonly plotBottom: number;
+    readonly availX: number;
+    readonly availY: number;
+    readonly em: number;
+    readonly projectX: ( distance: number ) => number;
+    readonly projectY: ( elevation: number ) => number;
+    readonly xTicks: readonly ProjectedTick[];
+    readonly yTicks: readonly ProjectedTick[];
+}
+
+export interface ChartScaleInput {
+    readonly distance: number;
+    readonly minElevation: number;
+    readonly maxElevation: number;
+    readonly margins: Margins;
+    readonly width: number;
+    readonly height: number;
+}
+
+export function computeChartScale( input: ChartScaleInput ): ChartScale;
+```
+
+`computeChartScale` performs Step 4's full redraw geometry inside one function: derives `availX` / `availY` from `width`, `height`, and the cached `margins`; derives `refXWidth` / `refHeight` from the margin scalars (`refXWidth = 2 · ( margins.wRight − 0.5em )`, `refHeight = margins.h − 0.5em`); computes `N_x` and `N_y` via `computeTickCount`; generates X-tick values via `niceTicks( 0, distance, N_x ).values.filter( v => v <= distance )` (Strava-style filter) and Y-tick values via `niceTicks( yMin, yMax, N_y ).values`; formats labels via `formatXLabels` and `formatYLabels`; projects tick positions; builds `projectX` / `projectY` arrow functions. The Step 3 Case-B inflation (when `minElevation === maxElevation`, render against `[ min − 1, min + 1 ]`) lives inside `computeChartScale`, so callers don't recompose it.
+
+When `availX <= 0` or `availY <= 0` (SVG not yet laid out), `computeChartScale` returns a sentinel `ChartScale` with `xTicks: []`, `yTicks: []`, and projection functions that return `NaN`. Callers handle the empty-tick case by skipping all drawing — they already test `w === 0 || h === 0` before invoking the redraw.
+
+**Step 4 refactor inside Step 5's scope.** With `computeChartScale` owning the projection math, `chart.tsx` and `view.ts` lose their local `buildXTicks` and `buildYTicks` functions. The two redraw loops shrink to roughly:
+
+```ts
+const scale = computeChartScale( {
+    distance: data.distance,
+    minElevation: data.minElevation,
+    maxElevation: data.maxElevation,
+    margins,
+    width: w,
+    height: h,
+} );
+
+// Step 4 surfaces consume scale.xTicks, scale.yTicks.
+// Step 5 surfaces consume scale.projectX, scale.projectY, scale.plotBottom.
+```
+
+The `ProjectedTick` interface moves out of both hosts and into `scale.ts`. Step 4's *rendered output* is byte-identical pre- and post-refactor — the change is purely how the same data flows.
+
+`src/blocks/elevation/geometry/scale.test.ts` covers the new helper: known inputs produce known projection outputs; `projectX( 0 ) === plotLeft`, `projectX( distance ) === plotRight`, `projectY( niceYMin ) === plotBottom`, `projectY( niceYMax ) === plotTop`; Case-B inflation engages exactly when `minElevation === maxElevation`; X ticks are filtered to `value <= distance`; the sentinel branch returns empty tick sets and `NaN` projections when `availX <= 0`.
+
+### Path construction (locked by Q2 + Q4 grilling)
+
+`src/blocks/elevation/geometry/curve.ts` — new module:
+
+```ts
+/**
+ * Builds the SVG `d` attribute for the open stroke path of the
+ * elevation curve. Format:
+ *     M x0 y0 L x1 y1 L … L xn yn
+ * with one decimal of precision on every coordinate. Returns the
+ * empty string when samples has fewer than 2 entries.
+ */
+export function buildStrokePathD(
+    samples: readonly ( readonly [ number, number ] )[],
+    projectX: ( d: number ) => number,
+    projectY: ( e: number ) => number,
+): string;
+
+/**
+ * Builds the SVG `d` attribute for the closed area path under the
+ * curve. Format:
+ *     M x0 plotBottom L x0 y0 L x1 y1 … L xn yn L xn plotBottom Z
+ * with one decimal of precision on every coordinate. Returns the
+ * empty string when samples has fewer than 2 entries.
+ */
+export function buildFillPathD(
+    samples: readonly ( readonly [ number, number ] )[],
+    projectX: ( d: number ) => number,
+    projectY: ( e: number ) => number,
+    plotBottom: number,
+): string;
+```
+
+Both functions iterate the samples array exactly once, calling `.toFixed( 1 )` on every emitted coordinate. They are pure — no DOM, no math beyond invoking the projection callbacks. Co-located `curve.test.ts` asserts string equality against fixtures for a 5-sample input under known projection functions, the `< 2` early return, and that `buildFillPathD`'s closing `Z` makes the path closed.
+
+### SVG mechanics (locked by Q2b + Q4 grilling)
+
+Two `<path>` elements emitted from both `chart.tsx` (React JSX) and `view.ts` (`document.createElementNS` + `appendChild`):
+
+```html
+<path class="kntnt-gpx-blocks-elevation-plot-fill"
+      d="M 84.0 312.4 L 84.0 287.6 L 87.5 281.2 … L 916.0 312.4 Z"
+      fill="var(--kntnt-gpx-blocks-elevation-plot-fill)"
+      stroke="none"/>
+
+<path class="kntnt-gpx-blocks-elevation-plot-line"
+      d="M 84.0 287.6 L 87.5 281.2 L 91.0 274.8 … L 916.0 268.4"
+      fill="none"
+      stroke="var(--kntnt-gpx-blocks-elevation-plot-line)"
+      stroke-width="2"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+      vector-effect="non-scaling-stroke"/>
+```
+
+- **`stroke-width="2"`** (px under the 1:1 viewBox mapping). Hardcoded — Step 1 declared no `plotLineWidth` attribute and Step 5 does not add one.
+- **`vector-effect="non-scaling-stroke"`** keeps the 2-px stroke pixel-stable across resize. Without it the stroke would scale with viewBox refresh, going faintly thicker on widening and thinner on narrowing.
+- **`stroke-linejoin="round"`** prevents miter spikes at sharp peaks.
+- **`stroke-linecap="round"`** softens the curve's endpoints.
+- **Fill `<path>` is always emitted.** Its visibility is governed by the resolved CSS variable: `transparent` (SCSS default, no inline override) makes it invisible; a user-picked colour from the Color panel sets the inline `--kntnt-gpx-blocks-elevation-plot-fill` custom property and makes the fill visible. No conditional emission logic in JS — the DOM always has both paths.
+
+**Layer order in the SVG** (insertion order under the SVG host):
+
+1. X axis line (Step 3).
+2. Y axis line (Step 3).
+3. **Plot fill** (Step 5, new).
+4. **Plot line** (Step 5, new).
+5. X tick marks (Step 4).
+6. Y tick marks (Step 4).
+7. X tick labels (Step 4).
+8. Y tick labels (Step 4).
+
+The curve sits *above* the axis lines (the axis lines must not visibly cross over a peak) and *below* the tick marks and labels (tick scaffolding must remain legible where the curve passes through it).
+
+**`view.ts`'s `removeMatching` selector list** grows to include the two new path classes so a re-mount or redraw cleanly tears down old DOM:
+
+```ts
+removeMatching( svg, [
+    '.kntnt-gpx-blocks-elevation-axis-x',
+    '.kntnt-gpx-blocks-elevation-axis-y',
+    '.kntnt-gpx-blocks-elevation-plot-fill',          // NEW
+    '.kntnt-gpx-blocks-elevation-plot-line',          // NEW
+    '.kntnt-gpx-blocks-elevation-ticks-x',
+    '.kntnt-gpx-blocks-elevation-ticks-y',
+    '.kntnt-gpx-blocks-elevation-tick-labels-x',
+    '.kntnt-gpx-blocks-elevation-tick-labels-y',
+].join( ',' ) );
+```
+
+### Resize behaviour (locked by Q4 grilling)
+
+Step 3's invariants extend to Step 5 without change:
+
+- **Margins remain cached across resize.** `wLeft`, `wRight`, `wTop`, `h`, and `em` are functions of data and typography alone (not of `W_avail` / `H_avail`), so resize never invalidates them.
+- **`samples` is stable across resize.** Computed once server-side, never recomputed in JS, never re-projected at the data level — only the *rendering* of the curve re-runs.
+- **Curve redraws on every container resize.** `ResizeObserver` fires the redraw, which calls `computeChartScale` (fresh `availX` / `availY` / nice-Y bounds / tick sets), then `buildStrokePathD` and `buildFillPathD` with the new projection functions. Tick positions and curve geometry move together — the nice-Y bounds determine both.
+
+Visual consequence during a drag-resize: the *number of ticks* still jumps between discrete values when the formula's threshold is passed (Step 4 behaviour), the curve re-projects to fit the new plot rectangle, and the stroke width stays pixel-stable thanks to `vector-effect="non-scaling-stroke"`. Path string regeneration at 300 samples is sub-millisecond; no frame-rate concerns on typical hardware.
+
+### Redraw sequence (one shape for both hosts)
+
+Both `chart.tsx` and `view.ts` run the same logical sequence in their redraw paths. Step numbers cross-reference helpers under `geometry/`:
+
+1. Read `W`, `H` from `svg.getBoundingClientRect()`. Skip if either is zero (not yet laid out).
+2. Call `computeChartScale( { distance, minElevation, maxElevation, margins, width: W, height: H } )` to get a `ChartScale` covering plot rectangle, projections, and tick sets.
+3. If `scale.xTicks.length === 0` (sentinel branch — `availX` or `availY` non-positive), skip drawing entirely.
+4. Build the curve `d` strings:
+   - `strokeD = buildStrokePathD( samples, scale.projectX, scale.projectY )`.
+   - `fillD = buildFillPathD( samples, scale.projectX, scale.projectY, scale.plotBottom )`.
+   - When `samples.length < 2`, both helpers return `''` — the redraw still draws axes and ticks but emits no `d` attribute on the path elements (`chart.tsx` conditionally skips JSX, `view.ts` skips `appendChild`).
+5. Wipe any previous run's elements via `removeMatching` (in `view.ts`); React's reconciliation handles this for `chart.tsx`.
+6. Append the axis lines, then the fill and stroke paths, then the tick mark groups, then the tick label groups — in the layer order documented above.
+
+Steps 1–4 are pure (no DOM mutation). Steps 5–6 are host-specific.
+
+### File layout for Step 5
+
+```
+src/blocks/elevation/
+├── block.json                                   — modified: new plotFillColor attribute
+├── edit.tsx                                     — modified: plotFillColor wiring + Step 4 redraw refactor for ChartScale
+├── chart.tsx                                    — modified: removes buildXTicks/buildYTicks, consumes ChartScale, emits two <path> elements
+├── chart.test.tsx                               — modified: assertions for plot-fill / plot-line groups; ChartScale consumption
+├── view.ts                                      — modified: removes buildXTicks/buildYTicks, consumes ChartScale, emits two <path> elements, extends removeMatching
+├── inspector-color.tsx                          — modified: 9th row for plotFillColor; docstring update
+├── style.scss                                   — modified: --kntnt-gpx-blocks-elevation-plot-fill and --kntnt-gpx-blocks-elevation-plot-line defaults
+└── geometry/
+    ├── scale.ts                                 — NEW: computeChartScale + ChartScale + ProjectedTick + ChartScaleInput
+    ├── scale.test.ts                            — NEW: pure helper tests
+    ├── curve.ts                                 — NEW: buildStrokePathD + buildFillPathD
+    └── curve.test.ts                            — NEW: pure helper tests
+
+classes/Rendering/
+├── Lttb.php                                     — NEW: resurrected verbatim from v0.12.0
+├── Elevation_Samples.php                        — NEW: compute_full + compute (pure, no WordPress)
+└── Render_Elevation.php                         — modified: filter read + samples emission in render(); plotFillColor in build_inline_style()
+
+classes/Rest/
+└── Preview_Controller.php                       — modified: response shape gains samples field
+
+tests/Unit/
+├── LttbTest.php                                 — NEW: resurrected verbatim from v0.12.0
+├── Elevation_SamplesTest.php                    — NEW: pure algorithmic tests
+├── Render_ElevationTest.php                     — modified: assertions for samples emission and plotFillColor wiring
+├── Preview_ControllerTest.php                   — modified: assertion for samples in response shape
+└── Elevation_Block_Json_ShapeTest.php           — modified: attribute count 35 → 36, plotFillColor added
+
+src/blocks/elevation/
+└── use-bound-map-payload.ts                     — modified: BoundMapPayload interface gains samples field
+```
+
+The seam between pure geometry and DOM-bound work is preserved: `scale.ts`, `curve.ts`, `format.ts`, `ticks.ts`, `margins.ts` add no DOM dependencies; rendering logic stays in `chart.tsx` and `view.ts`. The PHP-pure boundary holds too: `Elevation_Samples` and `Lttb` call no WordPress functions and have no Brain Monkey dependency in their tests.
+
+### Test-driven development
+
+Write the helper-level tests first, watch them go red, implement until green:
+
+- **`tests/Unit/Elevation_SamplesTest.php`** — pure algorithmic tests:
+  - 3-point 3D LineString → exactly 3 samples; cumulative distance matches manual Haversine; elevations match third-element values.
+  - 2D LineString → `[]`.
+  - LineString missing from FeatureCollection → `[]`.
+  - Single-point LineString → `[]` (length < 2 guard).
+  - 1000-point 3D LineString with `target = 50` → exactly 50 samples, endpoints preserved, deterministic.
+  - 50-point 3D LineString with `target = 300` → pass-through (50 samples returned unchanged).
+  - All emitted values rounded to 1 decimal.
+- **`tests/Unit/LttbTest.php`** — resurrected from v0.12.0, passes without modification.
+- **`src/blocks/elevation/geometry/scale.test.ts`** — pure helper tests:
+  - Known input produces known projection: `projectX( 0 ) === plotLeft`, `projectX( distance ) === plotRight`, `projectY( niceYMin ) === plotBottom`, `projectY( niceYMax ) === plotTop`.
+  - Case-B inflation engages on `minElevation === maxElevation`; nice-Y bounds become `[ min − 1, min + 1 ]`-derived.
+  - X ticks filtered to `value <= distance`.
+  - Sentinel branch returns empty tick sets when `availX <= 0` or `availY <= 0`.
+- **`src/blocks/elevation/geometry/curve.test.ts`** — pure helper tests:
+  - 5-sample fixture with identity projections → assert exact `d` string.
+  - `< 2` samples → both helpers return `''`.
+  - `buildFillPathD` ends with ` Z`; `buildStrokePathD` does not.
+  - All coordinates carry exactly one decimal in the output.
+
+Then write the integration tests:
+
+- **`src/blocks/elevation/chart.test.tsx`** — `<Chart>` renders the expected `<path>` elements (one with class `kntnt-gpx-blocks-elevation-plot-line`, one with `kntnt-gpx-blocks-elevation-plot-fill`) for a known data shape and mocked typography. The plot-line's `stroke` resolves to `var(--kntnt-gpx-blocks-elevation-plot-line)`. The plot-fill is in the DOM regardless of `plotFillColor` value. ChartScale-driven `xTicks` / `yTicks` still render as Step 4 specified.
+- **`tests/Unit/Render_ElevationTest.php`** — `render()` emits the `samples` key in `wp_interactivity_state` for the healthy state; `plotFillColor` wiring produces the `--kntnt-gpx-blocks-elevation-plot-fill` inline custom property (mirror of the existing `axisLabelColor` assertion).
+- **`tests/Unit/Preview_ControllerTest.php`** — `get_preview()` returns the `samples` field in the REST response.
+- **`tests/Unit/Elevation_Block_Json_ShapeTest.php`** — attribute count 36, `plotFillColor` present and defaulting to `''`.
+
+Implementation follows the tests until all are green.
+
+### Acceptance criteria
+
+Step 5 is done — and `v0.13.5` may be tagged — when **all** of the following hold.
+
+**Behaviour:**
+
+1. The Step 3/4 healthy-state chart now carries an elevation curve on both axes' scaffold. The five degenerate-case warnings from Step 3 (`no-map`, `bound-deleted`, `bound-unconfigured`, `no-elevation-data`, `zero-distance`) are unaffected.
+2. `classes/Rendering/Lttb.php` and `tests/Unit/LttbTest.php` are present, byte-identical to `v0.12.0`. `Lttb::downsample( $points, $target )` preserves endpoints, returns input unchanged when `count <= target`, and is deterministic.
+3. `classes/Rendering/Elevation_Samples.php` exists with `DEFAULT_TARGET = 300`, `compute_full( array $geojson ): array`, and `compute( array $geojson, int $target ): array`. The class calls no WordPress functions. Both fields in emitted tuples are rounded to one decimal.
+4. The filter `kntnt_gpx_blocks_elevation_target_points` is read at both `Render_Elevation::render()` and `Preview_Controller::get_preview()`, with `is_int && > 0` coercion falling back to `Elevation_Samples::DEFAULT_TARGET`.
+5. **Per-mapId state slice** gains a `samples` field: `state[ mapId ].samples` is an `Array<[number, number]>` with the LTTB-downsampled (distance, elevation) tuples. The `statistics` sub-object is unchanged. **No** `yMin` / `yMax` field is added.
+6. **REST response** from `/kntnt-gpx-blocks/v1/preview/<id>` gains a `samples` field with the same shape and same value (computed by the shared `Elevation_Samples` helper).
+7. `block.json` declares the new `plotFillColor` attribute (type `string`, default `""`). Total attribute count rises from 35 to 36.
+8. The Color panel renders 9 rows; the new row labelled `Plot fill` sits between `Plot line` and `Cursor`.
+9. The custom property `--kntnt-gpx-blocks-elevation-plot-fill` is wired through `edit.tsx`, `Render_Elevation::build_inline_style()`, and `style.scss` (default `transparent`). The custom property `--kntnt-gpx-blocks-elevation-plot-line` has its SCSS default `#1e1e1e`.
+10. **`computeChartScale` exists** in `geometry/scale.ts` with the documented interface. `chart.tsx` and `view.ts` no longer carry local `buildXTicks` / `buildYTicks` functions — both consume `scale.xTicks` and `scale.yTicks` instead. The `ProjectedTick` interface lives in `scale.ts` only.
+11. **`buildStrokePathD` and `buildFillPathD` exist** in `geometry/curve.ts`. Both produce paths with `toFixed( 1 )` precision; both return `''` when `samples.length < 2`. `buildFillPathD`'s output ends with ` Z`.
+12. **Curve renders as two `<path>` elements** in the SVG: `kntnt-gpx-blocks-elevation-plot-fill` followed by `kntnt-gpx-blocks-elevation-plot-line`. The fill path is always emitted regardless of `plotFillColor` value. The stroke path carries `stroke-width="2"`, `stroke-linejoin="round"`, `stroke-linecap="round"`, `vector-effect="non-scaling-stroke"`, `fill="none"`.
+13. **SVG layer order** matches the documented sequence: axis lines → plot fill → plot line → tick marks → tick labels.
+14. **`view.ts`'s `removeMatching` selector list** includes both new path classes.
+15. **Resize:** `ResizeObserver` triggers a redraw that re-projects samples and rebuilds the curve, alongside the existing tick recompute. Margins do not recompute. The 2-px stroke stays pixel-stable across viewport widths.
+
+**Gates (must all pass at HEAD before tagging):**
+
+16. `npm run build`.
+17. `composer test` (Pest) — including the new `Elevation_SamplesTest`, the resurrected `LttbTest`, the extended `Render_ElevationTest`, the extended `Preview_ControllerTest`, and the extended `Elevation_Block_Json_ShapeTest`.
+18. `vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M`.
+19. `npm run test:js` — including the new `scale.test.ts`, `curve.test.ts`, the extended `chart.test.tsx`, and the existing test corpus.
+20. `npx wp-scripts lint-js src/blocks/`.
+
+**Manual verification in WordPress Playground (`@wp-playground/cli`):**
+
+21. Insert one configured Map with a multi-kilometre GPX, then insert Elevation: the chart now carries an elevation curve drawn over Step 4's axes and ticks. The curve fills the plot rectangle horizontally (starts at `plotLeft`, ends at `plotRight`) and sits within the nice-Y bounds vertically.
+22. The Color panel shows nine rows including `Plot fill` in position 3.
+23. **Plot line colour** — pick a vivid colour for `Plot line` in the inspector: the curve's stroke updates live in editor and on frontend after save.
+24. **Plot fill colour** — pick `rgba( 34, 197, 94, 0.25 )` for `Plot fill`: a translucent green fill appears under the curve in editor and on frontend. Clear the value: the fill disappears (resolves to `transparent`).
+25. **Resize the browser window** during inspection: the curve re-projects to the new plot rectangle without lag, the stroke width remains visually 2 px, the tick count adjusts at thresholds, and nothing jitters between jumps.
+26. **Two Elevation blocks bound to *different* Map blocks** on the same page: each block's curve uses its own LTTB-downsampled samples; per-mapId state slices stay decoupled.
+27. **Webfont verification** — theme that lazy-loads a Google Font for `Tick labels` typography: when `loadingdone` fires, margins re-measure and the curve re-projects against the corrected nice-Y bounds; no visible jump at the curve's endpoints.
+28. **Case-B verification** — flat-elevation GPX (`min_elevation === max_elevation`): the curve renders as a horizontal line through the middle of the plot rectangle; the Y axis carries ticks symmetric around the constant value (Step 3's `[ min − 1, min + 1 ]` substitution).
+29. **LTTB filter** — set `add_filter( 'kntnt_gpx_blocks_elevation_target_points', fn () => 50 )` in a mu-plugin: the curve still renders correctly but with visibly coarser segmentation; the cursor in Step 6 would still bracket correctly (Step 6 is not yet implemented).
+
+### Release
+
+When all acceptance criteria hold, follow the six-step release procedure documented in `AGENTS.md` (section *Cutting a release*). Tag `v0.13.5`. Commit message: `Release v0.13.5 — Step 5: elevation curve`.
 
 ---
 
