@@ -1,5 +1,5 @@
 /**
- * Invisible 400px spacer rendered into the bottom of the block
+ * Invisible 135px spacer rendered into the bottom of the block
  * inspector's Design tab. Gives popover-based controls in the last
  * panel — notably FontAppearanceControl, whose legacy CustomSelectControl
  * has flip: false hardcoded — enough vertical room to open without
@@ -24,11 +24,11 @@ interface InspectorBottomSpacerProps {
  * @since 1.0.0
  *
  * @param props        See {@link InspectorBottomSpacerProps}.
- * @param props.height Spacer height in pixels. Defaults to 400, which
+ * @param props.height Spacer height in pixels. Defaults to 135, which
  *                     matches the dropdown's own max-height.
  */
 export function InspectorBottomSpacer( {
-	height = 400,
+	height = 135,
 }: InspectorBottomSpacerProps ): JSX.Element {
 	return (
 		<InspectorControls group="styles">

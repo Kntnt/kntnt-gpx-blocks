@@ -73,9 +73,9 @@ function renderSpacer( props: { height?: number } = {} ): HTMLDivElement {
 }
 
 describe( 'InspectorBottomSpacer', () => {
-	it( 'renders a 400px-high div by default', () => {
+	it( 'renders a 135px-high div by default', () => {
 		const spacer = renderSpacer();
-		expect( spacer.style.height ).toBe( '400px' );
+		expect( spacer.style.height ).toBe( '135px' );
 		expect( spacer.style.flexShrink ).toBe( '0' );
 		expect( spacer.getAttribute( 'aria-hidden' ) ).toBe( 'true' );
 	} );
