@@ -28,7 +28,6 @@ import {
 	ToggleControl,
 	ToolbarButton,
 	SelectControl,
-	ExternalLink,
 	Notice,
 } from '@wordpress/components';
 import { useMemo } from '@wordpress/element';
@@ -79,10 +78,12 @@ interface EditorRegistryOverlayLayer {
  * `before` script of the GPX Map block's editor handle. Mirrors the
  * base-provider shape minus `default` (overlays are multi-select). The
  * editor needs `label` and `requiresKey` to drive the per-provider
- * sub-section and the conditional API-key field; `signupUrl` powers the
- * "Get one" ExternalLink; `subdomains` and per-layer URL/attribution/
- * maxZoom let `MapEditorPreview` mount each enabled layer directly via
- * `L.tileLayer()`.
+ * sub-section and the conditional API-key Notice; `subdomains` and
+ * per-layer URL/attribution/maxZoom let `MapEditorPreview` mount each
+ * enabled layer directly via `L.tileLayer()`. The optional `signupUrl`
+ * is unused by the editor but kept on the shape to mirror the
+ * PHP-rendered registry record verbatim (the settings page is the
+ * canonical place for sign-up links — issue #152).
  *
  * The `apiKeyManagedExternally` boolean signals whether the PHP path is
  * engaged for this overlay provider:
@@ -136,10 +137,13 @@ interface EditorRegistryStyle {
  * Editor-only provider record exposed via `window.kntntGpxBlocks.providers`.
  *
  * Carries the metadata the Inspector needs to drive its UI (`label`,
- * `requiresKey`, `default` style id, optional `signupUrl`, optional
- * `subdomains`) plus the nested `styles` map of per-style records and
- * the `apiKeyManagedExternally` boolean that signals whether the PHP
- * path is engaged for this provider.
+ * `requiresKey`, `default` style id, optional `subdomains`) plus the
+ * nested `styles` map of per-style records and the
+ * `apiKeyManagedExternally` boolean that signals whether the PHP path
+ * is engaged for this provider. The optional `signupUrl` is unused by
+ * the editor but kept on the shape to mirror the PHP-rendered registry
+ * record verbatim (the settings page is the canonical place for
+ * sign-up links — issue #152).
  *
  * The per-style URL is always pre-substituted server-side: either
  * `Editor_Data_Enqueuer` substitutes `{KEY}` from the PHP-supplied
@@ -291,8 +295,7 @@ interface MediaObject {
  * 2. For `requiresKey === true` providers that are *not* PHP-engaged
  *    (`apiKeyManagedExternally !== true`): a `Notice` pointing the
  *    user at *Settings → Kntnt GPX Blocks* where the per-overlay-
- *    provider key is administered (issue #150), plus a "Get one"
- *    `ExternalLink` to `signupUrl` when present. The single
+ *    provider key is administered (issue #150). The single
  *    per-provider key is shared across every layer of that provider
  *    that the editor enables, on every GPX Map block on the site.
  *
@@ -441,19 +444,6 @@ function OverlaysPanel( {
 										'This provider needs an API key. Configure it in Settings → Kntnt GPX Blocks.',
 										'kntnt-gpx-blocks'
 									)
-								) }
-								{ provider.signupUrl && (
-									<>
-										{ ' ' }
-										<ExternalLink
-											href={ provider.signupUrl }
-										>
-											{ __(
-												'Get one',
-												'kntnt-gpx-blocks'
-											) }
-										</ExternalLink>
-									</>
 								) }
 							</Notice>
 						) }
@@ -796,14 +786,6 @@ function TilesPanel( {
 							'This provider needs an API key. Configure it in Settings → Kntnt GPX Blocks.',
 							'kntnt-gpx-blocks'
 						)
-					) }
-					{ selectedProvider?.signupUrl && (
-						<>
-							{ ' ' }
-							<ExternalLink href={ selectedProvider.signupUrl }>
-								{ __( 'Get one', 'kntnt-gpx-blocks' ) }
-							</ExternalLink>
-						</>
 					) }
 				</Notice>
 			) }

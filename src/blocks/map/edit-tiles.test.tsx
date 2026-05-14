@@ -611,6 +611,26 @@ describe( 'MapEdit Tiles panel — key-required Notice (issue #149)', () => {
 		expect( flat ).toContain( 'Settings → Kntnt GPX Blocks' );
 	} );
 
+	it( 'omits the "Get one" sign-up link from the Notice even when the provider record carries a signupUrl (issue #152)', () => {
+		// The Thunderforest fixture in `defaultRegistry` carries
+		// `signupUrl: 'https://www.thunderforest.com/'`; the settings
+		// page is the canonical place for sign-up links, so the Notice
+		// must end at "Settings → Kntnt GPX Blocks" without a trailing
+		// "Get one" ExternalLink. This is the regression guard for #152.
+		const { notices } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
+			} )
+		);
+
+		const flat = flattenChildren( notices[ 0 ].children );
+		expect( flat ).not.toContain( 'Get one' );
+		expect( flat ).not.toContain(
+			'<a href="https://www.thunderforest.com/">'
+		);
+	} );
+
 	it( 'wraps the settings-page name in a link when canManageSettings is true', () => {
 		const { notices } = mountAndCapture(
 			buildAttributes( {

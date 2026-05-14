@@ -453,6 +453,41 @@ function captureSinglePanel( panel: CapturedPanel ): {
 }
 
 /**
+ * Recursively flattens a React-element tree to its rendered string
+ * content. The walker descends into `props.children` regardless of the
+ * element's `type` (so mocked components like `ExternalLink: () => null`
+ * are still walked at the captured-tree level, before rendering).
+ *
+ * Used by the issue-#152 regression assertion to check that the
+ * key-required Notice no longer carries the "Get one" sign-up link.
+ *
+ * @param node React element, array of elements, primitive, or null.
+ *
+ * @return Flattened string content.
+ */
+function flattenChildren( node: unknown ): string {
+	if ( node === null || node === undefined || typeof node === 'boolean' ) {
+		return '';
+	}
+	if ( typeof node === 'string' || typeof node === 'number' ) {
+		return String( node );
+	}
+	if ( Array.isArray( node ) ) {
+		return node.map( ( child ) => flattenChildren( child ) ).join( '' );
+	}
+	if ( typeof node === 'object' ) {
+		const element = node as {
+			props?: { children?: unknown };
+		};
+		if ( ! element.props ) {
+			return '';
+		}
+		return flattenChildren( element.props.children );
+	}
+	return '';
+}
+
+/**
  * Layer labels emitted by the editor-data fixture above. Used to filter
  * the captured ToggleControls down to the overlay-panel subset — the
  * MapEdit inspector renders many other ToggleControls (Controls,
@@ -770,6 +805,28 @@ describe( 'MapEdit Overlays panel — key-required Notice (issue #150)', () => {
 			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
 		);
 		expect( keyNotices ).toHaveLength( 1 );
+	} );
+
+	it( 'omits the "Get one" sign-up link from the paid overlay-provider Notice even when the provider record carries a signupUrl (issue #152)', () => {
+		// The OpenWeatherMap fixture carries
+		// `signupUrl: 'https://openweathermap.org/'`; the settings page
+		// is the canonical place for sign-up links, so the Notice must
+		// end at "Settings → Kntnt GPX Blocks" without a trailing
+		// "Get one" ExternalLink. This is the regression guard for #152.
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const owmPanel = panels.find( ( p ) => p.title === 'OpenWeatherMap' );
+		expect( owmPanel ).toBeDefined();
+
+		const { notices } = captureSinglePanel( owmPanel as CapturedPanel );
+		const keyNotice = notices.find( ( n ) =>
+			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
+		);
+		expect( keyNotice ).toBeDefined();
+		const flat = flattenChildren(
+			( keyNotice as CapturedNotice ).children
+		);
+		expect( flat ).not.toContain( 'Get one' );
 	} );
 
 	it( 'renders no key-required Notice in free overlay-provider panels', () => {
