@@ -1003,6 +1003,23 @@ store( 'kntnt-gpx-blocks', {
 					entry.scale = scale;
 				}
 
+				// Re-append the persistent cursor and tooltip groups so
+				// they sit at the END of the SVG's children list — and
+				// therefore paint on top of every other surface. Without
+				// this every redraw after the first inverts the stack:
+				// `drawChart` removes the per-redraw elements (axes,
+				// curve, ticks, labels) and appends fresh ones at the
+				// end, pushing the persistent cursor/tooltip groups to
+				// the *start* of the list so the curve overdraws them.
+				// `appendChild` on an already-attached node MOVES it,
+				// which is what we rely on here.
+				if ( entry.cursorElements ) {
+					svg.appendChild( entry.cursorElements.group );
+				}
+				if ( entry.tooltipElements ) {
+					svg.appendChild( entry.tooltipElements.group );
+				}
+
 				// Re-pin the cursor and tooltip at the current fraction;
 				// null hides both. `syncCursor` returns silently when the
 				// cursor was gated off, so the lookup itself is harmless.

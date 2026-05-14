@@ -60,9 +60,19 @@ const CURSOR_COLOUR = 'var(--kntnt-gpx-blocks-elevation-cursor)';
  * by `view.ts` for the lifetime of the mount; the cursor is created
  * once on the first redraw and repositioned forever.
  *
+ * `group` exposes the wrapping `<g>` so `view.ts` can re-append it
+ * after each `drawChart` redraw — `removeMatching` wipes the per-redraw
+ * elements (axes, curve, ticks, labels) and `drawChart` appends fresh
+ * ones, which would otherwise leave the persistent cursor group at
+ * the *start* of the children list and let the freshly-drawn curve
+ * paint over the cursor. Re-appending pushes the group back to the
+ * end of the children list so SVG painting order matches the
+ * documented stack.
+ *
  * @since 1.0.0
  */
 export interface CursorElements {
+	readonly group: SVGGElement;
 	readonly hitRect: SVGRectElement;
 	readonly dot: SVGCircleElement;
 	readonly verticalGuide: SVGLineElement | null;
@@ -207,7 +217,7 @@ export function createCursorElements(
 	group.appendChild( dot );
 	svg.appendChild( group );
 
-	return { hitRect, dot, verticalGuide, horizontalGuide };
+	return { group, hitRect, dot, verticalGuide, horizontalGuide };
 }
 
 /**

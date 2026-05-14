@@ -91,6 +91,22 @@ describe( 'createCursorElements', () => {
 		expect( groups ).toHaveLength( 1 );
 	} );
 
+	it( 'returns the wrapping <g> as elements.group so view.ts can re-append it after every drawChart', () => {
+		// The persistent cursor group has to stay at the END of the
+		// SVG's children list, otherwise the curve repainted by
+		// `drawChart` paints over the cursor. `view.ts` re-appends
+		// `elements.group` after each redraw to push it back; this test
+		// pins the reference exposure so a future refactor cannot drop
+		// the field silently.
+		const svg = makeSvg();
+		const elements = createCursorElements( svg, buildScale(), BOTH_GUIDES );
+		expect( elements.group.tagName.toLowerCase() ).toBe( 'g' );
+		expect( elements.group.getAttribute( 'class' ) ).toBe(
+			'kntnt-gpx-blocks-elevation-cursor'
+		);
+		expect( elements.group.parentNode ).toBe( svg );
+	} );
+
 	it( 'returns references to the four child elements when both guides are enabled', () => {
 		const svg = makeSvg();
 		const elements = createCursorElements( svg, buildScale(), BOTH_GUIDES );
