@@ -27,11 +27,15 @@ import { getContext, getElement, store } from '@wordpress/interactivity';
 
 import {
 	applyCursorPosition,
-	createCursorElements,
 	hideCursor,
 	updateHitRect,
 	type CursorElements,
 } from './cursor';
+import {
+	buildCursorElementsForLifecycle,
+	readCursorSettingsFromContext,
+	type CursorContextShape,
+} from './cursor-bootstrap';
 import {
 	bindPointerHandlers,
 	bindPointerHandlersWhenVisible,
@@ -114,6 +118,10 @@ const mounted = new WeakSet< Element >();
  * entry; the watch's standard read-fraction-first-then-guard idiom
  * handles the race window between `mounted.add()` and `mountedElevations.set()`.
  *
+ * `cursorElements` is `null` when the block's `showCursor` toggle
+ * (issue #144) is off — the cursor lifecycle is skipped entirely in
+ * that branch and the watch callback returns silently.
+ *
  * @since 1.0.0
  */
 interface ElevationEntry {
@@ -123,7 +131,7 @@ interface ElevationEntry {
 	readonly distance: number;
 	readonly mapId: string;
 	scale: ChartScale;
-	readonly cursorElements: CursorElements;
+	readonly cursorElements: CursorElements | null;
 }
 
 /**
@@ -530,6 +538,12 @@ function readSamples( value: unknown ): ReadonlyArray< ElevationSample > {
  * new geometry) and from the watch callback (so a fraction write
  * elsewhere on the page moves the cursor).
  *
+ * Returns silently when `entry.cursorElements` is `null` — the block's
+ * `showCursor` toggle (issue #144) is off and there is no cursor `<g>`
+ * to drive. This branch is reached during a watch fire on a
+ * cursor-disabled Elevation block when a sibling Map block writes the
+ * shared fraction.
+ *
  * @since 1.0.0
  *
  * @param entry    The wrapper's lifecycle state.
@@ -539,6 +553,9 @@ function syncCursor(
 	entry: ElevationEntry,
 	fraction: number | null | undefined
 ): void {
+	if ( ! entry.cursorElements ) {
+		return;
+	}
 	if ( fraction === null || fraction === undefined ) {
 		hideCursor( entry.cursorElements );
 		return;
@@ -606,14 +623,24 @@ store( 'kntnt-gpx-blocks', {
 			}
 			mounted.add( ref );
 
-			// Read the state slice for this block's `mapId`. Skip
-			// silently when the slice or the statistics are missing —
-			// PHP's warning path has already handled those branches.
-			const ctx = getContext< { readonly mapId?: string } >();
+			// Read the state slice for this block's `mapId` plus the
+			// three Cursor & guides toggles (issue #144). The toggles
+			// flow through the per-block Interactivity context so two
+			// Elevation blocks bound to the same Map can disagree about
+			// cursor visibility. Skip silently when the slice or the
+			// statistics are missing — PHP's warning path has already
+			// handled those branches.
+			const ctx = getContext<
+				{
+					readonly mapId?: string;
+				} & CursorContextShape
+			>();
 			const mapId = typeof ctx?.mapId === 'string' ? ctx.mapId : '';
 			if ( mapId === '' ) {
 				return;
 			}
+			const cursorSettings = readCursorSettingsFromContext( ctx );
+			const { showCursor } = cursorSettings;
 			const stateRecord = getStateRecord();
 			const slice = stateRecord[ mapId ];
 			const data = statisticsToMarginsInput( slice?.statistics );
@@ -676,13 +703,23 @@ store( 'kntnt-gpx-blocks', {
 				}
 
 				// Cursor lifecycle. The first successful redraw creates
-				// the cursor `<g>` plus its four children and publishes
-				// the entry to `mountedElevations`. Subsequent redraws
-				// only update the hit-rect to track the new plot
-				// rectangle and re-pin the cursor at the cached
-				// fraction so a resize keeps the cursor anchored.
+				// the cursor `<g>` plus its children and publishes the
+				// entry to `mountedElevations`. Subsequent redraws only
+				// update the hit-rect to track the new plot rectangle
+				// and re-pin the cursor at the cached fraction so a
+				// resize keeps the cursor anchored. When the block's
+				// `showCursor` toggle (issue #144) is off, the cursor
+				// `<g>` is not created at all — the entry's
+				// `cursorElements` stays `null`, `syncCursor` no-ops,
+				// and the pointer handlers are never bound. The
+				// per-guide toggles further gate each guide's `<line>`
+				// inside `createCursorElements`.
 				if ( ! entry ) {
-					const cursorElements = createCursorElements( svg, scale );
+					const cursorElements = buildCursorElementsForLifecycle(
+						cursorSettings,
+						svg,
+						scale
+					);
 					entry = {
 						svg,
 						wrapper,
@@ -694,11 +731,15 @@ store( 'kntnt-gpx-blocks', {
 					};
 					mountedElevations.set( ref, entry );
 				} else {
-					updateHitRect( entry.cursorElements, scale );
+					if ( entry.cursorElements ) {
+						updateHitRect( entry.cursorElements, scale );
+					}
 					entry.scale = scale;
 				}
 
 				// Re-pin the cursor at the current fraction; null hides.
+				// `syncCursor` returns silently when the cursor was gated
+				// off, so the lookup itself is harmless.
 				const currentFraction = getStateRecord()[ mapId ]?.fraction;
 				syncCursor( entry, currentFraction );
 			};
@@ -728,24 +769,32 @@ store( 'kntnt-gpx-blocks', {
 			// when the user is about to interact with the chart.
 			// Cursor sync (the watch above) is *not* gated by the
 			// observer — it fires as soon as the entry is published.
-			bindPointerHandlersWhenVisible( ref, () => {
-				const published = mountedElevations.get( ref );
-				if ( ! published ) {
-					return;
-				}
-				bindPointerHandlers(
-					published.cursorElements.hitRect,
-					wrapper,
-					{
-						setFraction( value: number | null ): void {
-							const liveSlice = getStateRecord()[ mapId ];
-							if ( liveSlice ) {
-								liveSlice.fraction = value;
-							}
-						},
+			//
+			// Skipped entirely when the block's `showCursor` toggle
+			// (issue #144) is off: with no cursor `<g>` there is no
+			// hit-rect to listen on, and the block must not write the
+			// shared fraction either — that responsibility belongs to
+			// the Map block alone in that configuration.
+			if ( showCursor ) {
+				bindPointerHandlersWhenVisible( ref, () => {
+					const published = mountedElevations.get( ref );
+					if ( ! published?.cursorElements ) {
+						return;
 					}
-				);
-			} );
+					bindPointerHandlers(
+						published.cursorElements.hitRect,
+						wrapper,
+						{
+							setFraction( value: number | null ): void {
+								const liveSlice = getStateRecord()[ mapId ];
+								if ( liveSlice ) {
+									liveSlice.fraction = value;
+								}
+							},
+						}
+					);
+				} );
+			}
 		},
 
 		/**
@@ -770,11 +819,26 @@ store( 'kntnt-gpx-blocks', {
 		 * @since 1.0.0
 		 */
 		onElevationCursorChange(): void {
-			const ctx = getContext< { readonly mapId?: string } >();
+			const ctx = getContext<
+				{
+					readonly mapId?: string;
+				} & CursorContextShape
+			>();
 			const mapId = typeof ctx?.mapId === 'string' ? ctx.mapId : '';
 			if ( mapId === '' ) {
 				return;
 			}
+
+			// Functional-disablement guard (issue #144). When the block's
+			// `showCursor` toggle is off there is no cursor `<g>` to drive
+			// — return silently. Reading the fraction first to register
+			// the subscription would be wasted bookkeeping (it can never
+			// drive a write here), so the guard sits at the top.
+			const { showCursor } = readCursorSettingsFromContext( ctx );
+			if ( ! showCursor ) {
+				return;
+			}
+
 			const fraction = getStateRecord()[ mapId ]?.fraction;
 			const ref = getElement()?.ref;
 			if ( ! ref || ! ( ref instanceof Element ) ) {

@@ -112,31 +112,48 @@ describe( 'elevationColorRows', () => {
 	} );
 } );
 
-describe( 'hiddenElevationColorAttributes (issue #143)', () => {
-	it( 'hides nothing when both toggles are on', () => {
-		expect( hiddenElevationColorAttributes( true, true ) ).toEqual(
+describe( 'hiddenElevationColorAttributes (issues #143 + #144)', () => {
+	it( 'hides nothing when all three master toggles are on', () => {
+		expect( hiddenElevationColorAttributes( true, true, true ) ).toEqual(
 			new Set()
 		);
 	} );
 
 	it( 'hides Tooltip distance when Distance is off', () => {
-		expect( hiddenElevationColorAttributes( false, true ) ).toEqual(
+		expect( hiddenElevationColorAttributes( false, true, true ) ).toEqual(
 			new Set( [ 'tooltipDistanceColor' ] )
 		);
 	} );
 
 	it( 'hides Tooltip height when Height is off', () => {
-		expect( hiddenElevationColorAttributes( true, false ) ).toEqual(
+		expect( hiddenElevationColorAttributes( true, false, true ) ).toEqual(
 			new Set( [ 'tooltipHeightColor' ] )
 		);
 	} );
 
-	it( 'hides the shared Tooltip background only when BOTH toggles are off', () => {
-		expect( hiddenElevationColorAttributes( false, false ) ).toEqual(
+	it( 'hides the shared Tooltip background only when BOTH tooltip toggles are off', () => {
+		expect( hiddenElevationColorAttributes( false, false, true ) ).toEqual(
 			new Set( [
 				'tooltipDistanceColor',
 				'tooltipHeightColor',
 				'tooltipBackgroundColor',
+			] )
+		);
+	} );
+
+	it( 'hides Cursor when showCursor is off (issue #144)', () => {
+		expect( hiddenElevationColorAttributes( true, true, false ) ).toEqual(
+			new Set( [ 'cursorColor' ] )
+		);
+	} );
+
+	it( 'hides every dependent row when all three master toggles are off', () => {
+		expect( hiddenElevationColorAttributes( false, false, false ) ).toEqual(
+			new Set( [
+				'tooltipDistanceColor',
+				'tooltipHeightColor',
+				'tooltipBackgroundColor',
+				'cursorColor',
 			] )
 		);
 	} );
@@ -190,6 +207,40 @@ describe( 'InspectorColorPanel (issue #143)', () => {
 		expect( labels ).not.toContain( 'Tooltip background' );
 		expect( labels ).toContain( 'Cursor' );
 		expect( labels ).toContain( 'Plot line' );
+	} );
+
+	it( 'omits "Cursor" when showCursor is false (issue #144)', () => {
+		const panels = renderAndCapture( { showCursor: false } );
+
+		const labels = panels[ 0 ].colorSettings.map( ( e ) => e.label );
+		expect( labels ).not.toContain( 'Cursor' );
+		// The other dependent rows remain — Tooltip toggles are still on
+		// by default — so this is a pure cursor-only hide.
+		expect( labels ).toContain( 'Tooltip background' );
+		expect( labels ).toContain( 'Tooltip distance' );
+		expect( labels ).toContain( 'Tooltip height' );
+	} );
+
+	it( 'preserves a saved Cursor colour across hide → re-enable (no clear-on-hide, issue #144)', () => {
+		// Hide the row first.
+		const hidden = renderAndCapture( {
+			showCursor: false,
+			cursorColor: '#abcdef',
+		} );
+		expect(
+			hidden[ 0 ].colorSettings.map( ( e ) => e.label )
+		).not.toContain( 'Cursor' );
+
+		// Then re-enable — the row reappears with the previously saved value.
+		const restored = renderAndCapture( {
+			showCursor: true,
+			cursorColor: '#abcdef',
+		} );
+		const cursorRow = restored[ 0 ].colorSettings.find(
+			( e ) => e.label === 'Cursor'
+		);
+		expect( cursorRow ).toBeDefined();
+		expect( cursorRow?.value ).toBe( '#abcdef' );
 	} );
 
 	it( 'preserves a saved colour value across hide → re-enable (no clear-on-hide)', () => {

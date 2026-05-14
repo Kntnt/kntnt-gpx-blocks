@@ -134,11 +134,17 @@ function installSvgStubs( widthPerChar: number, height: number ): void {
  * Renders the chart synchronously into a detached DOM node and
  * returns the SVG element for inspection.
  *
- * @param data              Chart data input.
+ * @param data                              Chart data input.
  * @param data.minElevation
  * @param data.maxElevation
  * @param data.distance
  * @param samples
+ * @param cursorToggles                     Optional overrides for the three
+ *                                          Cursor & guides toggles (issue
+ *                                          #144). Defaults mirror block.json.
+ * @param cursorToggles.showCursor
+ * @param cursorToggles.showVerticalGuide
+ * @param cursorToggles.showHorizontalGuide
  * @return The rendered SVG element.
  */
 async function renderChart(
@@ -152,14 +158,26 @@ async function renderChart(
 		[ 1000, 200 ],
 		[ 2500, 150 ],
 		[ 5000, 300 ],
-	]
+	],
+	cursorToggles: {
+		showCursor?: boolean;
+		showVerticalGuide?: boolean;
+		showHorizontalGuide?: boolean;
+	} = {}
 ): Promise< SVGSVGElement > {
 	const container = document.createElement( 'div' );
 	document.body.appendChild( container );
 	const root = createRoot( container );
 	await act( async () => {
 		root.render(
-			createElement( Chart, { data, samples, typography: {} } )
+			createElement( Chart, {
+				data,
+				samples,
+				typography: {},
+				showCursor: cursorToggles.showCursor ?? true,
+				showVerticalGuide: cursorToggles.showVerticalGuide ?? true,
+				showHorizontalGuide: cursorToggles.showHorizontalGuide ?? false,
+			} )
 		);
 	} );
 	// Allow effects to run (fonts.ready Promise resolves on the next
@@ -368,7 +386,10 @@ describe( 'Chart', () => {
 		expect( idxCursor ).toBeGreaterThan( idxLabelsY );
 	} );
 
-	it( 'renders the static cursor group with its four children at fraction = 0.5 (Step 6)', async () => {
+	it( 'renders the static cursor group with hit-rect + vertical guide + dot at the default toggles (Step 6 + issue #144)', async () => {
+		// Default toggles: showCursor on, showVerticalGuide on,
+		// showHorizontalGuide OFF. So the documented children are
+		// hit-rect → vertical guide → dot (no horizontal guide).
 		const svg = await renderChart( {
 			minElevation: 0,
 			maxElevation: 500,
@@ -379,14 +400,12 @@ describe( 'Chart', () => {
 		);
 		expect( group ).not.toBeNull();
 
-		// Four children in the documented insertion order.
 		const order = Array.from( group!.children ).map(
 			( el ) => el.getAttribute( 'class' ) ?? ''
 		);
 		expect( order ).toEqual( [
 			'kntnt-gpx-blocks-elevation-cursor-hitarea',
-			'kntnt-gpx-blocks-elevation-cursor-line-v',
-			'kntnt-gpx-blocks-elevation-cursor-line-h',
+			'kntnt-gpx-blocks-elevation-cursor-guide-v',
 			'kntnt-gpx-blocks-elevation-cursor-dot',
 		] );
 
@@ -396,16 +415,13 @@ describe( 'Chart', () => {
 		)!;
 		expect( dot.getAttribute( 'r' ) ).toBe( '6' );
 		expect( dot.getAttribute( 'stroke-width' ) ).toBe( '2' );
-		const lines = group!.querySelectorAll(
-			'line.kntnt-gpx-blocks-elevation-cursor-line-v, line.kntnt-gpx-blocks-elevation-cursor-line-h'
+		const guide = group!.querySelector(
+			'line.kntnt-gpx-blocks-elevation-cursor-guide-v'
+		)!;
+		expect( guide.getAttribute( 'stroke-width' ) ).toBe( '1' );
+		expect( guide.getAttribute( 'stroke' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-cursor)'
 		);
-		expect( lines ).toHaveLength( 2 );
-		for ( const l of lines ) {
-			expect( l.getAttribute( 'stroke-width' ) ).toBe( '1' );
-			expect( l.getAttribute( 'stroke' ) ).toBe(
-				'var(--kntnt-gpx-blocks-elevation-cursor)'
-			);
-		}
 
 		// Colour wiring through the CSS variable.
 		expect( dot.getAttribute( 'fill' ) ).toBe(
@@ -420,6 +436,122 @@ describe( 'Chart', () => {
 			'rect.kntnt-gpx-blocks-elevation-cursor-hitarea'
 		)!;
 		expect( hit.getAttribute( 'fill' ) ).toBe( 'transparent' );
+	} );
+
+	it( 'renders both guides when both toggles are on (issue #144)', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ showHorizontalGuide: true }
+		);
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-cursor'
+		);
+		expect( group ).not.toBeNull();
+
+		// All four children in the documented insertion order.
+		const order = Array.from( group!.children ).map(
+			( el ) => el.getAttribute( 'class' ) ?? ''
+		);
+		expect( order ).toEqual( [
+			'kntnt-gpx-blocks-elevation-cursor-hitarea',
+			'kntnt-gpx-blocks-elevation-cursor-guide-v',
+			'kntnt-gpx-blocks-elevation-cursor-guide-h',
+			'kntnt-gpx-blocks-elevation-cursor-dot',
+		] );
+	} );
+
+	it( 'omits the vertical guide when showVerticalGuide is off (issue #144)', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ showVerticalGuide: false, showHorizontalGuide: true }
+		);
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-cursor'
+		)!;
+		expect(
+			group.querySelector(
+				'line.kntnt-gpx-blocks-elevation-cursor-guide-v'
+			)
+		).toBeNull();
+		expect(
+			group.querySelector(
+				'line.kntnt-gpx-blocks-elevation-cursor-guide-h'
+			)
+		).not.toBeNull();
+		// Dot and hit-rect always present when the cursor is on.
+		expect(
+			group.querySelector(
+				'circle.kntnt-gpx-blocks-elevation-cursor-dot'
+			)
+		).not.toBeNull();
+		expect(
+			group.querySelector(
+				'rect.kntnt-gpx-blocks-elevation-cursor-hitarea'
+			)
+		).not.toBeNull();
+	} );
+
+	it( 'omits the horizontal guide when showHorizontalGuide is off (default) (issue #144)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-cursor'
+		)!;
+		expect(
+			group.querySelector(
+				'line.kntnt-gpx-blocks-elevation-cursor-guide-h'
+			)
+		).toBeNull();
+	} );
+
+	it( 'omits the cursor group entirely when showCursor is off (issue #144)', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ showCursor: false }
+		);
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-cursor' )
+		).toBeNull();
+	} );
+
+	it( 'omits both guides but keeps the dot + hit-rect when both guide toggles are off (issue #144)', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ showVerticalGuide: false, showHorizontalGuide: false }
+		);
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-cursor'
+		)!;
+		const order = Array.from( group.children ).map(
+			( el ) => el.getAttribute( 'class' ) ?? ''
+		);
+		expect( order ).toEqual( [
+			'kntnt-gpx-blocks-elevation-cursor-hitarea',
+			'kntnt-gpx-blocks-elevation-cursor-dot',
+		] );
 	} );
 
 	it( 'positions the static cursor at projectCursor( interpolateSample( samples, distance × 0.5 ), scale )', async () => {
@@ -478,6 +610,9 @@ describe( 'Chart', () => {
 					},
 					samples: [],
 					typography: {},
+					showCursor: true,
+					showVerticalGuide: true,
+					showHorizontalGuide: false,
 				} )
 			);
 		} );
@@ -525,6 +660,9 @@ describe( 'Chart', () => {
 						fontSize: '20px',
 						fontWeight: '700',
 					},
+					showCursor: true,
+					showVerticalGuide: true,
+					showHorizontalGuide: false,
 				} )
 			);
 		} );
@@ -563,6 +701,9 @@ describe( 'Chart', () => {
 						fontSize: '20px',
 						fontWeight: '700',
 					},
+					showCursor: true,
+					showVerticalGuide: true,
+					showHorizontalGuide: false,
 				} )
 			);
 		} );
@@ -644,6 +785,9 @@ describe( 'Chart', () => {
 						data,
 						samples,
 						typography: { fontSize: '14px' },
+						showCursor: true,
+						showVerticalGuide: true,
+						showHorizontalGuide: false,
 					} )
 				);
 			} );
@@ -659,6 +803,9 @@ describe( 'Chart', () => {
 						data,
 						samples,
 						typography: { fontSize: '20px' },
+						showCursor: true,
+						showVerticalGuide: true,
+						showHorizontalGuide: false,
 					} )
 				);
 			} );
@@ -736,6 +883,9 @@ describe( 'Chart', () => {
 						data,
 						samples,
 						typography: {},
+						showCursor: true,
+						showVerticalGuide: true,
+						showHorizontalGuide: false,
 					} )
 				);
 			} );

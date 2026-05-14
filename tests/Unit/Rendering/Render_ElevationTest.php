@@ -462,3 +462,31 @@ test( 'render_chart_wrapper escapes the data-wp-context attribute value', functi
 	}
 	expect( $context_seen )->toBeTrue();
 } );
+
+// ---------------------------------------------------------------------------
+// Issue #144 — Cursor & guides toggles mirrored into the per-block context.
+// ---------------------------------------------------------------------------
+
+test( 'render_chart_wrapper mirrors the default Cursor & guides toggles into the per-block context', function (): void {
+	// A fresh-insert attribute bag (no explicit toggles) must produce
+	// the documented defaults: showCursor=true, showVerticalGuide=true,
+	// showHorizontalGuide=false.
+	$html = Render_Elevation::render_chart_wrapper( [], 'map-x' );
+
+	expect( $html )->toContain( '"showCursor":true' );
+	expect( $html )->toContain( '"showVerticalGuide":true' );
+	expect( $html )->toContain( '"showHorizontalGuide":false' );
+} );
+
+test( 'render_chart_wrapper threads the explicit Cursor & guides toggles into the per-block context', function (): void {
+	$attributes = [
+		'showCursor'          => false,
+		'showVerticalGuide'   => false,
+		'showHorizontalGuide' => true,
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->toContain( '"showCursor":false' );
+	expect( $html )->toContain( '"showVerticalGuide":false' );
+	expect( $html )->toContain( '"showHorizontalGuide":true' );
+} );

@@ -77,10 +77,13 @@
 	// Step 6 cursor default. The cursor's <circle> and the two L-shape
 	// guide <line> elements (rendered by view.ts on the frontend and
 	// chart.tsx in the editor) reference this custom property in their
-	// `fill` and `stroke` attributes. The default `#d63638` matches
-	// Map's `--kntnt-gpx-blocks-track-cursor-color` default so the
-	// synced cursors on the two blocks read as the same point on the
-	// track without any inspector configuration.
+	// `fill` and `stroke` attributes. Issue #144 lets the editor opt
+	// each guide line in or out independently and the cursor as a
+	// whole out entirely — when the cursor is gated off, no element
+	// referencing this variable enters the SVG at all. The default
+	// `#d63638` matches Map's `--kntnt-gpx-blocks-track-cursor-color`
+	// default so the synced cursors on the two blocks read as the same
+	// point on the track without any inspector configuration.
 	--kntnt-gpx-blocks-elevation-cursor: #d63638;
 
 	// Step 6 hit-rect affordances. `touch-action: none` keeps the

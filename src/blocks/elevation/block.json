@@ -36,6 +36,18 @@
 			"type": "string",
 			"default": "auto"
 		},
+		"showCursor": {
+			"type": "boolean",
+			"default": true
+		},
+		"showVerticalGuide": {
+			"type": "boolean",
+			"default": true
+		},
+		"showHorizontalGuide": {
+			"type": "boolean",
+			"default": false
+		},
 		"tooltipShowDistance": {
 			"type": "boolean",
 			"default": true

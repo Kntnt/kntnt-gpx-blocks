@@ -128,6 +128,17 @@ function readTickLabelTypography(
 }
 
 /**
+ * Cursor & guides toggle bundle threaded into the healthy `PreviewState`.
+ *
+ * @since 1.0.0
+ */
+interface CursorToggleBundle {
+	readonly showCursor: boolean;
+	readonly showVerticalGuide: boolean;
+	readonly showHorizontalGuide: boolean;
+}
+
+/**
  * Maps the live editor binding inputs to the preview-state union.
  *
  * Pure function. Distinguishes Step 3's Case A (no elevation data) and
@@ -144,6 +155,8 @@ function readTickLabelTypography(
  * @param error               REST error object, or `null`.
  * @param typography          Tick-labels typography forwarded into the
  *                            healthy state.
+ * @param cursorToggles       The three `Cursor & guides` toggles from
+ *                            issue #144.
  */
 function resolveBinding(
 	mapId: string,
@@ -152,7 +165,8 @@ function resolveBinding(
 	payload: BoundMapPayload | null,
 	isLoading: boolean,
 	error: BoundMapPayloadError | null,
-	typography: TypographyAttributes
+	typography: TypographyAttributes,
+	cursorToggles: CursorToggleBundle
 ): BindingResolution {
 	// The "auto" sentinel or an empty mapId is the pre-auto-pick state.
 	// With 0 configured Maps no candidate exists; render the no-map
@@ -247,6 +261,9 @@ function resolveBinding(
 			},
 			samples: payload.samples,
 			typography,
+			showCursor: cursorToggles.showCursor,
+			showVerticalGuide: cursorToggles.showVerticalGuide,
+			showHorizontalGuide: cursorToggles.showHorizontalGuide,
 		},
 		bindingBroken: false,
 	};
@@ -383,6 +400,25 @@ export function ElevationEdit( {
 		typeof attributes.tooltipShowHeight === 'boolean'
 			? attributes.tooltipShowHeight
 			: true;
+
+	// Read the three Cursor & guides toggles from issue #144 with the
+	// same default semantics block.json declares (cursor on, vertical
+	// guide on, horizontal guide off). The master toggle gates the two
+	// sub-toggles in the inspector tree and gates the cursor lifecycle
+	// in the chart + view layer.
+	const showCursor =
+		typeof attributes.showCursor === 'boolean'
+			? attributes.showCursor
+			: true;
+	const showVerticalGuide =
+		typeof attributes.showVerticalGuide === 'boolean'
+			? attributes.showVerticalGuide
+			: true;
+	const showHorizontalGuide =
+		typeof attributes.showHorizontalGuide === 'boolean'
+			? attributes.showHorizontalGuide
+			: false;
+
 	const mapId =
 		typeof attributes.mapId === 'string' ? attributes.mapId : 'auto';
 
@@ -417,7 +453,8 @@ export function ElevationEdit( {
 		data,
 		isLoading,
 		error,
-		typography
+		typography,
+		{ showCursor, showVerticalGuide, showHorizontalGuide }
 	);
 
 	const showPanel = shouldShowDataSourcePanel(
@@ -438,6 +475,45 @@ export function ElevationEdit( {
 				/>
 			) }
 			<InspectorControls>
+				<PanelBody
+					title={ __( 'Cursor & guides', 'kntnt-gpx-blocks' ) }
+				>
+					<ToggleControl
+						label={ __( 'Cursor', 'kntnt-gpx-blocks' ) }
+						checked={ showCursor }
+						onChange={ ( value: boolean ) =>
+							setAttributes( { showCursor: value } )
+						}
+					/>
+					{ showCursor && (
+						<>
+							<ToggleControl
+								label={ __(
+									'Vertical guide',
+									'kntnt-gpx-blocks'
+								) }
+								checked={ showVerticalGuide }
+								onChange={ ( value: boolean ) =>
+									setAttributes( {
+										showVerticalGuide: value,
+									} )
+								}
+							/>
+							<ToggleControl
+								label={ __(
+									'Horizontal guide',
+									'kntnt-gpx-blocks'
+								) }
+								checked={ showHorizontalGuide }
+								onChange={ ( value: boolean ) =>
+									setAttributes( {
+										showHorizontalGuide: value,
+									} )
+								}
+							/>
+						</>
+					) }
+				</PanelBody>
 				<PanelBody title={ __( 'Tooltip info', 'kntnt-gpx-blocks' ) }>
 					<ToggleControl
 						label={ __( 'Distance', 'kntnt-gpx-blocks' ) }

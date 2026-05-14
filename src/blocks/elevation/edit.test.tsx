@@ -226,12 +226,74 @@ function renderAndCapture(
 }
 
 describe( 'ElevationEdit Tooltip info toggles (issue #143)', () => {
-	it( 'labels the toggles "Distance" and "Height" (drops the redundant "Show " prefix)', () => {
+	it( 'labels the Tooltip info toggles "Distance" and "Height" (drops the redundant "Show " prefix)', () => {
 		renderAndCapture( {} );
 
-		expect( capturedToggleLabels ).toEqual( [ 'Distance', 'Height' ] );
+		// The full order with defaults is Cursor → Vertical guide →
+		// Horizontal guide → Distance → Height. The pin here is the
+		// last two labels (the Tooltip info section) and the absence
+		// of the legacy "Show " prefix anywhere in the inspector.
+		expect( capturedToggleLabels ).toContain( 'Distance' );
+		expect( capturedToggleLabels ).toContain( 'Height' );
 		expect( capturedToggleLabels ).not.toContain( 'Show distance' );
 		expect( capturedToggleLabels ).not.toContain( 'Show height' );
+	} );
+} );
+
+describe( 'ElevationEdit Cursor & guides toggles (issue #144)', () => {
+	it( 'renders the `Cursor & guides` PanelBody above `Tooltip info`', () => {
+		renderAndCapture( {} );
+
+		const cursorIdx = capturedPanelBodyTitles.indexOf( 'Cursor & guides' );
+		const tooltipIdx = capturedPanelBodyTitles.indexOf( 'Tooltip info' );
+		expect( cursorIdx ).toBeGreaterThanOrEqual( 0 );
+		expect( tooltipIdx ).toBeGreaterThan( cursorIdx );
+	} );
+
+	it( 'renders all three Cursor & guides toggles in the documented order when the master is on', () => {
+		renderAndCapture( {} );
+
+		const cursorMasterIdx = capturedToggleLabels.indexOf( 'Cursor' );
+		const verticalIdx = capturedToggleLabels.indexOf( 'Vertical guide' );
+		const horizontalIdx =
+			capturedToggleLabels.indexOf( 'Horizontal guide' );
+		expect( cursorMasterIdx ).toBe( 0 );
+		expect( verticalIdx ).toBe( 1 );
+		expect( horizontalIdx ).toBe( 2 );
+	} );
+
+	it( 'hides the two guide toggles when showCursor is false', () => {
+		renderAndCapture( { showCursor: false } );
+
+		// The master `Cursor` toggle is still rendered; the sub-toggles
+		// are not.
+		expect( capturedToggleLabels ).toContain( 'Cursor' );
+		expect( capturedToggleLabels ).not.toContain( 'Vertical guide' );
+		expect( capturedToggleLabels ).not.toContain( 'Horizontal guide' );
+	} );
+
+	it( 'reappears with the saved sub-toggle values when showCursor is re-enabled (no clear-on-hide)', () => {
+		// Round-trip: saved values survive hide → re-enable untouched.
+		renderAndCapture( {
+			showCursor: false,
+			showVerticalGuide: false,
+			showHorizontalGuide: true,
+		} );
+		// While hidden, no setAttributes call must wipe either sub-toggle.
+		const wipes = capturedSetAttributesCalls.filter(
+			( call ) =>
+				'showVerticalGuide' in call || 'showHorizontalGuide' in call
+		);
+		expect( wipes ).toEqual( [] );
+
+		// Re-enable: the sub-toggles now appear with their saved values.
+		renderAndCapture( {
+			showCursor: true,
+			showVerticalGuide: false,
+			showHorizontalGuide: true,
+		} );
+		expect( capturedToggleLabels ).toContain( 'Vertical guide' );
+		expect( capturedToggleLabels ).toContain( 'Horizontal guide' );
 	} );
 } );
 

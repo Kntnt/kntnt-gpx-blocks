@@ -107,19 +107,26 @@ export function elevationColorRows(): readonly ColorRow[] {
  * saved value is preserved so re-enabling the master toggle restores
  * the previous picker state.
  *
- * Exported for direct testing against the acceptance-criteria table in
- * issue #143; the caller in {@link InspectorColorPanel} consumes the
- * resulting set to filter {@link elevationColorRows}.
+ * Issue #144 extends the same symmetry to the cursor: `cursorColor` is
+ * hidden when `showCursor` is off, since the cursor never enters the
+ * SVG in that state and the colour has no visible effect.
+ *
+ * Exported for direct testing against the acceptance-criteria tables
+ * in issues #143 and #144; the caller in {@link InspectorColorPanel}
+ * consumes the resulting set to filter {@link elevationColorRows}.
  *
  * @since 1.0.0
  *
  * @param tooltipShowDistance Whether the `Distance` toggle is on.
  * @param tooltipShowHeight   Whether the `Height` toggle is on.
+ * @param showCursor          Whether the `Cursor` toggle is on
+ *                            (issue #144).
  * @return Attribute keys whose rows should be omitted.
  */
 export function hiddenElevationColorAttributes(
 	tooltipShowDistance: boolean,
-	tooltipShowHeight: boolean
+	tooltipShowHeight: boolean,
+	showCursor: boolean
 ): ReadonlySet< string > {
 	const hidden = new Set< string >();
 	if ( ! tooltipShowDistance ) {
@@ -130,6 +137,9 @@ export function hiddenElevationColorAttributes(
 	}
 	if ( ! tooltipShowDistance && ! tooltipShowHeight ) {
 		hidden.add( 'tooltipBackgroundColor' );
+	}
+	if ( ! showCursor ) {
+		hidden.add( 'cursorColor' );
 	}
 	return hidden;
 }
@@ -166,9 +176,10 @@ function readColor(
 
 /**
  * Renders the Color panel, with rows filtered by the symmetry rule from
- * issue #143 — rows that depend on a `Tooltip info` toggle are omitted
- * when their master toggle is off, and `Tooltip background` is omitted
- * only when *every* content source backing it is also off.
+ * issues #143 and #144 — rows that depend on a master toggle are
+ * omitted when that toggle is off. `Tooltip background` is omitted
+ * only when *every* content source backing it is also off; `Cursor`
+ * hides whenever `showCursor` is off (#144).
  *
  * @since 1.0.0
  *
@@ -180,8 +191,9 @@ export function InspectorColorPanel( {
 	attributes,
 	setAttributes,
 }: InspectorColorPanelProps ): JSX.Element {
-	// Read the two `Tooltip info` toggles with the same default-on
-	// semantics `ElevationEdit` uses, so a fresh insert hides nothing.
+	// Read the two `Tooltip info` toggles plus the `Cursor` master
+	// toggle with the same default-on semantics `ElevationEdit` uses,
+	// so a fresh insert hides nothing.
 	const tooltipShowDistance =
 		typeof attributes.tooltipShowDistance === 'boolean'
 			? attributes.tooltipShowDistance
@@ -190,10 +202,15 @@ export function InspectorColorPanel( {
 		typeof attributes.tooltipShowHeight === 'boolean'
 			? attributes.tooltipShowHeight
 			: true;
+	const showCursor =
+		typeof attributes.showCursor === 'boolean'
+			? attributes.showCursor
+			: true;
 
 	const hidden = hiddenElevationColorAttributes(
 		tooltipShowDistance,
-		tooltipShowHeight
+		tooltipShowHeight,
+		showCursor
 	);
 	const rows = elevationColorRows().filter(
 		( row ) => ! hidden.has( row.attribute )

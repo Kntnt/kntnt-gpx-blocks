@@ -124,6 +124,9 @@ describe( 'ElevationPreview', () => {
 				[ 5000, 200 ],
 			],
 			typography: {},
+			showCursor: true,
+			showVerticalGuide: true,
+			showHorizontalGuide: false,
 		} );
 		expect( html ).not.toContain(
 			'kntnt-gpx-blocks-elevation-preview-warning'

@@ -5,10 +5,13 @@
  * Step 1 of the rebuild plan (`docs/elevation-rebuild.md`) fixed the
  * block's surface area at 35 attributes (3 behavioural + 8 colour + 24
  * typography) and 6 supports blocks; Step 5 added the `plotFillColor`
- * row, raising the total to 36 (3 + 9 + 24). These tests lock that
- * contract so later steps cannot drift away from it accidentally, and
- * so an editor post saved against the schema continues to round-trip
- * cleanly through subsequent step releases.
+ * row, raising the total to 36 (3 + 9 + 24); issue #144 adds three
+ * cursor & guides booleans (`showCursor`, `showVerticalGuide`,
+ * `showHorizontalGuide`), raising the total to 39 (6 behavioural + 9
+ * colour + 24 typography). These tests lock that contract so later
+ * steps cannot drift away from it accidentally, and so an editor post
+ * saved against the schema continues to round-trip cleanly through
+ * subsequent step releases.
  *
  * The supports tests in particular lock two non-obvious facts: the use
  * of the experimental `__experimentalBorder` key (the unprefixed
@@ -45,7 +48,7 @@ function elevation_block_json_decoded(): array {
 	return $decoded;
 }
 
-test( 'block.json declares exactly the 36 attributes fixed by Step 1 + Step 5', function (): void {
+test( 'block.json declares exactly the 39 attributes fixed by Step 1 + Step 5 + issue #144', function (): void {
 
 	$decoded    = elevation_block_json_decoded();
 	$attributes = $decoded['attributes'] ?? [];
@@ -53,8 +56,11 @@ test( 'block.json declares exactly the 36 attributes fixed by Step 1 + Step 5', 
 	expect( $attributes )->toBeArray();
 
 	$expected = [
-		// Behavioural (3).
+		// Behavioural (6 — issue #144 adds the three Cursor & guides toggles).
 		'mapId',
+		'showCursor',
+		'showVerticalGuide',
+		'showHorizontalGuide',
 		'tooltipShowDistance',
 		'tooltipShowHeight',
 		// Colours (9 — Step 5 adds plotFillColor).
@@ -87,7 +93,7 @@ test( 'block.json declares exactly the 36 attributes fixed by Step 1 + Step 5', 
 		}
 	}
 
-	expect( count( $expected ) )->toBe( 36 );
+	expect( count( $expected ) )->toBe( 39 );
 
 	sort( $expected );
 	$actual = array_keys( $attributes );
@@ -105,6 +111,9 @@ test( 'behavioural attributes carry the right defaults', function (): void {
 	expect( $attributes['mapId']['default'] ?? null )->toBe( 'auto' );
 	expect( $attributes['tooltipShowDistance']['default'] ?? null )->toBe( true );
 	expect( $attributes['tooltipShowHeight']['default'] ?? null )->toBe( true );
+	expect( $attributes['showCursor']['default'] ?? null )->toBe( true );
+	expect( $attributes['showVerticalGuide']['default'] ?? null )->toBe( true );
+	expect( $attributes['showHorizontalGuide']['default'] ?? null )->toBe( false );
 
 } );
 

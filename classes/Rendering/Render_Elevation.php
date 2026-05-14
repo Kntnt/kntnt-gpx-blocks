@@ -215,12 +215,20 @@ final class Render_Elevation {
 	 *   - `role="img"`
 	 *   - localised `aria-label`
 	 *   - `data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'`
-	 *   - `data-wp-context='{"mapId":"…"}'`
+	 *   - `data-wp-context='{"mapId":"…","showCursor":…,"showVerticalGuide":…,"showHorizontalGuide":…}'`
+	 *     The three booleans carry the issue #144 Cursor & guides
+	 *     toggles into the JS view module without bloating the shared
+	 *     `state[ mapId ]` slice. The per-block context is the right
+	 *     scope: two Elevation blocks bound to the same Map may
+	 *     legitimately disagree about cursor visibility.
 	 *   - `data-wp-init="callbacks.initElevation"`
 	 *   - `data-wp-watch--cursor="callbacks.onElevationCursorChange"`
 	 *     (Step 6 — fires on every change to `state[ mapId ].fraction`,
 	 *     i.e. whenever the user scrubs Map's polyline or the chart's
-	 *     own hit-rect; the watch repositions the cursor SVG group)
+	 *     own hit-rect; the watch repositions the cursor SVG group.
+	 *     When `showCursor` is off, `view.ts` returns silently from this
+	 *     callback so the watch costs nothing functionally and the SVG
+	 *     never grows a cursor `<g>`.)
 	 *
 	 * `role="img"` is kept rather than upgraded to `"application"`:
 	 * the cursor is mouse/touch-only in Step 6 (no keyboard handler),
@@ -244,7 +252,19 @@ final class Render_Elevation {
 		// phpcs:ignore Generic.Files.LineLength.TooLong -- Translator strings must be a single literal per WordPress.WP.I18n.
 		$noscript_text = esc_html__( 'This elevation profile requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
 
-		$context = wp_json_encode( [ 'mapId' => $map_id ] );
+		// Mirror the three Cursor & guides toggles (issue #144) into the
+		// per-block Interactivity context. Defaults match block.json:
+		// cursor on, vertical guide on, horizontal guide off.
+		$show_cursor = isset( $attributes['showCursor'] ) ? (bool) $attributes['showCursor'] : true;
+		$show_vertical_guide = isset( $attributes['showVerticalGuide'] ) ? (bool) $attributes['showVerticalGuide'] : true;
+		$show_horizontal_guide = isset( $attributes['showHorizontalGuide'] ) ? (bool) $attributes['showHorizontalGuide'] : false;
+
+		$context = wp_json_encode( [
+			'mapId' => $map_id,
+			'showCursor' => $show_cursor,
+			'showVerticalGuide' => $show_vertical_guide,
+			'showHorizontalGuide' => $show_horizontal_guide,
+		] );
 
 		return sprintf(
 			'<div %1$s'

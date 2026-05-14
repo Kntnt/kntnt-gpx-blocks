@@ -73,6 +73,9 @@ export type PreviewState =
 			readonly data: MarginsInput;
 			readonly samples: readonly ElevationSample[];
 			readonly typography: TypographyAttributes;
+			readonly showCursor: boolean;
+			readonly showVerticalGuide: boolean;
+			readonly showHorizontalGuide: boolean;
 	  };
 
 /**
@@ -175,6 +178,9 @@ export function ElevationPreview( {
 					data={ state.data }
 					samples={ state.samples }
 					typography={ state.typography }
+					showCursor={ state.showCursor }
+					showVerticalGuide={ state.showVerticalGuide }
+					showHorizontalGuide={ state.showHorizontalGuide }
 				/>
 			);
 	}

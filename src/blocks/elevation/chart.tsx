@@ -79,12 +79,22 @@ export type ElevationSample = readonly [ number, number ];
  * effect that runs `computeMargins`; without it, a typography change
  * in the inspector would not trigger a re-measurement.
  *
+ * `showCursor`, `showVerticalGuide`, and `showHorizontalGuide` carry
+ * the three new toggles from issue #144's `Cursor & guides` Inspector
+ * panel. They default-on / default-on / default-off so an attribute bag
+ * with no explicit values mirrors a fresh-insert block. The editor
+ * preview renders the cursor at a static `fraction = 0.5` so the user
+ * sees the live effect of the toggles, including which guides are on.
+ *
  * @since 1.0.0
  */
 export interface ChartProps {
 	readonly data: MarginsInput;
 	readonly samples: readonly ElevationSample[];
 	readonly typography: TypographyAttributes;
+	readonly showCursor: boolean;
+	readonly showVerticalGuide: boolean;
+	readonly showHorizontalGuide: boolean;
 }
 
 /**
@@ -125,15 +135,21 @@ function readDimensions( svg: SVGSVGElement ): Dimensions {
  *
  * @since 1.0.0
  *
- * @param props            See {@link ChartProps}.
- * @param props.data       Chart data (elevation range + distance).
- * @param props.samples    LTTB-downsampled (distance, elevation) pairs.
- * @param props.typography Tick-labels typography bundle.
+ * @param props                     See {@link ChartProps}.
+ * @param props.data                Chart data (elevation range + distance).
+ * @param props.samples             LTTB-downsampled (distance, elevation) pairs.
+ * @param props.typography          Tick-labels typography bundle.
+ * @param props.showCursor          Whether to render the cursor at all (issue #144).
+ * @param props.showVerticalGuide   Whether the vertical guide line is drawn.
+ * @param props.showHorizontalGuide Whether the horizontal guide line is drawn.
  */
 export function Chart( {
 	data,
 	samples,
 	typography,
+	showCursor,
+	showVerticalGuide,
+	showHorizontalGuide,
 }: ChartProps ): JSX.Element {
 	const svgRef = useRef< SVGSVGElement | null >( null );
 	const [ margins, setMargins ] = useState< Margins | null >( null );
@@ -408,7 +424,7 @@ export function Chart( {
 							</text>
 						) ) }
 					</g>
-					{ previewCursor !== null && (
+					{ showCursor && previewCursor !== null && (
 						<g className="kntnt-gpx-blocks-elevation-cursor">
 							<rect
 								className="kntnt-gpx-blocks-elevation-cursor-hitarea"
@@ -418,24 +434,28 @@ export function Chart( {
 								height={ scale.plotBottom - scale.plotTop }
 								fill="transparent"
 							/>
-							<line
-								className="kntnt-gpx-blocks-elevation-cursor-line-v"
-								x1={ previewCursor.cx }
-								y1={ previewCursor.cy }
-								x2={ previewCursor.cx }
-								y2={ scale.plotBottom }
-								stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
-								strokeWidth={ 1 }
-							/>
-							<line
-								className="kntnt-gpx-blocks-elevation-cursor-line-h"
-								x1={ previewCursor.cx }
-								y1={ previewCursor.cy }
-								x2={ scale.plotLeft }
-								y2={ previewCursor.cy }
-								stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
-								strokeWidth={ 1 }
-							/>
+							{ showVerticalGuide && (
+								<line
+									className="kntnt-gpx-blocks-elevation-cursor-guide-v"
+									x1={ previewCursor.cx }
+									y1={ previewCursor.cy }
+									x2={ previewCursor.cx }
+									y2={ scale.plotBottom }
+									stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
+									strokeWidth={ 1 }
+								/>
+							) }
+							{ showHorizontalGuide && (
+								<line
+									className="kntnt-gpx-blocks-elevation-cursor-guide-h"
+									x1={ previewCursor.cx }
+									y1={ previewCursor.cy }
+									x2={ scale.plotLeft }
+									y2={ previewCursor.cy }
+									stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
+									strokeWidth={ 1 }
+								/>
+							) }
 							<circle
 								className="kntnt-gpx-blocks-elevation-cursor-dot"
 								cx={ previewCursor.cx }
