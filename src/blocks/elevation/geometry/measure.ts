@@ -36,9 +36,8 @@
  * cross-browser primitive that returns the exact rendered geometry
  * for an SVG `<text>` node; computing the same metric from font
  * metrics + character widths would require duplicating each font's
- * metrics on the client side, which is exactly the brittleness the
- * Step 3 grilling decided against (see *Rendering architecture* in
- * `docs/elevation-rebuild.md`).
+ * metrics on the client side, which is exactly the brittleness this
+ * module exists to avoid.
  *
  * @since 1.0.0
  */
@@ -127,11 +126,11 @@ const FALLBACK_FONT_SIZE_PX = 16;
  *
  * When `className` is supplied, the hidden `<text>` node carries that
  * class so SCSS rules scoped to the class apply during measurement.
- * Step 7 of `docs/elevation-rebuild.md` uses this to measure the
- * tooltip's two rows under their class-scoped typography custom
- * properties (`…-tooltip-distance` / `…-tooltip-height`) rather than
- * under the SVG host's inherited tick-label typography. Existing
- * tick-label call sites pass no class and are unchanged in behaviour.
+ * The tooltip uses this to measure its two rows under their
+ * class-scoped typography custom properties (`…-tooltip-distance` /
+ * `…-tooltip-height`) rather than under the SVG host's inherited
+ * tick-label typography. Tick-label call sites pass no class and
+ * inherit the SVG host's typography.
  *
  * @since 1.0.0
  *

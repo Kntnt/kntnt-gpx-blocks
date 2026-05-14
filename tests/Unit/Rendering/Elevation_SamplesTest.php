@@ -6,8 +6,7 @@
  * stubs. The class composes the (distance, elevation) extraction over
  * the cached GeoJSON with `Lttb::downsample()` to produce the
  * LTTB-reduced array the Elevation block emits into its per-mapId
- * Interactivity state slice. Tests pin every documented edge case from
- * Step 5 of `docs/elevation-rebuild.md`.
+ * Interactivity state slice. Tests pin every documented edge case.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

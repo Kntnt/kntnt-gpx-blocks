@@ -1,12 +1,11 @@
 /**
  * Chart scale helper for the elevation chart.
  *
- * Step 5 of `docs/elevation-rebuild.md` extracts the projection +
- * tick-generation logic from `chart.tsx` and `view.ts` into a single
- * shared object. Both hosts (React in the editor, vanilla DOM under the
+ * Owns the projection + tick-generation logic shared by both hosts of
+ * the chart. Both hosts (React in the editor, vanilla DOM under the
  * Interactivity API on the frontend) consume the same {@link ChartScale}
- * to draw axes, tick marks, tick labels, the elevation curve (Step 5),
- * the cursor (Step 6), and the tooltip (Step 7).
+ * to draw axes, tick marks, tick labels, the elevation curve, the
+ * cursor, and the tooltip.
  *
  * The helper is pure: no DOM, no React state. Its inputs are the chart's
  * data + cached margins + current rendered SVG dimensions; its outputs

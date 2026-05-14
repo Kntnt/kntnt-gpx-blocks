@@ -13,11 +13,8 @@
  *     projection callbacks into the `(cx, cy)` SVG-space coordinate the
  *     cursor's circle and the tooltip's anchor read from.
  *
- * Step 6 placed these helpers in `geometry/cursor.ts` because the cursor
- * was their only consumer. Step 7 of `docs/elevation-rebuild.md` adds the
- * tooltip as a second consumer, so the helpers move into their own
- * SRP-clean module under `geometry/`. Behaviour is identical; only the
- * module location changes.
+ * Used by both the cursor and the tooltip, hence the SRP-clean module
+ * under `geometry/`.
  *
  * @since 1.0.0
  */

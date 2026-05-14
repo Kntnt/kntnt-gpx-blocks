@@ -1,10 +1,10 @@
 /**
  * Unit tests for the SVG-DOM helpers backing the elevation tooltip.
  *
- * Step 7 of `docs/elevation-rebuild.md` puts the tooltip inside the chart
- * SVG: a `<g>` group hosting a `<title>`, a `<rect>` background, and up
- * to two `<text>` rows. This file pins the imperative DOM construction
- * + position + visibility helpers; the placement math lives in
+ * The tooltip lives inside the chart SVG as a `<g>` group hosting a
+ * `<title>`, a `<rect>` background, and up to two `<text>` rows. This
+ * file pins the imperative DOM construction + position + visibility
+ * helpers; the placement math lives in
  * `geometry/tooltip-placement.test.ts` and the formatting in
  * `geometry/tooltip-format.test.ts`.
  *

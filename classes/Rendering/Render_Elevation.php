@@ -2,9 +2,9 @@
 /**
  * Server-side render handler for the GPX Elevation block.
  *
- * Step 3 of `docs/elevation-rebuild.md` — the chart geometry (axes,
- * ticks, labels, curve, cursor, tooltip) is rendered client-side via
- * the Interactivity API. This class is responsible for two surfaces:
+ * The chart geometry (axes, ticks, labels, curve, cursor, tooltip) is
+ * rendered client-side via the Interactivity API. This class is
+ * responsible for two surfaces:
  *
  *   - The chart wrapper. In the healthy state it emits the
  *     Interactivity-bound `<div>` (the JS view module mounts the SVG
@@ -16,10 +16,9 @@
  *     `no-map`, `bound-deleted`, `bound-unconfigured`,
  *     `no-elevation-data`, `zero-distance`.
  *
- * The class never emits `<svg>` markup itself — see
- * `docs/elevation-rebuild.md` § *Rendering architecture* for the
- * cross-cutting decision that JS owns every part of the chart from
- * Step 3 onward.
+ * The class never emits `<svg>` markup itself: JS owns every part of
+ * the chart so the editor preview and the rendered frontend share a
+ * single renderer.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

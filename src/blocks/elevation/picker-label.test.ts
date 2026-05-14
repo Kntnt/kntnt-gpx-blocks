@@ -1,8 +1,7 @@
 /**
  * Unit tests for {@link pickerLabel}.
  *
- * Pins the three-tier label-resolution contract from Step 2 of
- * `docs/elevation-rebuild.md`:
+ * Pins the three-tier label-resolution contract:
  *
  *   1. `attributes.metadata.name` wins when present and non-whitespace.
  *   2. `attributes.anchor` is consulted when tier 1 is unset.

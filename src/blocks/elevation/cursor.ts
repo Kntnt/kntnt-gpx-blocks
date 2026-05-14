@@ -1,9 +1,9 @@
 /**
  * SVG-DOM helpers for the elevation chart's cursor.
  *
- * Step 6 of `docs/elevation-rebuild.md` puts the cursor inside the chart
- * SVG so it shares the same coordinate system as the axes, ticks, and
- * curve. Up to four child elements under a single
+ * The cursor lives inside the chart SVG so it shares the same
+ * coordinate system as the axes, ticks, and curve. Up to four child
+ * elements under a single
  * `<g class="kntnt-gpx-blocks-elevation-cursor">` group:
  *
  *   - `<rect>` — invisible hit-target sized to the plot rectangle. Catches

@@ -3,13 +3,13 @@
  *
  * Routes the resolved binding state to the right preview body. Pure
  * React: no Interactivity runtime, no `<ServerSideRender>`, no DOM
- * polling — see `docs/elevation-rebuild.md` § *Rendering architecture*
- * for the rationale.
+ * polling — the editor preview and the rendered frontend share one
+ * deterministic renderer.
  *
  * The component is a discriminated union on the resolved binding state.
- * From Step 3 onward the union carries six warning kinds, a transient
- * `loading` kind that renders nothing, and the `healthy` kind that
- * forwards the cached statistics into {@link Chart}:
+ * The union carries six warning kinds, a transient `loading` kind that
+ * renders nothing, and the `healthy` kind that forwards the cached
+ * statistics into {@link Chart}:
  *
  *   - `'no-map'`             → no configured Map on the page.
  *   - `'bound-deleted'`      → bound `mapId` does not match any

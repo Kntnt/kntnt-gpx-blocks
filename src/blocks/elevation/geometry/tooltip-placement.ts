@@ -1,14 +1,14 @@
 /**
  * Pure placement algorithm for the elevation chart's tooltip.
  *
- * Step 7 of `docs/elevation-rebuild.md` pins the tooltip's vertical
- * anchor to the top of the plot rectangle and its horizontal position
- * to the cursor's `cx`. When the tooltip on the right side of the
- * cursor would otherwise extend past the plot rectangle's right edge,
- * it flips to the left side of the cursor. A 0.5em hysteresis band
- * prevents flip oscillation when the cursor wiggles at the threshold:
- * once on the left, the tooltip flips back to the right only when the
- * cursor has moved 0.5em past the threshold in the opposite direction.
+ * The tooltip's vertical anchor is the top of the plot rectangle; its
+ * horizontal position is the cursor's `cx`. When the tooltip on the
+ * right side of the cursor would otherwise extend past the plot
+ * rectangle's right edge, it flips to the left side of the cursor. A
+ * 0.5em hysteresis band prevents flip oscillation when the cursor
+ * wiggles at the threshold: once on the left, the tooltip flips back
+ * to the right only when the cursor has moved 0.5em past the threshold
+ * in the opposite direction.
  *
  * The function takes the previous side as input (rather than maintaining
  * its own state) so it stays trivially testable — deterministic in / out.

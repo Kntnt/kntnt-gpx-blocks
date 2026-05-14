@@ -7,8 +7,8 @@
  *   - Map: gate is `minHeight` blank alone; value is `'30vh'`. A
  *     user-set `aspectRatio` does not suppress the default — the floor
  *     coexists with the ratio via the normal CSS cascade.
- *   - Elevation (Step 3 of docs/elevation-rebuild.md): gate is
- *     `minHeight` blank alone; value is `'15vh'`. Same shape as Map.
+ *   - Elevation: gate is `minHeight` blank alone; value is `'15vh'`.
+ *     Same shape as Map.
  *
  * @since 1.0.0
  */

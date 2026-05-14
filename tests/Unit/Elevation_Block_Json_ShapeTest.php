@@ -2,23 +2,17 @@
 /**
  * Structural assertions over the GPX Elevation block.json file.
  *
- * Step 1 of the rebuild plan (`docs/elevation-rebuild.md`) fixed the
- * block's surface area at 35 attributes (3 behavioural + 8 colour + 24
- * typography) and 6 supports blocks; Step 5 added the `plotFillColor`
- * row, raising the total to 36 (3 + 9 + 24); issue #144 adds three
- * cursor & guides booleans (`showCursor`, `showVerticalGuide`,
- * `showHorizontalGuide`), raising the total to 39 (6 behavioural + 9
- * colour + 24 typography). These tests lock that contract so later
- * steps cannot drift away from it accidentally, and so an editor post
- * saved against the schema continues to round-trip cleanly through
- * subsequent step releases.
+ * The block's surface area is 39 attributes (6 behavioural + 9 colour +
+ * 24 typography) plus 6 supports blocks. These tests lock that
+ * contract so a change to the schema cannot drift away from it
+ * accidentally, and so an editor post saved against the schema
+ * continues to round-trip cleanly across releases.
  *
  * The supports tests in particular lock two non-obvious facts: the use
  * of the experimental `__experimentalBorder` key (the unprefixed
  * `border` key is silently ignored by Gutenberg, issue #107) and the
  * deliberate `spacing.padding` divergence from the Map block (Elevation
- * draws into the content box, so padding is meaningful — see the doc's
- * *Application scope* section).
+ * draws into the content box, so padding is meaningful).
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

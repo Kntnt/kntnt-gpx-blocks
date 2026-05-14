@@ -10,17 +10,13 @@
  * Letter spacing, Decoration, Letter case) map to eight attribute
  * suffixes — Appearance pairs `FontWeight` + `FontStyle`. The component
  * reads and writes each attribute through `attributes[ ${prefix}${suffix} ]`
- * /  `setAttributes( { [ ${prefix}${suffix} ]: value } )`, so a Step 8
- * migration of the Map block's existing two Typography panels onto the
- * same component is purely a JSX swap — no attribute keys move.
+ * /  `setAttributes( { [ ${prefix}${suffix} ]: value } )`, so hosts
+ * differ only in the `prefix` they pass in.
  *
  * The `defaultVisibility` prop controls which items show at the top of
  * the panel vs. living behind the ellipsis menu, but core remembers the
  * editor's per-item preference once they reveal an item, so the prop
  * only seeds the first-mount state.
- *
- * Pinned by `docs/elevation-rebuild.md`, Step 1, *Shared
- * TypographyToolsPanel component*.
  *
  * @since 1.0.0
  */

@@ -1,21 +1,16 @@
 /**
  * Data Source inspector panel for the GPX Elevation block.
  *
- * Conditionally rendered per the Step 2 spec
- * (`docs/elevation-rebuild.md`): visible only when the page has ≥ 2
- * configured GPX Map blocks, OR the current binding is broken AND
- * ≥ 1 configured Map remains. The conditional sits in `edit.tsx`,
- * which decides whether to mount this component at all; the
- * component itself simply renders the panel when invoked.
+ * Visible only when the page has ≥ 2 configured GPX Map blocks, OR the
+ * current binding is broken AND ≥ 1 configured Map remains. The
+ * conditional sits in `edit.tsx`, which decides whether to mount this
+ * component at all; the component itself simply renders the panel when
+ * invoked.
  *
- * **Broken-binding placeholder option (correction to the Step 2 spec).**
+ * **Broken-binding placeholder option.**
  * When the binding is broken (`bindingBroken === true`), the picker
  * prepends a synthetic empty-value placeholder option labelled
- * "— Select a GPX Map —". The Step 2 spec originally said no synthetic
- * placeholder would be added because the `SelectControl` would "render
- * with no matching value — the WordPress default behaviour (an empty
- * selection visually, with the dropdown invitation still active)".
- * That assumption turned out to be wrong: a native `<select>` with a
+ * "— Select a GPX Map —". Without it, a native `<select>` with a
  * `value` that does not match any option falls back to displaying the
  * **first** option as selected, which (a) misleads the user into
  * thinking the first remaining Map is already bound, and (b) swallows
@@ -99,8 +94,7 @@ export function InspectorDataSource(
  * Determines whether the Data Source panel should be rendered for the
  * given binding state.
  *
- * Pinned by the Step 2 rule
- * (`docs/elevation-rebuild.md`, *Picker visibility*):
+ * Picker visibility rule:
  *
  *   - ≥ 2 configured Maps           → show the panel.
  *   - Binding broken AND ≥ 1 Map    → show the panel.

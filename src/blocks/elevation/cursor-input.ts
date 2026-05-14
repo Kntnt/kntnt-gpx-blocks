@@ -1,10 +1,7 @@
 /**
  * Pointer-input layer for the elevation chart's cursor.
  *
- * Step 6 of `docs/elevation-rebuild.md` defines the pointer protocol on
- * the chart's hit-rect. This module owns the implementation.
- *
- * The matrix:
+ * Implements the pointer protocol on the chart's hit-rect. The matrix:
  *
  * | Event           | Target     | Condition                                       | Action                                                                          |
  * |-----------------|------------|-------------------------------------------------|---------------------------------------------------------------------------------|

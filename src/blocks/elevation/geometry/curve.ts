@@ -1,8 +1,8 @@
 /**
  * SVG `d`-attribute builders for the elevation curve.
  *
- * Two builders produce the two `<path>` elements Step 5 of
- * `docs/elevation-rebuild.md` emits inside the chart's SVG:
+ * Two builders produce the two `<path>` elements the chart's SVG
+ * emits for the curve:
  *
  *   - {@link buildStrokePathD} — the *open* line drawn over the
  *     elevation curve. `fill="none"`, `stroke="var(...)"`.

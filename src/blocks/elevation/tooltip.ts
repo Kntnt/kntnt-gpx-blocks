@@ -1,10 +1,9 @@
 /**
  * SVG-DOM helpers for the elevation chart's tooltip.
  *
- * Step 7 of `docs/elevation-rebuild.md` puts the tooltip inside the chart
- * SVG as a sibling `<g>` of the cursor group, so it shares the chart's
- * coordinate system with the cursor and the curve. Up to four child
- * elements under a single
+ * The tooltip lives inside the chart SVG as a sibling `<g>` of the
+ * cursor group, so it shares the chart's coordinate system with the
+ * cursor and the curve. Up to four child elements under a single
  * `<g class="kntnt-gpx-blocks-elevation-tooltip">` group:
  *
  *   - `<title>` — accessibility label that screen-readers can reach

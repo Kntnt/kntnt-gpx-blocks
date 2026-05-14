@@ -2,7 +2,7 @@
  * Hook that auto-picks the topmost configured GPX Map block as the
  * Elevation block's binding source.
  *
- * Behaviour fixed by Step 2 of `docs/elevation-rebuild.md`:
+ * Behaviour:
  *
  *   - The effect runs on every render where the current `mapId` is
  *     empty or the literal sentinel `"auto"`.

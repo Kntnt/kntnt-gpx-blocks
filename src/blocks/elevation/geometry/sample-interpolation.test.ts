@@ -2,12 +2,6 @@
  * Unit tests for the elevation chart's pure sample-interpolation and
  * projection helpers.
  *
- * Step 6 of `docs/elevation-rebuild.md` introduced these helpers under
- * `geometry/cursor.ts` because the cursor was their only consumer; Step 7
- * adds the tooltip as a second consumer and migrates them to their own
- * SRP-clean module. This file pins the same behavioural contract as
- * `geometry/cursor.test.ts` did — only the import path changes.
- *
  * The DOM-bound pieces (SVG element construction, attribute writes,
  * pointer handlers) live in their own test files; this file is pure
  * math and runs without jsdom assumptions.

@@ -1,11 +1,10 @@
 /**
  * Nice-tick generator for the elevation chart's two axes.
  *
- * Implements the `[1, 2, 5] × 10^n` nice-step series specified in
- * Step 4 of `docs/elevation-rebuild.md`, hoisted into Step 3 so the
- * margin algorithm can consume the eventual tick labels rather than
- * raw min/max/distance values. The m/km unit-switch lives in
- * `./format.ts`; this module only deals with numeric tick generation.
+ * Implements the `[1, 2, 5] × 10^n` nice-step series so the margin
+ * algorithm can consume the eventual tick labels rather than raw
+ * min/max/distance values. The m/km unit-switch lives in `./format.ts`;
+ * this module only deals with numeric tick generation.
  *
  * The algorithm:
  *
@@ -21,9 +20,9 @@
  *   4. Generate values from `floor(min/step) × step` up to
  *      `ceil(max/step) × step`, inclusive on both ends.
  *
- * The functions are pure: no DOM, no closures over caller state. Step 3
- * uses them through `geometry/margins.ts`; Step 4 draws the generated
- * values directly.
+ * The functions are pure: no DOM, no closures over caller state. The
+ * margin algorithm consumes them through `geometry/margins.ts`; the
+ * chart renderer draws the generated values directly.
  *
  * @since 1.0.0
  */

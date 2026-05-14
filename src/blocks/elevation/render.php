@@ -5,8 +5,8 @@
  * Thin proxy that delegates the frontend HTML to
  * `Rendering\Render_Elevation`. The render class walks the host post's
  * block tree, resolves the bound `mapId`, reads the cached statistics,
- * and emits either the warning placeholder or the info placeholder
- * documented in Step 2 of `docs/elevation-rebuild.md`.
+ * and emits either the chart wrapper for the healthy state or one of
+ * the warning placeholders the render class documents.
  *
  * Variables injected by WordPress:
  *   $attributes  array      Block attributes as saved in post_content.

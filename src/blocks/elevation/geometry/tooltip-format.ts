@@ -10,13 +10,12 @@
  *     decimals (and locale-aware digit grouping); 2000 m and above →
  *     km with 1 decimal.
  *   - {@link formatElevation} — always metres, 0 decimals, locale-aware
- *     digit grouping. Step 7 of `docs/elevation-rebuild.md` *Design
- *     rationale* documents the deliberate departure from the spec's
- *     literal m/km switching for line 2: GPX elevation values are
- *     typically 0–4 000 m and users mentally compute elevations in
- *     metres even when a peak is at 2 800 m, so switching to km on
- *     high tracks is actively confusing and breaks the universal
- *     convention in cycling and hiking apps.
+ *     digit grouping. The deliberate departure from the m/km switching
+ *     used for the distance line: GPX elevation values are typically
+ *     0–4 000 m and users mentally compute elevations in metres even
+ *     when a peak is at 2 800 m, so switching to km on high tracks is
+ *     actively confusing and breaks the universal convention in
+ *     cycling and hiking apps.
  *
  * Both functions reach `Intl.NumberFormat` directly. They take the
  * locale string as an explicit argument so the host (the editor's

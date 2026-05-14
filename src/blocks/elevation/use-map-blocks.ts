@@ -8,16 +8,13 @@
  *                              page, in pre-order document traversal.
  *                              Includes unconfigured Maps because the
  *                              `GPX Map #N` fallback index counts *all*
- *                              of them (Step 2 spec, tier 3 of the
- *                              picker-label rule).
+ *                              of them (tier 3 of the picker-label
+ *                              rule in `picker-label.ts`).
  *   - `configuredMapBlocks` — the subset with `attachmentId > 0` AND a
- *                              non-empty `mapId`. The mapId-emptiness
- *                              gate matches the derived rule in
- *                              `docs/elevation-rebuild.md` Step 2: a
- *                              Map block whose `useEnsureUniqueMapId`
- *                              effect has not yet fired is invisible
- *                              to Elevation in every counting and
- *                              selection context.
+ *                              non-empty `mapId`. A Map block whose
+ *                              `useEnsureUniqueMapId` effect has not
+ *                              yet fired is invisible to Elevation in
+ *                              every counting and selection context.
  *   - `mapOptions`          — one `SelectControl` option per entry in
  *                              `configuredMapBlocks`, with the label
  *                              resolved through the three-tier rule in

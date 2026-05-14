@@ -1,11 +1,11 @@
 /**
  * Unit tests for the elevation cursor's pointer-input layer.
  *
- * Step 6 of `docs/elevation-rebuild.md` defines the pointer protocol on
- * the chart's hit-rect: hover-on-mouse, press-and-drag (with
- * `setPointerCapture`), and a wrapper-level `pointerleave` that nulls the
- * fraction so the cursor disappears when the mouse moves on. This file
- * pins the matrix from the spec table.
+ * Pins the pointer protocol on the chart's hit-rect: hover-on-mouse,
+ * press-and-drag (with `setPointerCapture`), and a wrapper-level
+ * `pointerleave` that nulls the fraction so the cursor disappears when
+ * the mouse moves on. The matrix the implementation enforces lives in
+ * the header of `./cursor-input.ts`; this file pins it.
  *
  * @since 1.0.0
  */

@@ -6,9 +6,8 @@
  * to the two-state contract the renderer needs (a usable value, plus a
  * presence flag that drives the ToolsPanelItem's hasValue/onDeselect).
  *
- * The tests pin the contract codified in `docs/elevation-rebuild.md`
- * (Step 1, *The "useful-value" wrapper layer*): default empty detection,
- * fallback substitution, set/reset behaviour, and the optional isEmpty
+ * The tests pin the contract: default empty detection, fallback
+ * substitution, set/reset behaviour, and the optional isEmpty
  * predicate override.
  *
  * @since 1.0.0

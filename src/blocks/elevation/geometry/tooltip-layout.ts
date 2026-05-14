@@ -1,23 +1,22 @@
 /**
  * Pure layout algorithm for the elevation chart's tooltip.
  *
- * Step 7 pl.2 of `docs/elevation-rebuild.md` extracted this helper
- * from `view.ts` and `chart.tsx` so the two renderers share one
- * source of truth for tooltip box dimensions and per-row text
- * positions. Both call sites previously inlined the same formulas,
- * which made it easy for them to drift apart and hard to write
- * targeted unit tests against the layout.
+ * Shared by the two renderers (`view.ts` and `chart.tsx`) so they
+ * agree on tooltip box dimensions and per-row text positions; the two
+ * call sites previously inlined the same formulas, which made it easy
+ * for them to drift apart and hard to write targeted unit tests
+ * against the layout.
  *
- * The previous formula expressed the per-row baseline as
- * `rectTop + padY + bboxHeight`, treating `bboxHeight` as if it
+ * A naive formula expressing the per-row baseline as
+ * `rectTop + padY + bboxHeight` would treat `bboxHeight` as if it
  * equalled the full distance from glyph top to baseline. In Chrome
  * and Safari, however, `SVGGraphicsElement.getBBox()` returns a
  * bbox that reaches the font's descent extent below the baseline
  * even when the rendered glyphs (digits, `m`, `km`) have no
  * descenders. That mismatch — a bbox that extends below the
- * visible glyphs — pushed digit-only labels visually down inside
- * the tooltip rect: the rendered text appeared with more whitespace
- * above it than below it. The pl.2 algorithm uses
+ * visible glyphs — would push digit-only labels visually down
+ * inside the tooltip rect, with more whitespace above the text
+ * than below it. The algorithm here uses
  * {@link TextMeasurement.topOffset} (signed offset from the text's
  * baseline to the bbox top) to position each row by its bbox top
  * instead, which makes `padY` above the bbox and `padY` below the

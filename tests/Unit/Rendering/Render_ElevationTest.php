@@ -186,7 +186,7 @@ test( 'render dispatches to bound-deleted when the explicit mapId does not match
 // `Attachment_Cache::get()` end-to-end through Brain Monkey is awkward, so
 // these cases are exercised through render_warning() above. The full
 // integration path (cache mock → render() → warning) is verified in
-// WordPress Playground per docs/elevation-rebuild.md.
+// WordPress Playground (see docs/testing-strategy.md).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

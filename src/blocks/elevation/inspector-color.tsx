@@ -10,14 +10,10 @@
  * why this panel owns Background instead of delegating to core's
  * `supports.color.background` (that surface cannot enable alpha).
  *
- * Only `Background` is wired to actually affect the rendered output in
- * Step 1 (Step 3 picks up Axis, Step 4 Axis labels, Step 5 Plot line,
- * Step 6 Cursor, Step 7 the three Tooltip colours). The other items
- * persist their values so the editor surface is functionally complete
- * from this step on, but their values do not yet reach the SVG.
- *
- * Pinned by `docs/elevation-rebuild.md`, Step 1, Rule 2 + the
- * eight-row Color table.
+ * Every row — Background, Axis, Axis labels, Plot line, Plot fill,
+ * Cursor, and the three Tooltip colours — is wired to the rendered
+ * output through inline CSS custom properties on the wrapper that the
+ * chart's SCSS rules consume.
  *
  * @since 1.0.0
  */

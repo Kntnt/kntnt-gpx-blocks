@@ -7,8 +7,7 @@
  * size `wRight` and the tick-count algorithm to derive `N_x`.
  *
  * The Y axis always carries metres; the X axis switches between metres
- * and kilometres on a deterministic distance-only threshold pinned by
- * Step 4 of `docs/elevation-rebuild.md`:
+ * and kilometres on a deterministic distance-only threshold:
  *
  *   - `distance < 2000`  → metres mode.
  *   - `distance >= 2000` → kilometres mode (intermediate labels
@@ -136,8 +135,7 @@ function fractionDigitsForStep( niceStep: number ): number {
  * The unit is determined by `distance` alone — independent of the
  * eventual tick count — so the margin algorithm can pre-compute a
  * worst-case reference string before `niceTicks` (in `ticks.ts`) is
- * called. See Step 4 *Reference strings* in
- * `docs/elevation-rebuild.md` for the rationale.
+ * called.
  *
  * @since 1.0.0
  *

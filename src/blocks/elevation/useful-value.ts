@@ -15,14 +15,11 @@
  * caller chooses when to read `raw` / `resolved` / `hasValue` and when
  * to invoke `set` / `reset`.
  *
- * Subsequent steps of the rebuild extend the call-sites with their own
- * fallback values and, where the default empty-detection doesn't fit,
- * a value-specific `isEmpty` predicate (e.g. for boolean or numeric
- * attributes). The API surface — the `usefulValue` function and the
- * `UsefulValue<T>` return type — stays fixed.
- *
- * Pinned by `docs/elevation-rebuild.md`, Step 1, *The "useful-value"
- * wrapper layer*.
+ * Call-sites supply their own fallback values and, where the default
+ * empty-detection doesn't fit, a value-specific `isEmpty` predicate
+ * (e.g. for boolean or numeric attributes). The API surface — the
+ * `usefulValue` function and the `UsefulValue<T>` return type — is the
+ * commitment.
  *
  * @since 1.0.0
  */

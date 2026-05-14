@@ -1,9 +1,9 @@
 /**
  * Unit tests for the SVG-DOM helpers backing the elevation cursor.
  *
- * Step 6 of `docs/elevation-rebuild.md` puts the cursor inside the chart
- * SVG: a `<g>` group hosting an invisible hit-rect, up to two L-shape
- * guide lines, and a circle anchored to the curve. Issue #144 lets the
+ * The cursor lives inside the chart SVG as a `<g>` group hosting an
+ * invisible hit-rect, up to two L-shape guide lines, and a circle
+ * anchored to the curve. Issue #144 lets the
  * editor opt each guide line in or out independently through the
  * `Cursor & guides` Inspector panel — the hit-rect and dot always
  * exist when the cursor `<g>` is built. This file pins the imperative

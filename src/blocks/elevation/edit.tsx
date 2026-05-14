@@ -1,9 +1,7 @@
 /**
  * GPX Elevation block edit component.
  *
- * Orchestrates the binding model from Step 2 of
- * `docs/elevation-rebuild.md` plus the chart-rendering surface from
- * Step 3:
+ * Orchestrates the binding model and the chart-rendering surface:
  *
  *   1. Walks the editor block tree via `useMapBlocks()` to find every
  *      GPX Map block on the page.
@@ -16,13 +14,13 @@
  *      with ≥ 1 configured Map remaining).
  *   5. Routes the resolved binding state into {@link ElevationPreview},
  *      which renders either a warning box, nothing (loading), or the
- *      Step 3 `<Chart>` for the healthy state.
- *   6. Injects the Step 3 wrapper baseline (`min-height: 15vh` when
- *      the user has not set their own minHeight) inline on
+ *      `<Chart>` for the healthy state.
+ *   6. Injects the wrapper baseline (`min-height: 15vh` when the user
+ *      has not set their own minHeight) inline on
  *      `useBlockProps().style` so the editor preview wrapper agrees
  *      with the frontend wrapper byte-for-byte.
  *   7. Routes the eight Color attributes to inline CSS custom
- *      properties on the wrapper so the chart and the future tooltip
+ *      properties on the wrapper so the chart and the tooltip
  *      surfaces pick the user's colours up via the standard cascade.
  *
  * @since 1.0.0

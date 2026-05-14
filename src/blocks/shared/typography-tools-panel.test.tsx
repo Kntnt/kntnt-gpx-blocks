@@ -1,16 +1,12 @@
 /**
  * Unit tests for the shared TypographyToolsPanel component.
  *
- * The point of these tests — required by the elevation rebuild plan
- * (`docs/elevation-rebuild.md`, Step 1) — is to lock the prefix →
- * attribute-name mapping the component uses internally. Step 1
- * instantiates the panel for three Elevation prefixes (`tickLabel`,
- * `tooltipDistance`, `tooltipHeight`); Step 8 migrates the Map block's
- * two existing panels onto the same component (`tooltipName`,
- * `tooltipDesc`). Covering all five prefixes here keeps the Step 8
- * migration mechanical: if Step 8 swaps the Map's bespoke panels for
- * the shared one, no attribute keys move and the existing post_content
- * keeps working byte-for-byte.
+ * The point of these tests is to lock the prefix → attribute-name
+ * mapping the component uses internally. The panel is instantiated for
+ * three Elevation prefixes (`tickLabel`, `tooltipDistance`,
+ * `tooltipHeight`) and two Map prefixes (`tooltipName`, `tooltipDesc`).
+ * Covering all five prefixes here keeps every host call site honest:
+ * no attribute keys can move without these tests catching it.
  *
  * Strategy: mock the WordPress dependency surface with passthrough
  * stubs that capture `onChange` and `onDeselect` callbacks keyed by a

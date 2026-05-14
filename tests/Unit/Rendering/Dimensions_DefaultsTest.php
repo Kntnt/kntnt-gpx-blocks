@@ -251,10 +251,10 @@ test( 'A5: Map with explicit minHeight and aspectRatio stays unchanged', functio
 } );
 
 // ---------------------------------------------------------------------------
-// A. Elevation block — Step 3 of docs/elevation-rebuild.md introduces a
-// `min-height: 15vh` default whose gate is `minHeight blank` alone
-// (regardless of aspectRatio). The wrapper has no SCSS aspect-ratio
-// baseline, so the floor coexists with any user-set aspect ratio.
+// A. Elevation block — `min-height: 15vh` default whose gate is
+// `minHeight blank` alone (regardless of aspectRatio). The wrapper has
+// no SCSS aspect-ratio baseline, so the floor coexists with any
+// user-set aspect ratio.
 // ---------------------------------------------------------------------------
 
 test( 'A6: Elevation with both blank/missing gets minHeight=15vh', function (): void {

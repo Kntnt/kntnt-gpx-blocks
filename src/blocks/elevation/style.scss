@@ -1,7 +1,6 @@
 // Styles shared between the editor and the frontend for the GPX Elevation
-// block. Step 3 of docs/elevation-rebuild.md introduces the wrapper baseline
-// — `min-height: 15vh`, no aspect-ratio default — and the chart SVG host
-// that view.ts / chart.tsx mount inside it.
+// block. Owns the wrapper baseline — `min-height: 15vh`, no aspect-ratio
+// default — and the chart SVG host that view.ts / chart.tsx mount inside it.
 //
 // The render path (PHP `Render_Elevation::render_chart_wrapper()` and editor
 // `ElevationEdit`) injects the same `min-height: 15vh` inline iff the user

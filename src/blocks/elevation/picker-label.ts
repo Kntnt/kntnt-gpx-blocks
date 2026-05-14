@@ -3,7 +3,7 @@
  *
  * The Data Source `SelectControl` shows one entry per configured GPX Map
  * block on the page. Each entry's user-facing label is resolved through
- * a three-tier fallback fixed by Step 2 of `docs/elevation-rebuild.md`:
+ * a three-tier fallback:
  *
  *   1. The block's user-given name — `attributes.metadata.name` (the
  *      value WordPress 6.5+ writes when the user invokes "Rename" from
