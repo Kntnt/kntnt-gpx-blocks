@@ -303,6 +303,12 @@ export function ElevationEdit( {
 		'plotFillColor',
 		''
 	);
+	const cursor = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'cursorColor',
+		''
+	);
 	const inlineStyle: Record< string, string > = {};
 	if ( bg.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-background' ] = bg.resolved;
@@ -322,6 +328,9 @@ export function ElevationEdit( {
 	if ( plotFill.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-plot-fill' ] =
 			plotFill.resolved;
+	}
+	if ( cursor.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-cursor' ] = cursor.resolved;
 	}
 
 	// Tick-labels typography. Mirrors Render_Elevation::build_inline_style

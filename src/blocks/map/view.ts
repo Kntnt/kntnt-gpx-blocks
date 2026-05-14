@@ -736,31 +736,45 @@ function bootMount(
 			const coords = extractCoords( mapState.geojson );
 			const { trackCumDist, totalDistance } = mapState;
 
+			// Add waypoint markers and wire the sticky-tooltip behaviour.
+			// The returned `closeSticky` callback is handed to the scrub
+			// handlers so a tap on the track or on empty map area dismisses
+			// any open sticky tooltip — "tap outside to close" extended to
+			// the two outside surfaces this map exposes.
+			//
+			// Order matters: waypoints are added BEFORE the cursor so the
+			// cursor's `<circle>` lands later in the shared SVG and sits
+			// on top in DOM order (= z-order). Pre-Step-6, the cursor used
+			// the map's default `L.canvas()` renderer and ended up *under*
+			// the waypoint SVG, which made any waypoint visually obscure
+			// the cursor whenever the cursor scrubbed through it.
+			const closeSticky = addWaypointMarkers(
+				map,
+				mapState.waypoints,
+				settings,
+				svgRenderer,
+				blockEl
+			);
+
 			// Create the cursor marker at the track midpoint, initially
 			// invisible. Opacity is set to 1 on the first non-null fraction.
 			// Gated by the editor's `enableTrackPositionCursor` toggle (issue
 			// #118): when disabled, the helper returns `null` and the scrub
 			// handlers below are skipped, so the Map ships with no Map-side
 			// cursor reflection at all.
+			//
+			// Step 6 z-order fix: the cursor uses the shared `svgRenderer`
+			// (passed through the `maybeCreateCursorMarker` parameter list)
+			// rather than the default canvas renderer, and is added AFTER
+			// the waypoint markers above so DOM order alone gives it the
+			// top z-stack position.
 			const cursor = maybeCreateCursorMarker(
 				settings.enableTrackPositionCursor,
 				map,
+				svgRenderer,
 				coords,
 				trackCumDist,
 				totalDistance,
-				blockEl
-			);
-
-			// Add waypoint markers and wire the sticky-tooltip behaviour.
-			// The returned `closeSticky` callback is handed to the scrub
-			// handlers so a tap on the track or on empty map area dismisses
-			// any open sticky tooltip — "tap outside to close" extended to
-			// the two outside surfaces this map exposes.
-			const closeSticky = addWaypointMarkers(
-				map,
-				mapState.waypoints,
-				settings,
-				svgRenderer,
 				blockEl
 			);
 

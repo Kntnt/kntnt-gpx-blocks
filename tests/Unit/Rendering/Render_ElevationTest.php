@@ -295,8 +295,42 @@ test( 'render_chart_wrapper carries the documented Interactivity directives', fu
 	);
 	expect( $html )->toContain( '"mapId":"map-abc123"' );
 	expect( $html )->toContain( 'data-wp-init="callbacks.initElevation"' );
-	// data-wp-watch--cursor lands in Step 6, not here.
+	// Step 6 wires the cursor watch directive on the healthy state
+	// wrapper. The qualifier suffix matches Map's
+	// `data-wp-watch--cursor` because both blocks synchronise the
+	// same `state[ mapId ].fraction` value via differently named
+	// callbacks (one per block, since registering two modules into
+	// the same store under the same callback name would overwrite).
+	expect( $html )->toContain(
+		'data-wp-watch--cursor="callbacks.onElevationCursorChange"'
+	);
+} );
+
+test( 'wrap_warning does NOT carry data-wp-watch--cursor — warning states have no chart and no cursor', function (): void {
+	$post           = new stdClass();
+	$post->ID       = 1;
+	$post->post_content = '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->';
+	Functions\when( 'get_the_ID' )->justReturn( 1 );
+	Functions\when( 'get_post' )->justReturn( $post );
+	Functions\when( 'parse_blocks' )->alias(
+		static fn ( string $content ): array => [
+			[
+				'blockName'   => 'core/paragraph',
+				'attrs'       => [],
+				'innerBlocks' => [],
+				'innerHTML'   => '<p>Hello</p>',
+			],
+		]
+	);
+
+	$attributes = [ 'mapId' => 'auto' ];
+	$block      = new stdClass();
+	$html       = Render_Elevation::render( $attributes, '', $block );
+
+	// The warning wrapper is the only one rendered for this branch;
+	// no Interactivity directives, no cursor watch.
 	expect( $html )->not->toContain( 'data-wp-watch--cursor' );
+	expect( $html )->not->toContain( 'data-wp-interactive' );
 } );
 
 test( 'render_chart_wrapper emits the noscript fallback', function (): void {
@@ -314,6 +348,7 @@ test( 'render_chart_wrapper threads sanitised colour custom properties through t
 		'axisLabelColor'  => '#789abc',
 		'plotLineColor'   => '#00ff00',
 		'plotFillColor'   => '#ff000080',
+		'cursorColor'     => '#abcabc',
 	];
 	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
@@ -322,6 +357,7 @@ test( 'render_chart_wrapper threads sanitised colour custom properties through t
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-axis-label: #789abc' );
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-plot-line: #00ff00' );
 	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-plot-fill: #ff000080' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-cursor: #abcabc' );
 } );
 
 test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', function (): void {
@@ -331,6 +367,7 @@ test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', func
 		'axisLabelColor'  => 'expression(alert(1))',
 		'plotLineColor'   => 'url(http://evil/)',
 		'plotFillColor'   => 'javascript:void(0)',
+		'cursorColor'     => 'not-a-colour',
 	];
 	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
@@ -343,6 +380,19 @@ test( 'render_chart_wrapper rejects malformed colours via Color_Sanitizer', func
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-axis-label' );
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-plot-line' );
 	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-plot-fill' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-cursor:' );
+} );
+
+test( 'render_chart_wrapper omits the cursor custom property when cursorColor is empty', function (): void {
+	$attributes = [ 'cursorColor' => '' ];
+	$html       = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	// The SCSS default `#d63638` covers the empty case; the inline
+	// emission is reserved for the editor's choice. Asserting the
+	// suffix without the colon prefix would also match the Step 5
+	// `--kntnt-gpx-blocks-elevation-plot-fill` declaration when both
+	// share the prefix segment, but the colon-tail form pins this row.
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-cursor:' );
 } );
 
 test( 'render_chart_wrapper threads sanitised tick-label typography custom properties through the wrapper style', function (): void {

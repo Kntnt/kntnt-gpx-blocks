@@ -339,7 +339,7 @@ describe( 'Chart', () => {
 		expect( line!.getAttribute( 'd' ) ).not.toMatch( / Z$/ );
 	} );
 
-	it( 'layers axes → fill → line → ticks → labels in document order', async () => {
+	it( 'layers axes → fill → line → ticks → labels → cursor in document order', async () => {
 		const svg = await renderChart( {
 			minElevation: 0,
 			maxElevation: 500,
@@ -356,12 +356,139 @@ describe( 'Chart', () => {
 		const idxLabelsY = order.indexOf(
 			'kntnt-gpx-blocks-elevation-tick-labels-y'
 		);
+		const idxCursor = order.indexOf( 'kntnt-gpx-blocks-elevation-cursor' );
 		expect( idxAxisX ).toBeGreaterThanOrEqual( 0 );
 		expect( idxAxisY ).toBeGreaterThan( idxAxisX );
 		expect( idxFill ).toBeGreaterThan( idxAxisY );
 		expect( idxLine ).toBeGreaterThan( idxFill );
 		expect( idxTicksX ).toBeGreaterThan( idxLine );
 		expect( idxLabelsY ).toBeGreaterThan( idxTicksX );
+		// Cursor sits last so it visually covers the underlying surfaces
+		// at the anchor point (Step 6).
+		expect( idxCursor ).toBeGreaterThan( idxLabelsY );
+	} );
+
+	it( 'renders the static cursor group with its four children at fraction = 0.5 (Step 6)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-cursor'
+		);
+		expect( group ).not.toBeNull();
+
+		// Four children in the documented insertion order.
+		const order = Array.from( group!.children ).map(
+			( el ) => el.getAttribute( 'class' ) ?? ''
+		);
+		expect( order ).toEqual( [
+			'kntnt-gpx-blocks-elevation-cursor-hitarea',
+			'kntnt-gpx-blocks-elevation-cursor-line-v',
+			'kntnt-gpx-blocks-elevation-cursor-line-h',
+			'kntnt-gpx-blocks-elevation-cursor-dot',
+		] );
+
+		// Dimensions and stroke widths.
+		const dot = group!.querySelector(
+			'circle.kntnt-gpx-blocks-elevation-cursor-dot'
+		)!;
+		expect( dot.getAttribute( 'r' ) ).toBe( '6' );
+		expect( dot.getAttribute( 'stroke-width' ) ).toBe( '2' );
+		const lines = group!.querySelectorAll(
+			'line.kntnt-gpx-blocks-elevation-cursor-line-v, line.kntnt-gpx-blocks-elevation-cursor-line-h'
+		);
+		expect( lines ).toHaveLength( 2 );
+		for ( const l of lines ) {
+			expect( l.getAttribute( 'stroke-width' ) ).toBe( '1' );
+			expect( l.getAttribute( 'stroke' ) ).toBe(
+				'var(--kntnt-gpx-blocks-elevation-cursor)'
+			);
+		}
+
+		// Colour wiring through the CSS variable.
+		expect( dot.getAttribute( 'fill' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-cursor)'
+		);
+		expect( dot.getAttribute( 'stroke' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-cursor)'
+		);
+
+		// Hit-rect carries the plot rectangle's geometry.
+		const hit = group!.querySelector(
+			'rect.kntnt-gpx-blocks-elevation-cursor-hitarea'
+		)!;
+		expect( hit.getAttribute( 'fill' ) ).toBe( 'transparent' );
+	} );
+
+	it( 'positions the static cursor at projectCursor( interpolateSample( samples, distance × 0.5 ), scale )', async () => {
+		// Custom samples whose midpoint elevation is easy to predict.
+		// Bracket [(0, 100), (5000, 200)] → at distance = 2500, the
+		// interpolated elevation is 150. The dot must sit at
+		// projectX(2500), projectY(150). The chart reads scale.plotLeft
+		// off the Y axis, scale.plotBottom off the X axis line, and
+		// scale.distance is exactly the data.distance, so the cursor's
+		// `cx` should match the X tick at value 2500 (when one exists)
+		// or at least sit between plotLeft and plotRight.
+		const svg = await renderChart(
+			{
+				minElevation: 100,
+				maxElevation: 200,
+				distance: 5000,
+			},
+			[
+				[ 0, 100 ],
+				[ 5000, 200 ],
+			]
+		);
+		const dot = svg.querySelector(
+			'circle.kntnt-gpx-blocks-elevation-cursor-dot'
+		);
+		expect( dot ).not.toBeNull();
+
+		const xAxis = svg.querySelector(
+			'line.kntnt-gpx-blocks-elevation-axis-x'
+		)!;
+		const yAxis = svg.querySelector(
+			'line.kntnt-gpx-blocks-elevation-axis-y'
+		)!;
+		const plotLeft = Number.parseFloat( yAxis.getAttribute( 'x1' ) ?? '0' );
+		const plotRight = Number.parseFloat(
+			xAxis.getAttribute( 'x2' ) ?? '0'
+		);
+		const cx = Number.parseFloat( dot!.getAttribute( 'cx' ) ?? 'NaN' );
+
+		// fraction = 0.5 → the cursor sits exactly at the plot rectangle
+		// midpoint along X.
+		expect( cx ).toBeCloseTo( ( plotLeft + plotRight ) / 2, 5 );
+	} );
+
+	it( 'omits the cursor group when fewer than two samples are bound (Step 6)', async () => {
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+		await act( async () => {
+			root.render(
+				createElement( Chart, {
+					data: {
+						minElevation: 0,
+						maxElevation: 500,
+						distance: 5000,
+					},
+					samples: [],
+					typography: {},
+				} )
+			);
+		} );
+		await act( async () => {
+			await Promise.resolve();
+		} );
+		const svg = container.querySelector( 'svg' )!;
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-cursor'
+		);
+		expect( group ).toBeNull();
 	} );
 
 	it( "renders the SVG without inline typography (SCSS path on the wrapper's custom properties is the single mechanism)", async () => {

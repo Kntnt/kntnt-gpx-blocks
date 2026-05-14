@@ -7,7 +7,12 @@
  * Step 5 layers the elevation curve (a filled area under the curve
  * plus the open stroke on top) by reading the per-mapId `samples`
  * array from the Interactivity state slice and projecting through the
- * shared {@link ChartScale} helper.
+ * shared {@link ChartScale} helper. Step 6 layers the cursor: a circle
+ * anchored to the curve plus an L-shape pair of guide lines pointing
+ * at the corresponding x and y axis ticks. The cursor's geometry is
+ * driven by `state[ mapId ].fraction`, which both Map and Elevation
+ * read and write through their respective `data-wp-watch--cursor`
+ * callbacks (cross-block sync).
  *
  * The frontend keeps the chart geometry in lock-step with the editor
  * preview by sharing the pure helpers under `./geometry/`. The host
@@ -15,14 +20,23 @@
  * identical, so the rendered output is byte-faithful across editor
  * and frontend for any given data + typography combination.
  *
- * Step 5 makes no store writes and does not yet read
- * `state[mapId].fraction`; Step 6 wires those in.
- *
  * @since 1.0.0
  */
 
 import { getContext, getElement, store } from '@wordpress/interactivity';
 
+import {
+	applyCursorPosition,
+	createCursorElements,
+	hideCursor,
+	updateHitRect,
+	type CursorElements,
+} from './cursor';
+import {
+	bindPointerHandlers,
+	bindPointerHandlersWhenVisible,
+} from './cursor-input';
+import { interpolateSample, projectCursor } from './geometry/cursor';
 import { buildFillPathD, buildStrokePathD } from './geometry/curve';
 import {
 	computeMargins,
@@ -60,18 +74,18 @@ interface ElevationStatistics {
 type ElevationSample = readonly [ number, number ];
 
 /**
- * Shape of the per-mapId state slice the Elevation module reads.
- *
- * Only the fields Step 3 / Step 4 / Step 5 care about are listed; the
- * rest of the slice (the Map block's geojson, fraction, etc.) is left
- * untyped at this surface because the elevation chart never reads it
- * directly.
+ * Shape of the per-mapId state slice the Elevation module reads. The
+ * slice is shared with the Map block: `Render_Map` writes `geojson`
+ * (and other map-only fields plus `fraction: null`); `Render_Elevation`
+ * writes `statistics` and `samples`. Both blocks read and write
+ * `fraction` to drive cross-block cursor sync.
  *
  * @since 1.0.0
  */
 interface ElevationStateSlice {
-	readonly statistics?: ElevationStatistics;
-	readonly samples?: ReadonlyArray< ElevationSample >;
+	statistics?: ElevationStatistics;
+	samples?: ReadonlyArray< ElevationSample >;
+	fraction?: number | null;
 }
 
 /**
@@ -80,9 +94,47 @@ interface ElevationStateSlice {
  * SVG on top of the first. Per-element idempotency, not per-mapId,
  * because every Elevation block on the page is a separate wrapper.
  *
+ * The slot is claimed synchronously at the start of `initElevation`,
+ * before the `await document.fonts.ready`, so a second
+ * Interactivity-mount trigger arriving mid-await still no-ops cleanly.
+ * The companion {@link mountedElevations} WeakMap is populated only
+ * after the first `drawChart` completes — see Step 6 *Lifecycle*.
+ *
  * @since 1.0.0
  */
 const mounted = new WeakSet< Element >();
+
+/**
+ * Per-wrapper lifecycle state for the Elevation chart.
+ *
+ * Held by {@link mountedElevations} so the Interactivity watch
+ * callback can locate the right wrapper's geometry, scale, and cursor
+ * elements without re-walking the DOM. Set only after the first
+ * `drawChart` completes so the watch never observes an incomplete
+ * entry; the watch's standard read-fraction-first-then-guard idiom
+ * handles the race window between `mounted.add()` and `mountedElevations.set()`.
+ *
+ * @since 1.0.0
+ */
+interface ElevationEntry {
+	readonly svg: SVGSVGElement;
+	readonly wrapper: HTMLElement;
+	readonly samples: ReadonlyArray< ElevationSample >;
+	readonly distance: number;
+	readonly mapId: string;
+	scale: ChartScale;
+	readonly cursorElements: CursorElements;
+}
+
+/**
+ * Wrapper-keyed registry of fully-initialised elevation mounts. The
+ * watch callback `onElevationCursorChange` reads from this; the
+ * pointer-input layer's deferred binding callback also reads from it
+ * to recover the cursor hit-rect once the chart enters the viewport.
+ *
+ * @since 1.0.0
+ */
+const mountedElevations = new WeakMap< Element, ElevationEntry >();
 
 /**
  * Narrows an unknown value to a finite number, or returns `null` for
@@ -137,6 +189,10 @@ function statisticsToMarginsInput(
  * Step 3 axis lines, the Step 4 tick / label groups, and the Step 5
  * plot paths before inserting fresh ones — cheaper than diffing for
  * ≤ 20 elements.
+ *
+ * The cursor classes are deliberately absent from every call site:
+ * cursor elements are persistent across redraws (created once on the
+ * first `drawChart`, repositioned forever).
  *
  * @since 1.0.0
  *
@@ -343,12 +399,18 @@ function appendTicks( svg: SVGSVGElement, scale: ChartScale ): void {
 
 /**
  * Replaces the chart's axis lines, curve paths, tick mark groups, and
- * tick label groups inside the SVG.
+ * tick label groups inside the SVG, then returns the resolved scale
+ * so the caller can position the cursor without recomputing.
  *
  * The viewBox is resynced on every redraw because the SVG's rendered
  * size and its user-unit space share a 1:1 mapping. Layer order
  * matches the Step 5 spec: axes → fill → stroke → tick marks → tick
- * labels.
+ * labels. The cursor `<g>` is *not* removed here; it is persistent
+ * across redraws and the caller updates its hit-rect plus the
+ * dot/line positions through `./cursor.ts`.
+ *
+ * Returns `null` for the sentinel scale (degenerate plot rectangle);
+ * the caller skips the cursor lifecycle in that branch too.
  *
  * @since 1.0.0
  *
@@ -358,6 +420,7 @@ function appendTicks( svg: SVGSVGElement, scale: ChartScale ): void {
  * @param data    Chart input data (elevation range + distance).
  * @param samples LTTB-downsampled (distance, elevation) pairs.
  * @param margins Resolved margin scalars from the margin algorithm.
+ * @return The resolved scale, or `null` for the sentinel branch.
  */
 function drawChart(
 	svg: SVGSVGElement,
@@ -366,11 +429,12 @@ function drawChart(
 	data: MarginsInput,
 	samples: ReadonlyArray< ElevationSample >,
 	margins: Margins
-): void {
+): ChartScale | null {
 	svg.setAttribute( 'viewBox', `0 0 ${ w } ${ h }` );
 
 	// Wipe any previous run's elements. Selecting on the documented
-	// class names keeps us from clobbering future cursor / tooltip
+	// class names keeps us from clobbering the persistent cursor `<g>`
+	// (created once on the first redraw) and any future tooltip
 	// surfaces that share the same SVG host.
 	removeMatching(
 		svg,
@@ -396,12 +460,14 @@ function drawChart(
 	} );
 
 	if ( scale.xTicks.length === 0 ) {
-		return;
+		return null;
 	}
 
 	appendAxes( svg, scale );
 	appendCurvePaths( svg, scale, samples );
 	appendTicks( svg, scale );
+
+	return scale;
 }
 
 /**
@@ -454,6 +520,57 @@ function readSamples( value: unknown ): ReadonlyArray< ElevationSample > {
 	return result;
 }
 
+/**
+ * Synchronises the cursor with the current `state[ mapId ].fraction`
+ * value through the entry's cached scale. Hides the cursor when the
+ * fraction is null/undefined or when interpolation cannot produce a
+ * sample (degenerate samples array).
+ *
+ * Invoked from `redraw` (so a fresh resize re-pins the cursor at the
+ * new geometry) and from the watch callback (so a fraction write
+ * elsewhere on the page moves the cursor).
+ *
+ * @since 1.0.0
+ *
+ * @param entry    The wrapper's lifecycle state.
+ * @param fraction The fraction to project, or `null` to hide.
+ */
+function syncCursor(
+	entry: ElevationEntry,
+	fraction: number | null | undefined
+): void {
+	if ( fraction === null || fraction === undefined ) {
+		hideCursor( entry.cursorElements );
+		return;
+	}
+	const sample = interpolateSample(
+		entry.samples,
+		fraction * entry.distance
+	);
+	if ( ! sample ) {
+		hideCursor( entry.cursorElements );
+		return;
+	}
+	const projected = projectCursor( sample, entry.scale );
+	applyCursorPosition( entry.cursorElements, projected, entry.scale );
+}
+
+/**
+ * Reads the `kntnt-gpx-blocks` Interactivity state. The `state`
+ * surface is a mutable record keyed by `mapId`; both reads and writes
+ * pass through this helper so the cast is centralised.
+ *
+ * @since 1.0.0
+ *
+ * @return The state record.
+ */
+function getStateRecord(): Record< string, ElevationStateSlice | undefined > {
+	const handle = store( 'kntnt-gpx-blocks' ) as unknown as {
+		readonly state: Record< string, ElevationStateSlice | undefined >;
+	};
+	return handle.state;
+}
+
 store( 'kntnt-gpx-blocks', {
 	callbacks: {
 		/**
@@ -465,10 +582,20 @@ store( 'kntnt-gpx-blocks', {
 		 * when late-loaded fonts arrive. ResizeObserver triggers
 		 * tick redraw without recomputing margins.
 		 *
+		 * Step 6 layers the cursor lifecycle onto the existing mount
+		 * pipeline: cursor elements are created once during the first
+		 * `drawChart`, then repositioned forever; pointer handlers
+		 * attach when the chart approaches the viewport; the watch
+		 * callback `onElevationCursorChange` propagates fraction
+		 * writes from the shared store back to the cursor's geometry.
+		 *
 		 * @since 1.0.0
 		 */
 		async initElevation(): Promise< void > {
 			// Locate the wrapper element and guard against double-init.
+			// The synchronous `mounted.add()` claim happens before the
+			// first `await` so a second Interactivity-mount trigger
+			// arriving mid-await still no-ops cleanly.
 			const element = getElement();
 			const ref = element?.ref;
 			if ( ! ref || ! ( ref instanceof Element ) ) {
@@ -487,13 +614,8 @@ store( 'kntnt-gpx-blocks', {
 			if ( mapId === '' ) {
 				return;
 			}
-			const stateAny = store( 'kntnt-gpx-blocks' ) as unknown as {
-				readonly state: Record<
-					string,
-					ElevationStateSlice | undefined
-				>;
-			};
-			const slice = stateAny.state[ mapId ];
+			const stateRecord = getStateRecord();
+			const slice = stateRecord[ mapId ];
 			const data = statisticsToMarginsInput( slice?.statistics );
 			if ( ! data ) {
 				return;
@@ -513,9 +635,9 @@ store( 'kntnt-gpx-blocks', {
 			}
 
 			// Mount the SVG host. The wrapper carries the colour
-			// custom properties (axis / axis-label / plot-*) and the
-			// eight tick-label typography custom properties; SCSS
-			// converts the latter into font-* declarations on the
+			// custom properties (axis / axis-label / plot-* / cursor)
+			// and the eight tick-label typography custom properties;
+			// SCSS converts the latter into font-* declarations on the
 			// SVG. The measurer's hidden <text> nodes (direct SVG
 			// children) and the visible tick <text> labels (under
 			// the `<g class="…-tick-labels-x/y">` groups) inherit
@@ -540,12 +662,45 @@ store( 'kntnt-gpx-blocks', {
 			const measure = createTextMeasurer( svg );
 			let margins = computeMargins( data, measure );
 
+			const wrapper = ref as HTMLElement;
+			let entry: ElevationEntry | null = null;
+
 			const redraw = (): void => {
 				const { w, h } = readSize( svg );
 				if ( w === 0 || h === 0 ) {
 					return;
 				}
-				drawChart( svg, w, h, data, samples, margins );
+				const scale = drawChart( svg, w, h, data, samples, margins );
+				if ( ! scale ) {
+					return;
+				}
+
+				// Cursor lifecycle. The first successful redraw creates
+				// the cursor `<g>` plus its four children and publishes
+				// the entry to `mountedElevations`. Subsequent redraws
+				// only update the hit-rect to track the new plot
+				// rectangle and re-pin the cursor at the cached
+				// fraction so a resize keeps the cursor anchored.
+				if ( ! entry ) {
+					const cursorElements = createCursorElements( svg, scale );
+					entry = {
+						svg,
+						wrapper,
+						samples,
+						distance: data.distance,
+						mapId,
+						scale,
+						cursorElements,
+					};
+					mountedElevations.set( ref, entry );
+				} else {
+					updateHitRect( entry.cursorElements, scale );
+					entry.scale = scale;
+				}
+
+				// Re-pin the cursor at the current fraction; null hides.
+				const currentFraction = getStateRecord()[ mapId ]?.fraction;
+				syncCursor( entry, currentFraction );
 			};
 
 			redraw();
@@ -567,6 +722,69 @@ store( 'kntnt-gpx-blocks', {
 				const ro = new ResizeObserver( redraw );
 				ro.observe( svg );
 			}
+
+			// Pointer-input layer. Defer binding until the chart
+			// approaches the viewport so the listeners attach only
+			// when the user is about to interact with the chart.
+			// Cursor sync (the watch above) is *not* gated by the
+			// observer — it fires as soon as the entry is published.
+			bindPointerHandlersWhenVisible( ref, () => {
+				const published = mountedElevations.get( ref );
+				if ( ! published ) {
+					return;
+				}
+				bindPointerHandlers(
+					published.cursorElements.hitRect,
+					wrapper,
+					{
+						setFraction( value: number | null ): void {
+							const liveSlice = getStateRecord()[ mapId ];
+							if ( liveSlice ) {
+								liveSlice.fraction = value;
+							}
+						},
+					}
+				);
+			} );
+		},
+
+		/**
+		 * Reacts to changes in `state[ mapId ].fraction` and moves the
+		 * cursor accordingly.
+		 *
+		 * The fraction is read at the very top of the function, before
+		 * any guard, so the Interactivity API's signal-tracking
+		 * establishes the subscription on the very first watch run.
+		 * `mountedElevations` is populated only after the first
+		 * `drawChart` completes, so this watch fires at least once
+		 * before the entry is available — returning silently in that
+		 * branch is correct because `redraw` itself calls
+		 * {@link syncCursor} at the end of its first run, which renders
+		 * the cursor at the published fraction.
+		 *
+		 * Named per block (rather than the generic `onCursorChange`) so
+		 * registering both Map and Elevation modules into the same
+		 * `kntnt-gpx-blocks` store does not overwrite each other's
+		 * callbacks. The Map block's mirror is `onMapCursorChange`.
+		 *
+		 * @since 1.0.0
+		 */
+		onElevationCursorChange(): void {
+			const ctx = getContext< { readonly mapId?: string } >();
+			const mapId = typeof ctx?.mapId === 'string' ? ctx.mapId : '';
+			if ( mapId === '' ) {
+				return;
+			}
+			const fraction = getStateRecord()[ mapId ]?.fraction;
+			const ref = getElement()?.ref;
+			if ( ! ref || ! ( ref instanceof Element ) ) {
+				return;
+			}
+			const entry = mountedElevations.get( ref );
+			if ( ! entry ) {
+				return;
+			}
+			syncCursor( entry, fraction );
 		},
 	},
 } );

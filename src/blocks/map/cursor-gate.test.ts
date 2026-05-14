@@ -28,6 +28,10 @@ jest.mock( 'leaflet', () => {
 	};
 } );
 
+// Stub SVG renderer; only its presence in the circleMarker options
+// matters for the z-order assertion below.
+const svgRendererStub = {} as unknown as L.Renderer;
+
 interface LeafletMock {
 	circleMarker: jest.Mock;
 }
@@ -55,6 +59,7 @@ describe( 'maybeCreateCursorMarker', () => {
 		const cursor = maybeCreateCursorMarker(
 			false,
 			mapStub,
+			svgRendererStub,
 			[
 				[ 0, 0 ],
 				[ 1, 1 ],
@@ -76,6 +81,7 @@ describe( 'maybeCreateCursorMarker', () => {
 		const cursor = maybeCreateCursorMarker(
 			true,
 			mapStub,
+			svgRendererStub,
 			[
 				[ 0, 0 ],
 				[ 1, 1 ],
@@ -89,5 +95,37 @@ describe( 'maybeCreateCursorMarker', () => {
 		expect(
 			( L as unknown as LeafletMock ).circleMarker
 		).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test( 'forwards the supplied svgRenderer to L.circleMarker so cursor and waypoints share an SVG (Step 6 z-order fix)', () => {
+		// The renderer carrying the cursor is what guarantees DOM
+		// order = z-order between cursor and waypoints. Without the
+		// `renderer` option, Leaflet falls back to the map's default
+		// `L.canvas()` and the cursor lands in a separate <canvas>
+		// element under <overlayPane>; since SVG paints on top of
+		// canvas there, every waypoint marker visually obscures the
+		// cursor whenever it scrubs through one. The fix is mechanical:
+		// pass the same SVG renderer the waypoints use.
+		const blockEl = createBlockEl();
+
+		maybeCreateCursorMarker(
+			true,
+			mapStub,
+			svgRendererStub,
+			[
+				[ 0, 0 ],
+				[ 1, 1 ],
+			],
+			[ 0, 1 ],
+			1,
+			blockEl
+		);
+
+		const mock = L as unknown as LeafletMock;
+		expect( mock.circleMarker ).toHaveBeenCalledTimes( 1 );
+		const options = mock.circleMarker.mock.calls[ 0 ]?.[ 1 ] as {
+			renderer?: unknown;
+		};
+		expect( options.renderer ).toBe( svgRendererStub );
 	} );
 } );

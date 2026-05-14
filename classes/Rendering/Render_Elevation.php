@@ -217,9 +217,14 @@ final class Render_Elevation {
 	 *   - `data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'`
 	 *   - `data-wp-context='{"mapId":"…"}'`
 	 *   - `data-wp-init="callbacks.initElevation"`
+	 *   - `data-wp-watch--cursor="callbacks.onElevationCursorChange"`
+	 *     (Step 6 — fires on every change to `state[ mapId ].fraction`,
+	 *     i.e. whenever the user scrubs Map's polyline or the chart's
+	 *     own hit-rect; the watch repositions the cursor SVG group)
 	 *
-	 * `data-wp-watch--cursor` arrives in Step 6 (cursor sync), not
-	 * here. Step 6 will also upgrade `role` to `"application"`.
+	 * `role="img"` is kept rather than upgraded to `"application"`:
+	 * the cursor is mouse/touch-only in Step 6 (no keyboard handler),
+	 * so `"application"` would over-promise to assistive tech.
 	 *
 	 * @since 1.0.0
 	 *
@@ -247,7 +252,8 @@ final class Render_Elevation {
 				. ' aria-label="%2$s"'
 				. ' data-wp-interactive=\'{"namespace":"kntnt-gpx-blocks"}\''
 				. ' data-wp-context=\'%3$s\''
-				. ' data-wp-init="callbacks.initElevation">'
+				. ' data-wp-init="callbacks.initElevation"'
+				. ' data-wp-watch--cursor="callbacks.onElevationCursorChange">'
 				. '<noscript><p class="kntnt-gpx-blocks-elevation-noscript">%4$s</p></noscript>'
 				. '</div>',
 			$wrapper_attributes,
@@ -303,6 +309,7 @@ final class Render_Elevation {
 	 *   - `--kntnt-gpx-blocks-elevation-axis-label`         ← `axisLabelColor`
 	 *   - `--kntnt-gpx-blocks-elevation-plot-line`          ← `plotLineColor`
 	 *   - `--kntnt-gpx-blocks-elevation-plot-fill`          ← `plotFillColor`
+	 *   - `--kntnt-gpx-blocks-elevation-cursor`             ← `cursorColor`
 	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-family`     ← `tickLabelFontFamily`
 	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-size`       ← `tickLabelFontSize`
 	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-weight`     ← `tickLabelFontWeight`
@@ -360,6 +367,13 @@ final class Render_Elevation {
 		);
 		if ( '' !== $plot_fill ) {
 			$parts[] = '--kntnt-gpx-blocks-elevation-plot-fill: ' . esc_attr( $plot_fill );
+		}
+
+		$cursor = Color_Sanitizer::sanitize(
+			is_string( $attributes['cursorColor'] ?? null ) ? (string) $attributes['cursorColor'] : ''
+		);
+		if ( '' !== $cursor ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-cursor: ' . esc_attr( $cursor );
 		}
 
 		// Tick-label typography. Each row pairs the attribute key with

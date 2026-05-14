@@ -43,6 +43,7 @@ import {
 } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
+import { interpolateSample, projectCursor } from './geometry/cursor';
 import { buildFillPathD, buildStrokePathD } from './geometry/curve';
 import {
 	computeMargins,
@@ -285,6 +286,24 @@ export function Chart( {
 	const tickMarkLength = drawable ? 0.2 * scale.em : 0;
 	const labelOffset = drawable ? 0.5 * scale.em : 0;
 
+	// Editor preview cursor: a static anchor at fraction = 0.5. The
+	// editor canvas does not bootstrap the Interactivity API, so the
+	// cursor cannot react to a real fraction here — its purpose is to
+	// give the inspector's Cursor colour control a live target. The
+	// frontend's `view.ts` mounts an interactive cursor under the
+	// Interactivity API instead. When the bound track has fewer than
+	// two samples, `interpolateSample` returns null and the cursor
+	// group is skipped (the chart still draws axes and ticks but has
+	// no curve to anchor a cursor on).
+	const previewSample =
+		drawable && samples.length >= 2
+			? interpolateSample( samples, scale.distance * 0.5 )
+			: null;
+	const previewCursor =
+		drawable && previewSample !== null
+			? projectCursor( previewSample, scale )
+			: null;
+
 	return (
 		<svg
 			ref={ svgRef }
@@ -389,6 +408,45 @@ export function Chart( {
 							</text>
 						) ) }
 					</g>
+					{ previewCursor !== null && (
+						<g className="kntnt-gpx-blocks-elevation-cursor">
+							<rect
+								className="kntnt-gpx-blocks-elevation-cursor-hitarea"
+								x={ scale.plotLeft }
+								y={ scale.plotTop }
+								width={ scale.plotRight - scale.plotLeft }
+								height={ scale.plotBottom - scale.plotTop }
+								fill="transparent"
+							/>
+							<line
+								className="kntnt-gpx-blocks-elevation-cursor-line-v"
+								x1={ previewCursor.cx }
+								y1={ previewCursor.cy }
+								x2={ previewCursor.cx }
+								y2={ scale.plotBottom }
+								stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
+								strokeWidth={ 1 }
+							/>
+							<line
+								className="kntnt-gpx-blocks-elevation-cursor-line-h"
+								x1={ previewCursor.cx }
+								y1={ previewCursor.cy }
+								x2={ scale.plotLeft }
+								y2={ previewCursor.cy }
+								stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
+								strokeWidth={ 1 }
+							/>
+							<circle
+								className="kntnt-gpx-blocks-elevation-cursor-dot"
+								cx={ previewCursor.cx }
+								cy={ previewCursor.cy }
+								r={ 6 }
+								fill="var(--kntnt-gpx-blocks-elevation-cursor)"
+								stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
+								strokeWidth={ 2 }
+							/>
+						</g>
+					) }
 				</>
 			) }
 		</svg>

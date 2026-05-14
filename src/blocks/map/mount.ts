@@ -421,7 +421,19 @@ export function applyInteractionSettings(
  *
  * @since 1.0.0
  *
+ * The cursor is rendered through the shared SVG renderer so it lives
+ * in the same `<svg>` element as the waypoint markers. Without this,
+ * the cursor falls back to the map's default `L.canvas()` renderer and
+ * sits *under* the waypoint SVG (Leaflet adds the canvas first under
+ * `overlayPane`, so SVG paints on top), which means a waypoint marker
+ * visually obscures the cursor whenever the cursor scrubs through it.
+ * Sharing the renderer makes DOM order = z-order, and `bootMount`
+ * orders the additions cursor-after-waypoints so the cursor wins.
+ *
  * @param map           - Leaflet map instance.
+ * @param svgRenderer   - Shared SVG renderer the waypoint markers also
+ *                      use. Pulls the cursor into the same `<svg>` so
+ *                      it can be DOM-ordered above the waypoints.
  * @param coords        - Flat [lat, lng] coordinate array for the track.
  * @param trackCumDist  - Per-vertex original-cumulative distances aligned
  *                      1:1 with `coords`.
@@ -432,6 +444,7 @@ export function applyInteractionSettings(
  */
 export function createCursorMarker(
 	map: L.Map,
+	svgRenderer: L.Renderer,
 	coords: Array< [ number, number ] >,
 	trackCumDist: number[],
 	totalDistance: number,
@@ -457,6 +470,7 @@ export function createCursorMarker(
 		fillOpacity: 1,
 		interactive: false,
 		opacity: 0,
+		renderer: svgRenderer,
 	} );
 	cursor.addTo( map );
 	return cursor;
@@ -478,6 +492,11 @@ export function createCursorMarker(
  *
  * @param enableTrackPositionCursor - Whether the editor enabled the Map-side cursor.
  * @param map                       - Leaflet map instance.
+ * @param svgRenderer               - Shared SVG renderer; forwarded to
+ *                                  the underlying `createCursorMarker`
+ *                                  so the cursor sits in the same SVG
+ *                                  as the waypoint markers (z-order
+ *                                  correctness — see Step 6 spec).
  * @param coords                    - Flat [lat, lng] coordinate array for the track.
  * @param trackCumDist              - Per-vertex original-cumulative distances aligned
  *                                  1:1 with `coords`.
@@ -488,6 +507,7 @@ export function createCursorMarker(
 export function maybeCreateCursorMarker(
 	enableTrackPositionCursor: boolean,
 	map: L.Map,
+	svgRenderer: L.Renderer,
 	coords: Array< [ number, number ] >,
 	trackCumDist: number[],
 	totalDistance: number,
@@ -498,6 +518,7 @@ export function maybeCreateCursorMarker(
 	}
 	return createCursorMarker(
 		map,
+		svgRenderer,
 		coords,
 		trackCumDist,
 		totalDistance,

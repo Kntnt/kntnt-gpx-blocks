@@ -97,6 +97,31 @@ describe( 'elevation style.scss', () => {
 		expect( SCSS ).toMatch( /min-height:\s*15vh/ );
 	} );
 
+	it( 'declares the Step 6 cursor colour default on the wrapper', () => {
+		// `#d63638` is the Gutenberg red and matches Map's
+		// `--kntnt-gpx-blocks-track-cursor-color` default in
+		// `src/blocks/map/mount.ts`. Same default colour on both blocks
+		// gives the synced cursors visual parity — the user perceives
+		// them as "the same point on the track" without any inspector
+		// configuration.
+		expect( SCSS ).toMatch(
+			/--kntnt-gpx-blocks-elevation-cursor:\s*#d63638/
+		);
+	} );
+
+	it( 'gives the Step 6 cursor hit-rect touch-action: none and cursor: crosshair', () => {
+		// `touch-action: none` keeps the browser from scrolling the page
+		// during a touch-drag on the plot rectangle. `cursor: crosshair`
+		// surfaces the scrubbing affordance to desktop users without a
+		// custom SVG cursor.
+		expect( SCSS ).toMatch(
+			/\.kntnt-gpx-blocks-elevation-cursor-hitarea[^{]*\{[\s\S]*?touch-action:\s*none/
+		);
+		expect( SCSS ).toMatch(
+			/\.kntnt-gpx-blocks-elevation-cursor-hitarea[^{]*\{[\s\S]*?cursor:\s*crosshair/
+		);
+	} );
+
 	it( 'exposes the eight tick-label typography custom properties on the chart SVG with inherit fallback', () => {
 		// Tick-label typography reaches both the visible <text>
 		// labels and the measurer's hidden <text> nodes through CSS
