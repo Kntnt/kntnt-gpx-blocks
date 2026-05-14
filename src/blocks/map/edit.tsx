@@ -61,6 +61,7 @@ import {
 } from './editor-preview';
 import { flattenPresets } from '../shared/flatten-presets';
 import { getDefaultMinHeight } from '../shared/dimensions-defaults';
+import { InspectorBottomSpacer } from '../shared/inspector-bottom-spacer';
 import { substituteTileApiKey } from './tile-key';
 import { detectPreviewNotices } from './preview-notices';
 
@@ -1812,6 +1813,7 @@ export const MapEdit = ( {
 					</PanelBody>
 				) }
 			</InspectorControls>
+			<InspectorBottomSpacer />
 			<div { ...blockProps }>
 				<MapEditorPreview
 					attributes={ {

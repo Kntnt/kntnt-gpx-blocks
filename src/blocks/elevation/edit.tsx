@@ -37,6 +37,7 @@ import { usefulValue } from './useful-value';
 import { InspectorColorPanel } from './inspector-color';
 import { TypographyToolsPanel } from '../shared/typography-tools-panel';
 import { getDefaultMinHeight } from '../shared/dimensions-defaults';
+import { InspectorBottomSpacer } from '../shared/inspector-bottom-spacer';
 import { useMapBlocks, type EditorBlock } from './use-map-blocks';
 import { isAutoMapId, useAutoPickMapId } from './use-auto-pick-map-id';
 import {
@@ -747,6 +748,7 @@ export function ElevationEdit( {
 					</PanelBody>
 				) }
 			</InspectorControls>
+			<InspectorBottomSpacer />
 			<div { ...blockProps }>
 				<ElevationPreview state={ resolution.state } />
 			</div>
