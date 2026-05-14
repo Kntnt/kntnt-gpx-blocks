@@ -43,6 +43,7 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { clientXToFraction } from './cursor-input';
 import {
 	interpolateSample,
 	projectCursor,
@@ -105,6 +106,20 @@ export interface ChartProps {
 	readonly showHorizontalGuide: boolean;
 	readonly tooltipShowDistance: boolean;
 	readonly tooltipShowHeight: boolean;
+	/**
+	 * Optional callback invoked when the user hovers the cursor hit-rect
+	 * with a `[0, 1]` fraction, and with `null` when the pointer leaves
+	 * the chart. Threaded through by `edit.tsx` so the Elevation editor
+	 * preview can publish fractions onto the editor cursor bridge
+	 * (issue #153), where the sibling Map editor preview consumes them.
+	 *
+	 * Unwired when omitted: the editor preview's static-cursor reference
+	 * still renders at `fraction = 0.5`, but no events fire. The
+	 * frontend uses a different code path entirely (the Interactivity
+	 * runtime in `view.ts`), so this prop has no effect outside the
+	 * editor.
+	 */
+	readonly onHoverFraction?: ( fraction: number | null ) => void;
 }
 
 /**
@@ -240,6 +255,7 @@ function readDimensions( svg: SVGSVGElement ): Dimensions {
  * @param props.tooltipShowHeight         Whether the tooltip's elevation row is drawn (Step 7).
  * @param props.tooltipDistanceTypography Tooltip distance-row typography (Step 7 pl.3) — not consumed by render output (the SVG inherits the row's class-scoped custom properties from the wrapper), but enumerated in the tooltip layout effect's dep-list so a per-row font-size change re-runs the measurement.
  * @param props.tooltipHeightTypography   Tooltip height-row typography (Step 7 pl.3) — same purpose as `tooltipDistanceTypography` for the elevation row.
+ * @param props.onHoverFraction           Optional hover-fraction callback forwarded to the cursor hit-rect (issue #153). Receives a `[0, 1]` fraction on `pointermove` and `null` on `pointerleave`; the editor preview wires this to the editor cursor bridge so a sibling Map preview can mirror the position.
  */
 export function Chart( {
 	data,
@@ -252,6 +268,7 @@ export function Chart( {
 	showHorizontalGuide,
 	tooltipShowDistance,
 	tooltipShowHeight,
+	onHoverFraction,
 }: ChartProps ): JSX.Element {
 	const svgRef = useRef< SVGSVGElement | null >( null );
 	const [ margins, setMargins ] = useState< Margins | null >( null );
@@ -692,6 +709,22 @@ export function Chart( {
 								width={ scale.plotRight - scale.plotLeft }
 								height={ scale.plotBottom - scale.plotTop }
 								fill="transparent"
+								onPointerMove={
+									onHoverFraction
+										? ( event ) =>
+												onHoverFraction(
+													clientXToFraction(
+														event.clientX,
+														event.currentTarget
+													)
+												)
+										: undefined
+								}
+								onPointerLeave={
+									onHoverFraction
+										? () => onHoverFraction( null )
+										: undefined
+								}
 							/>
 							{ showVerticalGuide && (
 								<line

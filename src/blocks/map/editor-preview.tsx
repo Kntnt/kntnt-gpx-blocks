@@ -8,10 +8,18 @@
  * inside the editor iframe.
  *
  * The preview is intentionally narrower than the frontend: no consent gating,
- * no IntersectionObserver lazy mount, no cursor sync, no controls, no waypoint
- * label typography. The point is to give the editor a visual reference for
- * "is the right GPX file selected and roughly how does it look?". Frontend
- * fidelity stays in view.ts where it belongs.
+ * no IntersectionObserver lazy mount, no controls, no waypoint label
+ * typography. The point is to give the editor a visual reference for "is the
+ * right GPX file selected and roughly how does it look?". Frontend fidelity
+ * stays in view.ts where it belongs.
+ *
+ * Cross-block cursor sync is the one exception: when the editor enables the
+ * Track cursor toggle, the preview subscribes to the editor-only cursor
+ * bridge (`shared/editor-cursor-bridge.ts`) keyed on the block's `mapId` and
+ * mirrors the published fraction onto a Leaflet `circleMarker` drawn on the
+ * polyline. The bridge is an in-iframe `CustomEvent` bus that replaces the
+ * frontend Interactivity store (which does not run inside the editor
+ * iframe); the Elevation editor preview publishes fractions on hover.
  *
  * Data flows through the plugin's REST endpoint kntnt-gpx-blocks/v1/preview/<id>,
  * gated to edit_posts. The endpoint returns the same cached GeoJSON the
@@ -21,12 +29,15 @@
  * @since 1.0.0
  */
 
-import { useEffect, useRef, useState } from '@wordpress/element';
+import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
 import apiFetch from '@wordpress/api-fetch';
 import { Notice } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+import { subscribeEditorCursor } from '../shared/editor-cursor-bridge';
+import { fractionToLatLng, type LatLng } from './geometry';
 
 /**
  * Shape of the REST endpoint's success response.
@@ -131,6 +142,28 @@ interface PreviewAttributes {
 	 */
 	provider: EditorProviderRecord | null;
 	overlays: readonly EditorOverlayRecord[];
+	/**
+	 * Block's `mapId` attribute. Used to key the editor cursor bridge
+	 * subscription so this preview only sees fractions published by the
+	 * matching Elevation block (issue #153). Empty string disables the
+	 * subscription — auto-pick has not produced a concrete id yet.
+	 */
+	mapId: string;
+	/**
+	 * Mirror of the Map block's `enableTrackPositionCursor` attribute. When
+	 * `false` the cursor marker is not created and the bridge subscription
+	 * is skipped — the editor's opt-out reaches the editor preview as well
+	 * as the frontend (issue #153).
+	 */
+	trackCursor: boolean;
+	/**
+	 * Editor-picked cursor colour. Empty string means "use the documented
+	 * default" — the SCSS / mount.ts fallback of `#d63638`. Threaded
+	 * through here so the preview reflects the colour-picker without a
+	 * round-trip through CSS variables (Leaflet's SVG / canvas renderer
+	 * does not pick custom properties up on the cursor's `<circle>`).
+	 */
+	trackCursorColor: string;
 }
 
 /**
@@ -186,6 +219,96 @@ const DEFAULT_TRACK_COLOR = '#0073aa';
  * @since 1.0.0
  */
 const DEFAULT_WAYPOINT_COLOR = '#d63638';
+
+/**
+ * Default track-cursor colour when the trackCursorColor attribute is empty.
+ *
+ * Matches the SCSS default in `src/blocks/map/style.scss`
+ * (`--kntnt-gpx-blocks-track-cursor-color: #d63638`) and the frontend
+ * fallback in `mount.ts`'s `createCursorMarker`, so an unconfigured
+ * block produces the same cursor colour in editor and frontend.
+ *
+ * @since 1.0.0
+ */
+const DEFAULT_TRACK_CURSOR_COLOR = '#d63638';
+
+/**
+ * Track-vertex array plus per-vertex chord-cumulative distances derived
+ * from the preview's GeoJSON LineString.
+ *
+ * The chord lengths are flat-Euclidean in (longitude, latitude) degrees,
+ * not Haversine metres — the editor preview's cursor sits on the
+ * polyline for *visual reference* of how a published fraction lands
+ * along the track; small distortions at extreme latitudes are
+ * imperceptible at the editor's zoom level. The frontend mount path
+ * uses the PHP-emitted `trackCumDist` array (true Haversine metres)
+ * for the same purpose — see `view.ts`'s mount flow.
+ *
+ * @since 1.0.0
+ */
+interface PreviewTrackGeometry {
+	readonly coords: Array< [ number, number ] >;
+	readonly cumulativeDistance: number[];
+	readonly totalDistance: number;
+}
+
+/**
+ * Build {@link PreviewTrackGeometry} from a GeoJSON payload.
+ *
+ * Picks the first `LineString` feature in the payload — the same one
+ * `L.geoJSON` mounts above — and walks its vertices in source order.
+ * GeoJSON stores coordinates as `[lon, lat]`, so the helper swaps them
+ * into the `[lat, lng]` order Leaflet (and `fractionToLatLng`) expect.
+ *
+ * Returns `null` when no LineString is present or it has fewer than
+ * two vertices; callers treat that as "no cursor to position" and skip
+ * the marker mount.
+ *
+ * @since 1.0.0
+ *
+ * @param geojson Cached GeoJSON payload from the REST endpoint.
+ * @return Geometry bundle or `null` when not derivable.
+ */
+function buildPreviewTrackGeometry(
+	geojson: GeoJSON.GeoJsonObject
+): PreviewTrackGeometry | null {
+	if ( geojson.type !== 'FeatureCollection' ) {
+		return null;
+	}
+	const fc = geojson as GeoJSON.FeatureCollection;
+	for ( const feature of fc.features ) {
+		if ( feature.geometry?.type !== 'LineString' ) {
+			continue;
+		}
+		const ls = feature.geometry as GeoJSON.LineString;
+		if ( ls.coordinates.length < 2 ) {
+			continue;
+		}
+
+		// Convert each GeoJSON [lon, lat] pair to the [lat, lng] order the
+		// rest of the cursor pipeline uses, in source order.
+		const coords: Array< [ number, number ] > = ls.coordinates.map(
+			( c ) => [ c[ 1 ], c[ 0 ] ] as [ number, number ]
+		);
+
+		// Accumulate flat-Euclidean chord lengths so `fractionToLatLng`
+		// resolves a fraction to a point on the actual rendered polyline
+		// (segment-length-weighted, not vertex-index-weighted). Plain
+		// Euclidean in degrees is sufficient at the editor preview's
+		// purely-visual fidelity — see the interface doc-comment above.
+		const cumulative: number[] = [ 0 ];
+		let total = 0;
+		for ( let i = 1; i < coords.length; i++ ) {
+			const dLat = coords[ i ][ 0 ] - coords[ i - 1 ][ 0 ];
+			const dLng = coords[ i ][ 1 ] - coords[ i - 1 ][ 1 ];
+			total += Math.sqrt( dLat * dLat + dLng * dLng );
+			cumulative.push( total );
+		}
+
+		return { coords, cumulativeDistance: cumulative, totalDistance: total };
+	}
+	return null;
+}
 
 /**
  * Resolve the Leaflet path-style options for a single GeoJSON feature.
@@ -267,6 +390,7 @@ export const MapEditorPreview = ( {
 	const layerRef = useRef< L.GeoJSON | null >( null );
 	const baseTileLayerRef = useRef< L.TileLayer | null >( null );
 	const overlayLayersRef = useRef< L.TileLayer[] >( [] );
+	const cursorMarkerRef = useRef< L.CircleMarker | null >( null );
 	const [ payload, setPayload ] = useState< PreviewPayload | null >( null );
 	const [ error, setError ] = useState< ApiError | null >( null );
 	const [ loading, setLoading ] = useState< boolean >( true );
@@ -288,7 +412,19 @@ export const MapEditorPreview = ( {
 		tooltipShowDesc,
 		provider,
 		overlays,
+		mapId,
+		trackCursor,
+		trackCursorColor,
 	} = attributes;
+
+	// Derive the cursor's track geometry once per payload. Memoising on
+	// the payload reference keeps the cursor effect's dep-array stable —
+	// otherwise a fresh geometry object on every parent render would
+	// remount the cursor marker on each render and break the subscription.
+	const trackGeometry = useMemo< PreviewTrackGeometry | null >(
+		() => ( payload ? buildPreviewTrackGeometry( payload.geojson ) : null ),
+		[ payload ]
+	);
 
 	// Fetch the preview payload whenever the attachment changes. Cancellation
 	// guards against late responses overwriting newer state when the editor
@@ -346,6 +482,7 @@ export const MapEditorPreview = ( {
 			layerRef.current = null;
 			baseTileLayerRef.current = null;
 			overlayLayersRef.current = [];
+			cursorMarkerRef.current = null;
 		}
 
 		// Build a non-interactive Leaflet preview. The editor map is for
@@ -423,6 +560,7 @@ export const MapEditorPreview = ( {
 			layerRef.current = null;
 			baseTileLayerRef.current = null;
 			overlayLayersRef.current = [];
+			cursorMarkerRef.current = null;
 		};
 		// payload + colours intentionally drive a fresh remount; React's hook
 		// lint rule wants every dep listed but trackColor/waypointColor are
@@ -534,6 +672,76 @@ export const MapEditorPreview = ( {
 		}
 		overlayLayersRef.current = next;
 	}, [ overlays ] );
+
+	// Cross-block cursor sync (issue #153). When the editor enables the
+	// `Track cursor` toggle on this Map block, the preview mounts a
+	// non-interactive `circleMarker` on the polyline and subscribes to
+	// the editor cursor bridge keyed on this block's `mapId`. The
+	// Elevation editor preview publishes fractions on hover; this effect
+	// translates them into a position on the rendered track via the same
+	// `fractionToLatLng` helper the frontend uses.
+	//
+	// The marker is created hidden (`opacity: 0`) and its first non-null
+	// fraction sets `opacity: 1`. A subsequent null fraction (the
+	// "pointer left" signal) hides it again. The marker is rebuilt when
+	// the underlying geometry, the cursor toggle, the colour, or the
+	// `mapId` changes; the cleanup callback removes it and unsubscribes
+	// from the bridge in one pass so each effect run owns a clean slate.
+	useEffect( () => {
+		const map = mapRef.current;
+		if ( ! map || ! trackCursor || ! trackGeometry || mapId === '' ) {
+			return;
+		}
+
+		// Build the marker at the track midpoint so it has a defined
+		// position before the first fraction arrives. Opacity starts at
+		// `0` and is bumped to `1` on the first non-null fraction.
+		const cursorColor = trackCursorColor || DEFAULT_TRACK_CURSOR_COLOR;
+		const midLatLng = fractionToLatLng(
+			trackGeometry.coords as ReadonlyArray< LatLng >,
+			trackGeometry.cumulativeDistance,
+			trackGeometry.totalDistance,
+			0.5
+		) ?? [ 0, 0 ];
+		const cursor = L.circleMarker( midLatLng, {
+			radius: 6,
+			color: cursorColor,
+			weight: 2,
+			fillColor: cursorColor,
+			fillOpacity: 1,
+			interactive: false,
+			opacity: 0,
+		} );
+		cursor.addTo( map );
+		cursorMarkerRef.current = cursor;
+
+		// Subscribe to the bridge. The handler mirrors the frontend
+		// `onMapCursorChange` watch: null hides the marker, a numeric
+		// fraction resolves to a `[lat, lng]` on the polyline.
+		const unsubscribe = subscribeEditorCursor( mapId, ( fraction ) => {
+			if ( fraction === null ) {
+				cursor.setStyle( { opacity: 0, fillOpacity: 0 } );
+				return;
+			}
+			const latLng = fractionToLatLng(
+				trackGeometry.coords as ReadonlyArray< LatLng >,
+				trackGeometry.cumulativeDistance,
+				trackGeometry.totalDistance,
+				fraction
+			);
+			if ( ! latLng ) {
+				return;
+			}
+			cursor.setLatLng( latLng );
+			cursor.setStyle( { opacity: 1, fillOpacity: 1 } );
+		} );
+
+		return () => {
+			unsubscribe();
+			map.removeLayer( cursor );
+			cursorMarkerRef.current = null;
+		};
+	}, [ trackCursor, trackGeometry, trackCursorColor, mapId, payload ] );
 
 	// Keep Leaflet's internal size in sync with the wrapper's actual size.
 	// Toggling alignwide/alignfull (and any other layout change that resizes

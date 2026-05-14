@@ -1454,6 +1454,9 @@ export const MapEdit = ( {
 						tooltipShowDesc,
 						provider: providerForPreview,
 						overlays: overlaysForPreview,
+						mapId,
+						trackCursor: enableTrackPositionCursor,
+						trackCursorColor,
 					} }
 					{ ...detectPreviewNotices(
 						tileProvider,

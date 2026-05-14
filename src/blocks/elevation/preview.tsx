@@ -149,15 +149,24 @@ export function warningMessage( kind: WarningKind ): string {
  * the bound Map's payload lands. Sub-100 ms fetch latency is invisible
  * to the eye and a spinner / skeleton would only add visual noise.
  *
+ * The `onHoverFraction` prop is forwarded to {@link Chart} when present
+ * so the editor preview can publish fractions on hover (issue #153);
+ * see `edit.tsx`'s call site for the bridge-publish wiring.
+ *
  * @since 1.0.0
  *
- * @param props       Render props.
- * @param props.state Resolved binding state.
+ * @param props                 Render props.
+ * @param props.state           Resolved binding state.
+ * @param props.onHoverFraction Hover callback forwarded to {@link Chart}
+ *                              when the resolved state is `healthy`.
+ *                              Ignored in every other branch.
  */
 export function ElevationPreview( {
 	state,
+	onHoverFraction,
 }: {
 	readonly state: PreviewState;
+	readonly onHoverFraction?: ( fraction: number | null ) => void;
 } ): JSX.Element | null {
 	switch ( state.kind ) {
 		case 'no-map':
@@ -191,6 +200,7 @@ export function ElevationPreview( {
 					showHorizontalGuide={ state.showHorizontalGuide }
 					tooltipShowDistance={ state.tooltipShowDistance }
 					tooltipShowHeight={ state.tooltipShowHeight }
+					onHoverFraction={ onHoverFraction }
 				/>
 			);
 	}

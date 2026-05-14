@@ -28,6 +28,7 @@
 
 import { useBlockProps, InspectorControls } from '@wordpress/block-editor';
 import { PanelBody, ToggleControl } from '@wordpress/components';
+import { useCallback } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
@@ -36,6 +37,7 @@ import { InspectorColorPanel } from './inspector-color';
 import { TypographyToolsPanel } from '../shared/typography-tools-panel';
 import { getDefaultMinHeight } from '../shared/dimensions-defaults';
 import { InspectorBottomSpacer } from '../shared/inspector-bottom-spacer';
+import { publishEditorCursor } from '../shared/editor-cursor-bridge';
 import { useMapBlocks, type EditorBlock } from './use-map-blocks';
 import { isAutoMapId, useAutoPickMapId } from './use-auto-pick-map-id';
 import {
@@ -615,6 +617,28 @@ export function ElevationEdit( {
 		resolution.bindingBroken
 	);
 
+	// Resolve the concrete `mapId` to publish on for the editor cursor
+	// bridge (issue #153). The bridge subscribers (every sibling Map
+	// editor preview) key on the Map block's own `mapId` attribute, so
+	// the publisher must match that exact value. The `"auto"` sentinel
+	// is rewritten to the topmost configured Map's mapId so the bridge
+	// connects on the very first render that has a target — the
+	// auto-pick effect rewrites the attribute in a follow-up render but
+	// publishing one frame earlier means the very first hover after the
+	// block mounts already lands on the sibling Map.
+	const publishMapId = isAutoMapId( mapId )
+		? configuredMapBlocks[ 0 ]?.attributes.mapId ?? ''
+		: mapId;
+	const publishHoverFraction = useCallback(
+		( fraction: number | null ): void => {
+			if ( publishMapId === '' ) {
+				return;
+			}
+			publishEditorCursor( publishMapId, fraction );
+		},
+		[ publishMapId ]
+	);
+
 	return (
 		<>
 			{ showPanel && (
@@ -748,7 +772,10 @@ export function ElevationEdit( {
 			</InspectorControls>
 			<InspectorBottomSpacer />
 			<div { ...blockProps }>
-				<ElevationPreview state={ resolution.state } />
+				<ElevationPreview
+					state={ resolution.state }
+					onHoverFraction={ publishHoverFraction }
+				/>
 			</div>
 		</>
 	);
