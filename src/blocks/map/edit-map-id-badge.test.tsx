@@ -145,9 +145,7 @@ jest.mock(
 			// Resolve createElement lazily so the jest.mock factory does
 			// not reference an out-of-scope import binding (jest forbids
 			// non-`mock`-prefixed captures across the factory boundary).
-			const {
-				createElement: ce,
-			} = require( '@wordpress/element' );
+			const { createElement: ce } = require( '@wordpress/element' );
 			return ce(
 				'button',
 				{

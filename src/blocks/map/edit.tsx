@@ -22,31 +22,14 @@ import {
 	MediaPlaceholder,
 	MediaReplaceFlow,
 	PanelColorSettings,
-	useSettings,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalFontFamilyControl as FontFamilyControl,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalFontAppearanceControl as FontAppearanceControl,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalLetterSpacingControl as LetterSpacingControl,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalTextDecorationControl as TextDecorationControl,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalTextTransformControl as TextTransformControl,
-	LineHeightControl,
 } from '@wordpress/block-editor';
 import {
 	PanelBody,
 	ToggleControl,
 	ToolbarButton,
-	FontSizePicker,
 	SelectControl,
 	TextControl,
 	ExternalLink,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalToolsPanel as ToolsPanel,
-	// eslint-disable-next-line @wordpress/no-unsafe-wp-apis
-	__experimentalToolsPanelItem as ToolsPanelItem,
 } from '@wordpress/components';
 import { useMemo } from '@wordpress/element';
 import { useSelect, dispatch } from '@wordpress/data';
@@ -61,7 +44,7 @@ import {
 	type EditorOverlayRecord,
 	type EditorProviderRecord,
 } from './editor-preview';
-import { flattenPresets } from '../shared/flatten-presets';
+import { TypographyToolsPanel } from '../shared/typography-tools-panel';
 import { getDefaultMinHeight } from '../shared/dimensions-defaults';
 import { InspectorBottomSpacer } from '../shared/inspector-bottom-spacer';
 import { substituteTileApiKey } from './tile-key';
@@ -277,24 +260,6 @@ interface MapAttributes {
 }
 
 /**
- * Theme typography preset entry shape, as returned by the unified theme
- * settings (`useSettings('typography.fontFamilies')` /
- * `useSettings('typography.fontSizes')`).
- *
- * @since 1.0.0
- */
-interface FontFamilyPreset {
-	name: string;
-	slug: string;
-	fontFamily: string;
-}
-interface FontSizePreset {
-	name: string;
-	slug: string;
-	size: string;
-}
-
-/**
  * Media object shape returned by MediaPlaceholder's onSelect callback.
  *
  * @since 1.0.0
@@ -303,232 +268,6 @@ interface MediaObject {
 	id: number;
 	url: string;
 	[ key: string ]: unknown;
-}
-
-/**
- * Per-aspect setter signature passed into the typography panel renderer. The
- * panel writes one or more named aspects per call; unset aspects retain their
- * previous value. The empty string is the canonical "unset" marker.
- *
- * @since 1.0.0
- */
-type SetTypography = ( values: {
-	fontFamily?: string;
-	fontSize?: string;
-	fontWeight?: string;
-	fontStyle?: string;
-	lineHeight?: string;
-	letterSpacing?: string;
-	textDecoration?: string;
-	textTransform?: string;
-} ) => void;
-
-/**
- * Renders a unified Typography ToolsPanel matching the surface used by core
- * Paragraph/Group blocks: a per-aspect dropdown menu lets the editor enable or
- * disable each aspect individually, and "Reset all" returns every aspect to
- * the inherited theme default.
- *
- * The panel exposes the seven aspects core's standard Typography panel
- * surfaces — Font (family), Size, Appearance (weight + style combined), Line
- * height, Letter spacing, Decoration, and Letter case — written into the
- * caller-provided attribute group via `setTypography`. Each aspect can be
- * enabled or disabled individually; an unset aspect reads as "Default" and
- * inherits from the surrounding theme.
- *
- * @since 1.0.0
- *
- * @param {Object}             props                Component props.
- * @param {string}             props.label          Localised panel title.
- * @param {string}             props.fontFamily     Current font-family value.
- * @param {string}             props.fontSize       Current font-size value.
- * @param {string}             props.fontWeight     Current font-weight value.
- * @param {string}             props.fontStyle      Current font-style value.
- * @param {string}             props.lineHeight     Current line-height value.
- * @param {string}             props.letterSpacing  Current letter-spacing value.
- * @param {string}             props.textDecoration Current text-decoration value.
- * @param {string}             props.textTransform  Current text-transform value.
- * @param {FontFamilyPreset[]} props.fontFamilies   Theme font-family presets.
- * @param {FontSizePreset[]}   props.fontSizes      Theme font-size presets.
- * @param {SetTypography}      props.setTypography  Setter callback.
- */
-function TypographyToolsPanel( {
-	label,
-	fontFamily,
-	fontSize,
-	fontWeight,
-	fontStyle,
-	lineHeight,
-	letterSpacing,
-	textDecoration,
-	textTransform,
-	fontFamilies,
-	fontSizes,
-	setTypography,
-}: {
-	label: string;
-	fontFamily: string;
-	fontSize: string;
-	fontWeight: string;
-	fontStyle: string;
-	lineHeight: string;
-	letterSpacing: string;
-	textDecoration: string;
-	textTransform: string;
-	fontFamilies: FontFamilyPreset[];
-	fontSizes: FontSizePreset[];
-	setTypography: SetTypography;
-} ): JSX.Element {
-	const hasAppearance = fontWeight !== '' || fontStyle !== '';
-
-	return (
-		// @ts-ignore — ToolsPanel's typings lag the runtime API.
-		<ToolsPanel
-			label={ label }
-			resetAll={ () =>
-				setTypography( {
-					fontFamily: '',
-					fontSize: '',
-					fontWeight: '',
-					fontStyle: '',
-					lineHeight: '',
-					letterSpacing: '',
-					textDecoration: '',
-					textTransform: '',
-				} )
-			}
-		>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => fontFamily !== '' }
-				label={ __( 'Font', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { fontFamily: '' } ) }
-				isShownByDefault
-			>
-				<FontFamilyControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					value={ fontFamily }
-					fontFamilies={ fontFamilies }
-					onChange={ ( value: string | undefined ) =>
-						setTypography( { fontFamily: value ?? '' } )
-					}
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => fontSize !== '' }
-				label={ __( 'Size', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { fontSize: '' } ) }
-				isShownByDefault
-			>
-				<FontSizePicker
-					__next40pxDefaultSize
-					value={ fontSize || undefined }
-					fontSizes={ fontSizes }
-					onChange={ ( value: number | string | undefined ) =>
-						setTypography( {
-							fontSize:
-								value !== undefined && value !== ''
-									? String( value )
-									: '',
-						} )
-					}
-					withReset={ false }
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => hasAppearance }
-				label={ __( 'Appearance', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () =>
-					setTypography( { fontWeight: '', fontStyle: '' } )
-				}
-				isShownByDefault
-			>
-				<FontAppearanceControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					hasFontWeights
-					hasFontStyles
-					value={ {
-						fontWeight: fontWeight || undefined,
-						fontStyle: fontStyle || undefined,
-					} }
-					onChange={ ( value: {
-						fontWeight?: string;
-						fontStyle?: string;
-					} ) =>
-						setTypography( {
-							fontWeight: value?.fontWeight ?? '',
-							fontStyle: value?.fontStyle ?? '',
-						} )
-					}
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => lineHeight !== '' }
-				label={ __( 'Line height', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { lineHeight: '' } ) }
-				isShownByDefault={ false }
-			>
-				<LineHeightControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					__unstableInputWidth="auto"
-					value={ lineHeight }
-					onChange={ ( value: string | undefined ) =>
-						setTypography( { lineHeight: value ?? '' } )
-					}
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => letterSpacing !== '' }
-				label={ __( 'Letter spacing', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { letterSpacing: '' } ) }
-				isShownByDefault={ false }
-			>
-				<LetterSpacingControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					value={ letterSpacing }
-					onChange={ ( value: string | undefined ) =>
-						setTypography( { letterSpacing: value ?? '' } )
-					}
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => textDecoration !== '' }
-				label={ __( 'Decoration', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { textDecoration: '' } ) }
-				isShownByDefault={ false }
-			>
-				<TextDecorationControl
-					value={ textDecoration }
-					onChange={ ( value: string | undefined ) =>
-						setTypography( { textDecoration: value ?? '' } )
-					}
-				/>
-			</ToolsPanelItem>
-			{ /* @ts-ignore — ToolsPanelItem's typings lag the runtime API. */ }
-			<ToolsPanelItem
-				hasValue={ () => textTransform !== '' }
-				label={ __( 'Letter case', 'kntnt-gpx-blocks' ) }
-				onDeselect={ () => setTypography( { textTransform: '' } ) }
-				isShownByDefault={ false }
-			>
-				<TextTransformControl
-					value={ textTransform }
-					onChange={ ( value: string | undefined ) =>
-						setTypography( { textTransform: value ?? '' } )
-					}
-				/>
-			</ToolsPanelItem>
-		</ToolsPanel>
-	);
 }
 
 /**
@@ -1339,19 +1078,6 @@ export const MapEdit = ( {
 		[ attachmentId ]
 	);
 
-	// Pull the merged theme typography presets so the unified Typography
-	// panel exposes the same Standard/preset choices as core Paragraph/Group.
-	// useSettings returns the origin-keyed `{ default, theme, custom }` shape
-	// for multi-origin settings, which the underlying controls iterate with
-	// `.map()` — flatten to a plain array before forwarding.
-	const [ themeFontFamilies, themeFontSizes ] = useSettings(
-		'typography.fontFamilies',
-		'typography.fontSizes'
-	);
-	const fontFamilies =
-		flattenPresets< FontFamilyPreset >( themeFontFamilies );
-	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
-
 	// Resolve the plugin-defined default `min-height` for the wrapper.
 	// `getDefaultMinHeight()` returns `'30vh'` when the user has not
 	// set a `minHeight` on this block — the same single-mechanism
@@ -1769,52 +1495,15 @@ export const MapEdit = ( {
 						initialOpen={ false }
 					>
 						<TypographyToolsPanel
-							label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
-							fontFamily={ tooltipNameFontFamily }
-							fontSize={ tooltipNameFontSize }
-							fontWeight={ tooltipNameFontWeight }
-							fontStyle={ tooltipNameFontStyle }
-							lineHeight={ tooltipNameLineHeight }
-							letterSpacing={ tooltipNameLetterSpacing }
-							textDecoration={ tooltipNameTextDecoration }
-							textTransform={ tooltipNameTextTransform }
-							fontFamilies={ fontFamilies }
-							fontSizes={ fontSizes }
-							setTypography={ ( values ) => {
-								const next: Partial< MapAttributes > = {};
-								if ( values.fontFamily !== undefined ) {
-									next.tooltipNameFontFamily =
-										values.fontFamily;
-								}
-								if ( values.fontSize !== undefined ) {
-									next.tooltipNameFontSize = values.fontSize;
-								}
-								if ( values.fontWeight !== undefined ) {
-									next.tooltipNameFontWeight =
-										values.fontWeight;
-								}
-								if ( values.fontStyle !== undefined ) {
-									next.tooltipNameFontStyle =
-										values.fontStyle;
-								}
-								if ( values.lineHeight !== undefined ) {
-									next.tooltipNameLineHeight =
-										values.lineHeight;
-								}
-								if ( values.letterSpacing !== undefined ) {
-									next.tooltipNameLetterSpacing =
-										values.letterSpacing;
-								}
-								if ( values.textDecoration !== undefined ) {
-									next.tooltipNameTextDecoration =
-										values.textDecoration;
-								}
-								if ( values.textTransform !== undefined ) {
-									next.tooltipNameTextTransform =
-										values.textTransform;
-								}
-								setAttributes( next );
+							title={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+							prefix="tooltipName"
+							attributes={ attributes }
+							setAttributes={ setAttributes }
+							defaultVisibility={ {
+								size: true,
+								appearance: true,
 							} }
+							panelId={ `${ clientId }-tooltip-name` }
 						/>
 					</PanelBody>
 				) }
@@ -1827,52 +1516,15 @@ export const MapEdit = ( {
 						initialOpen={ false }
 					>
 						<TypographyToolsPanel
-							label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
-							fontFamily={ tooltipDescFontFamily }
-							fontSize={ tooltipDescFontSize }
-							fontWeight={ tooltipDescFontWeight }
-							fontStyle={ tooltipDescFontStyle }
-							lineHeight={ tooltipDescLineHeight }
-							letterSpacing={ tooltipDescLetterSpacing }
-							textDecoration={ tooltipDescTextDecoration }
-							textTransform={ tooltipDescTextTransform }
-							fontFamilies={ fontFamilies }
-							fontSizes={ fontSizes }
-							setTypography={ ( values ) => {
-								const next: Partial< MapAttributes > = {};
-								if ( values.fontFamily !== undefined ) {
-									next.tooltipDescFontFamily =
-										values.fontFamily;
-								}
-								if ( values.fontSize !== undefined ) {
-									next.tooltipDescFontSize = values.fontSize;
-								}
-								if ( values.fontWeight !== undefined ) {
-									next.tooltipDescFontWeight =
-										values.fontWeight;
-								}
-								if ( values.fontStyle !== undefined ) {
-									next.tooltipDescFontStyle =
-										values.fontStyle;
-								}
-								if ( values.lineHeight !== undefined ) {
-									next.tooltipDescLineHeight =
-										values.lineHeight;
-								}
-								if ( values.letterSpacing !== undefined ) {
-									next.tooltipDescLetterSpacing =
-										values.letterSpacing;
-								}
-								if ( values.textDecoration !== undefined ) {
-									next.tooltipDescTextDecoration =
-										values.textDecoration;
-								}
-								if ( values.textTransform !== undefined ) {
-									next.tooltipDescTextTransform =
-										values.textTransform;
-								}
-								setAttributes( next );
+							title={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+							prefix="tooltipDesc"
+							attributes={ attributes }
+							setAttributes={ setAttributes }
+							defaultVisibility={ {
+								size: true,
+								appearance: true,
 							} }
+							panelId={ `${ clientId }-tooltip-desc` }
 						/>
 					</PanelBody>
 				) }
