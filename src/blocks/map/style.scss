@@ -181,29 +181,22 @@
 }
 
 // Leaflet inserts each tooltip into a `.leaflet-tooltip-pane` that descends
-// from the map container, so scoping these arrow-tip rules to
+// from the map container, so scoping the arrow-tip suppression to
 // `.kntnt-gpx-blocks-map` keeps a third-party Leaflet tooltip on the same
-// page from picking up our colour. Each direction selector rewrites the
-// border colour Leaflet uses for the arrow tip so it matches the surface
-// background — including alpha — instead of the hardcoded white default.
-// (The selectors live *outside* the parent `.kntnt-gpx-blocks-map` block
-// above so SCSS does not split this compound selector across the descendant
-// combinator wrong; the explicit `.kntnt-gpx-blocks-map .leaflet-tooltip-*`
-// form makes intent unambiguous.)
-.kntnt-gpx-blocks-map .leaflet-tooltip-top:before {
-	border-top-color: var(--kntnt-gpx-blocks-tooltip-bg);
-}
-
-.kntnt-gpx-blocks-map .leaflet-tooltip-bottom:before {
-	border-bottom-color: var(--kntnt-gpx-blocks-tooltip-bg);
-}
-
-.kntnt-gpx-blocks-map .leaflet-tooltip-left:before {
-	border-left-color: var(--kntnt-gpx-blocks-tooltip-bg);
-}
-
+// page from also losing its arrow. The placement helpers in
+// `tooltip-placement.ts` shift the tooltip horizontally to stay inside the
+// container when the marker sits near the left or right edge; the arrow
+// would then no longer point at the marker, so removing it entirely keeps
+// the visual relationship between marker and tooltip unambiguous in every
+// case. (The selector lives *outside* the parent `.kntnt-gpx-blocks-map`
+// block above so SCSS does not split the compound selector across the
+// descendant combinator wrong; the explicit
+// `.kntnt-gpx-blocks-map .leaflet-tooltip-*` form makes intent unambiguous.)
+.kntnt-gpx-blocks-map .leaflet-tooltip-top:before,
+.kntnt-gpx-blocks-map .leaflet-tooltip-bottom:before,
+.kntnt-gpx-blocks-map .leaflet-tooltip-left:before,
 .kntnt-gpx-blocks-map .leaflet-tooltip-right:before {
-	border-right-color: var(--kntnt-gpx-blocks-tooltip-bg);
+	display: none;
 }
 
 // Error notice — shown only to editors when the render layer surfaces an error.

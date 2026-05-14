@@ -16,6 +16,40 @@
 import L from 'leaflet';
 import { applyMaxBoundsIfSafe, paddedBoundsFromBox } from './bounds';
 import { fractionToLatLng, type LatLng } from './geometry';
+import {
+	chooseTooltipDirection,
+	computeTooltipHorizontalOffset,
+	measureTooltipBox,
+} from './tooltip-placement';
+
+/**
+ * Vertical gap, in pixels, Leaflet leaves between a `circleMarker` and a
+ * tooltip placed in either the `top` or `bottom` direction. Mirrors the
+ * `margin-top: ±6px` rules Leaflet ships on `.leaflet-tooltip-top` and
+ * `.leaflet-tooltip-bottom` in its bundled stylesheet.
+ *
+ * @since 0.13.5
+ */
+const LEAFLET_TOOLTIP_GAP_PX = 6;
+
+/**
+ * Reads the root font size and converts the 0.5 rem padding that gates the
+ * tooltip flip / shift logic into pixels.
+ *
+ * Reading via `getComputedStyle` honours any site- or theme-supplied
+ * `font-size` override on `<html>` so the padding scales with the rest of
+ * the typography.
+ *
+ * @since 0.13.5
+ *
+ * @return The padding in pixels.
+ */
+function tooltipPaddingPx(): number {
+	const rootFontSize =
+		parseFloat( getComputedStyle( document.documentElement ).fontSize ) ||
+		16;
+	return rootFontSize * 0.5;
+}
 
 /**
  * Map-level settings hydrated from PHP block attributes.
@@ -524,6 +558,16 @@ export function addWaypointMarkers(
 		'#d63638'
 	);
 
+	// Pre-resolve placement constants used by every marker's tooltip. The
+	// pane reference is read once per call so we do not pay the lookup cost
+	// inside the per-marker loop, and the padding is converted from rem to
+	// pixels once because the runtime cost of `getComputedStyle` is small
+	// but non-zero.
+	const tooltipPaneEl = map.getPane( 'tooltipPane' ) as
+		| HTMLElement
+		| undefined;
+	const paddingPx = tooltipPaddingPx();
+
 	const wfc = waypoints as GeoJSON.FeatureCollection;
 	for ( const feature of wfc.features ) {
 		if ( feature.geometry?.type !== 'Point' ) {
@@ -577,23 +621,61 @@ export function addWaypointMarkers(
 				tooltipEl.appendChild( descEl );
 			}
 
-			// Bind with `permanent: false` so Leaflet's built-in hover
-			// handlers drive the transient open-on-mouseover /
-			// close-on-mouseout behaviour. Sticky mode is layered on top
-			// by intercepting `tooltipclose` and re-opening when this
-			// marker is the sticky one.
-			marker.bindTooltip( tooltipEl, {
-				direction: 'top',
-				permanent: false,
-				sticky: false,
-				opacity: 1,
-			} );
+			// Pre-measure the rendered tooltip so the per-open placement
+			// helper can flip direction and shift horizontally without
+			// re-flowing the DOM. The clone is briefly attached to the
+			// real tooltip pane so it inherits Leaflet's `.leaflet-tooltip`
+			// padding, max-width, and font metrics, and the pane is
+			// restored before this returns.
+			const tooltipBox = tooltipPaneEl
+				? measureTooltipBox( tooltipEl, tooltipPaneEl )
+				: { width: 0, height: 0 };
+
+			// Recompute the tooltip's direction and horizontal offset on
+			// every open so a marker near the container's top edge flips
+			// to `bottom` and a marker near the left or right edge nudges
+			// inward by exactly the amount needed to clear the
+			// `paddingPx` boundary. The helper writes the result to
+			// `tooltip.options` before Leaflet's internal `_openTooltip`
+			// reads them — guaranteed by registering this listener
+			// *before* `bindTooltip` further down, since `bindTooltip`
+			// calls `_initTooltipInteractions` which appends Leaflet's
+			// own `mouseover` and `click` handlers to the marker's event
+			// list. Earlier-registered listeners fire first, so our
+			// adjustment is applied before Leaflet positions the tooltip.
+			const adjustPlacement = (): void => {
+				const tooltip = marker.getTooltip();
+				if ( ! tooltip || tooltipBox.height === 0 ) {
+					return;
+				}
+				const point = map.latLngToContainerPoint( marker.getLatLng() );
+				const direction = chooseTooltipDirection( {
+					markerY: point.y,
+					tooltipHeight: tooltipBox.height,
+					leafletGap: LEAFLET_TOOLTIP_GAP_PX,
+					paddingPx,
+				} );
+				const offsetX = computeTooltipHorizontalOffset( {
+					markerX: point.x,
+					tooltipWidth: tooltipBox.width,
+					containerWidth: map.getSize().x,
+					paddingPx,
+				} );
+				tooltip.options.direction = direction;
+				tooltip.options.offset = L.point( offsetX, 0 );
+			};
+
+			marker.on( 'mouseover', adjustPlacement );
 
 			// Click toggles sticky on this marker, swapping out any
 			// sticky on a different marker. The transient hover tooltip
-			// is already open at this point (a click implies the pointer
-			// is over the marker), so `openTooltip()` is idempotent on
-			// the open case and is only doing real work after a swap.
+			// is already open at this point on pointer devices (a click
+			// implies the pointer is over the marker); on touch devices
+			// `mouseover` may not fire at all, so we recompute placement
+			// here too before `openTooltip()` repositions the tooltip.
+			// Registered before `bindTooltip` so this handler runs
+			// before Leaflet's internal `click` → `_openTooltip` path
+			// that `_initTooltipInteractions` wires up.
 			marker.on( 'click', () => {
 				if ( stickyMarker === marker ) {
 					closeSticky();
@@ -601,8 +683,24 @@ export function addWaypointMarkers(
 				}
 
 				closeSticky();
+				adjustPlacement();
 				stickyMarker = marker;
 				marker.openTooltip();
+			} );
+
+			// Bind with `permanent: false` so Leaflet's built-in hover
+			// handlers drive the transient open-on-mouseover /
+			// close-on-mouseout behaviour. Sticky mode is layered on top
+			// by intercepting `tooltipclose` and re-opening when this
+			// marker is the sticky one. Done *after* the placement
+			// listeners above so `_initTooltipInteractions`'s mouseover
+			// and click handlers are appended after ours and therefore
+			// fire second on each open.
+			marker.bindTooltip( tooltipEl, {
+				direction: 'top',
+				permanent: false,
+				sticky: false,
+				opacity: 1,
 			} );
 
 			// Leaflet auto-closes the tooltip on `mouseout`. When this
