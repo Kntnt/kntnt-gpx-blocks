@@ -67,3 +67,21 @@
 		}
 	}
 }
+
+// Click-to-copy Map ID badge in the block toolbar (issue #147). The
+// ToolbarButton renders outside the block wrapper via the editor's
+// `<BlockControls>` portal, so the rule sits at the top level rather than
+// nested under `.wp-block-kntnt-gpx-blocks-map`. The visible text is the
+// literal `mapId` value (WYSIWYG with the clipboard contents — no `#` or
+// other decoration in the markup). Hover and focus states are left to the
+// WordPress ToolbarButton defaults; this rule only contributes the
+// monospace font, the subtle background pill, and the horizontal margin
+// that keeps the pill clear of the toolbar group dividers.
+.kntnt-gpx-blocks-map-id-badge {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.875em;
+	background: rgba(0, 0, 0, 0.06);
+	border-radius: 3px;
+	padding: 2px 6px;
+	margin: 0 4px;
+}

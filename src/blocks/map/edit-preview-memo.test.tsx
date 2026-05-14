@@ -79,6 +79,7 @@ jest.mock(
 		__esModule: true,
 		PanelBody: ( { children }: { children: React.ReactNode } ) => children,
 		ToggleControl: () => null,
+		ToolbarButton: () => null,
 		FontSizePicker: () => null,
 		SelectControl: () => null,
 		TextControl: () => null,
@@ -102,6 +103,7 @@ jest.mock(
 			} );
 			return fn( select );
 		},
+		dispatch: () => ( { createNotice: () => undefined } ),
 	} ),
 	{ virtual: true }
 );
@@ -109,6 +111,11 @@ jest.mock(
 jest.mock(
 	'@wordpress/core-data',
 	() => ( { __esModule: true, store: 'core' } ),
+	{ virtual: true }
+);
+jest.mock(
+	'@wordpress/notices',
+	() => ( { __esModule: true, store: 'core/notices' } ),
 	{ virtual: true }
 );
 

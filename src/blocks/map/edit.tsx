@@ -38,6 +38,7 @@ import {
 import {
 	PanelBody,
 	ToggleControl,
+	ToolbarButton,
 	FontSizePicker,
 	SelectControl,
 	TextControl,
@@ -48,9 +49,10 @@ import {
 	__experimentalToolsPanelItem as ToolsPanelItem,
 } from '@wordpress/components';
 import { useMemo } from '@wordpress/element';
-import { useSelect } from '@wordpress/data';
+import { useSelect, dispatch } from '@wordpress/data';
 import { store as coreStore } from '@wordpress/core-data';
-import { __ } from '@wordpress/i18n';
+import { store as noticesStore } from '@wordpress/notices';
+import { __, sprintf } from '@wordpress/i18n';
 import type { BlockEditProps } from '@wordpress/blocks';
 
 import { useEnsureUniqueMapId } from './use-ensure-unique-map-id';
@@ -1277,9 +1279,11 @@ export const MapEdit = ( {
 
 	// Destructure all attributes before use so useBlockProps can read colour
 	// values when it injects the instant-preview CSS variables. mapId is
-	// managed by useEnsureUniqueMapId above and is not consumed here directly.
+	// surfaced read-only in the block toolbar as a click-to-copy badge once
+	// `useEnsureUniqueMapId` above has assigned a value (issue #147).
 	const {
 		attachmentId,
+		mapId,
 		showZoomButtons,
 		showScale,
 		showFullscreen,
@@ -1554,11 +1558,70 @@ export const MapEdit = ( {
 	// Render the inspector controls and the editor-side React preview once a
 	// GPX file is attached. The preview component renders any error notice
 	// inline; no separate Notice in the inspector is needed. The toolbar
-	// surfaces a Replace flow (Media Library + Upload tabs only — no URL,
-	// no Reset) so the editor can swap the .gpx without losing any other
-	// attribute; only `attachmentId` is written by the onSelect callback.
+	// surfaces two groups: a middle-group click-to-copy badge that exposes
+	// the auto-generated `mapId` so site builders can bind sibling Elevation
+	// blocks and `[kntnt-gpx]` shortcodes to a specific Map (issue #147),
+	// and an `other`-group Replace flow (Media Library + Upload tabs only —
+	// no URL, no Reset) so the editor can swap the .gpx without losing any
+	// other attribute; only `attachmentId` is written by the onSelect
+	// callback. The badge renders only after `useEnsureUniqueMapId` has
+	// assigned a non-empty value, so a freshly inserted block never flashes
+	// an empty toolbar button.
 	return (
 		<>
+			{ mapId && (
+				<BlockControls>
+					<ToolbarButton
+						text={ mapId }
+						label={ __( 'Copy Map ID', 'kntnt-gpx-blocks' ) }
+						showTooltip
+						className="kntnt-gpx-blocks-map-id-badge"
+						aria-label={ sprintf(
+							/* translators: %s: auto-generated Map ID such as "map-7k9f2m". */
+							__(
+								'Copy Map ID %s to clipboard',
+								'kntnt-gpx-blocks'
+							),
+							mapId
+						) }
+						onClick={ () => {
+							// Modern WP admin runs over HTTPS where
+							// `navigator.clipboard` is reliably available, so
+							// no `document.execCommand` fallback is wired —
+							// the rare failure surfaces honestly as an error
+							// snackbar rather than silent success.
+							navigator.clipboard.writeText( mapId ).then(
+								() => {
+									dispatch( noticesStore ).createNotice(
+										'success',
+										__(
+											'Map ID copied',
+											'kntnt-gpx-blocks'
+										),
+										{
+											type: 'snackbar',
+											isDismissible: true,
+										}
+									);
+								},
+								() => {
+									dispatch( noticesStore ).createNotice(
+										'error',
+										__(
+											"Couldn't copy Map ID",
+											'kntnt-gpx-blocks'
+										),
+										{
+											type: 'snackbar',
+											isDismissible: true,
+										}
+									);
+								}
+							);
+						} }
+					/>
+				</BlockControls>
+			) }
 			<BlockControls group="other">
 				<MediaReplaceFlow
 					mediaId={ attachmentId }

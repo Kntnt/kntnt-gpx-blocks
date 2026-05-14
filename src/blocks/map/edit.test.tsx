@@ -146,6 +146,7 @@ jest.mock(
 			capturedToggleLabels.push( props.label ?? '' );
 			return null;
 		},
+		ToolbarButton: () => null,
 		FontSizePicker: () => null,
 		SelectControl: () => null,
 		TextControl: () => null,
@@ -160,11 +161,12 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Mock @wordpress/data — `useSelect` is the only surface MapEdit reaches.
-// The component uses it to resolve the attached media's source URL via
-// the core/core-data store and to read the block tree via core/block-editor
-// (inside `useEnsureUniqueMapId`). Returning empty arrays/undefined for
-// both stores is enough to mount without errors.
+// Mock @wordpress/data — `useSelect` resolves stores for the media-URL
+// lookup and the block-tree read inside `useEnsureUniqueMapId`. `dispatch`
+// is wired to a noop createNotice because the Map ID badge's click
+// handler reaches into `core/notices` (issue #147); the inspector-shape
+// tests in this file don't click the button, so a noop is enough to keep
+// the module evaluation green.
 jest.mock(
 	'@wordpress/data',
 	() => ( {
@@ -176,15 +178,21 @@ jest.mock(
 			} );
 			return fn( select );
 		},
+		dispatch: () => ( { createNotice: () => undefined } ),
 	} ),
 	{ virtual: true }
 );
 
-// Mock @wordpress/core-data — only the store reference is read for the
-// media-resolution useSelect inside MapEdit.
+// Mock @wordpress/core-data and @wordpress/notices — only the store
+// references are read so a string sentinel suffices for each.
 jest.mock(
 	'@wordpress/core-data',
 	() => ( { __esModule: true, store: 'core' } ),
+	{ virtual: true }
+);
+jest.mock(
+	'@wordpress/notices',
+	() => ( { __esModule: true, store: 'core/notices' } ),
 	{ virtual: true }
 );
 
