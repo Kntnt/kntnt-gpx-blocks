@@ -69,15 +69,27 @@ export interface TypographyAttributes {
  *
  * `width` and `height` come from `SVGGraphicsElement.getBBox()` and
  * are in SVG user units (which equal CSS pixels under the chart's
- * 1:1 viewBox-to-rect mapping). `fontSize` is the resolved CSS
- * `font-size` in pixels and is the `em` base the margin algorithm
- * uses for its `0.5em` padding term.
+ * 1:1 viewBox-to-rect mapping). `topOffset` is the signed offset
+ * from the text element's `y` attribute (the alphabetic baseline) to
+ * the bbox top — typically negative because the bbox sits above the
+ * baseline. Step 7 pl.2 added this field so tooltip rows can be
+ * positioned by their *visual* top/bottom rather than by their
+ * baseline plus an assumed full-ascent: in Chrome/Blink the bbox
+ * height returned for SVG text reaches roughly the font's full
+ * ascender/descender extent even when the rendered glyphs (digits,
+ * "km", "m") have no descenders, so a formula that infers the visual
+ * top as `baseline - height` places digit-only text too low in the
+ * tooltip rect. With `topOffset`, callers can position the bbox top
+ * directly. `fontSize` is the resolved CSS `font-size` in pixels and
+ * is the `em` base the margin algorithm uses for its `0.5em` padding
+ * term.
  *
  * @since 1.0.0
  */
 export interface TextMeasurement {
 	readonly width: number;
 	readonly height: number;
+	readonly topOffset: number;
 	readonly fontSize: number;
 }
 
@@ -142,12 +154,13 @@ export function createTextMeasurer(
 		// chart even if the SVG is briefly painted before removal.
 		// `aria-hidden` keeps assistive tech from announcing the
 		// measurement string.
+		const measurementY = -10000;
 		const node = document.createElementNS(
 			SVG_NS,
 			'text'
 		) as SVGTextElement;
 		node.setAttribute( 'x', '-10000' );
-		node.setAttribute( 'y', '-10000' );
+		node.setAttribute( 'y', String( measurementY ) );
 		node.setAttribute( 'aria-hidden', 'true' );
 		if ( typeof className === 'string' && className !== '' ) {
 			node.setAttribute( 'class', className );
@@ -158,8 +171,11 @@ export function createTextMeasurer(
 		// `getBBox()` is the only cross-browser primitive that reports
 		// the *rendered* dimensions of an SVG text node; `getComputedStyle`
 		// resolves the inherited font-size into the pixel value the
-		// margin algorithm uses as its `em` base.
+		// margin algorithm uses as its `em` base. `topOffset` records
+		// where the bbox top sits relative to the text's baseline so
+		// callers can position the bbox precisely (Step 7 pl.2).
 		const bbox = node.getBBox();
+		const topOffset = bbox.y - measurementY;
 		const resolved = window
 			.getComputedStyle( node )
 			.getPropertyValue( 'font-size' );
@@ -170,6 +186,7 @@ export function createTextMeasurer(
 		return {
 			width: bbox.width,
 			height: bbox.height,
+			topOffset,
 			fontSize:
 				Number.isFinite( fontSize ) && fontSize > 0
 					? fontSize

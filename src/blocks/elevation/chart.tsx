@@ -58,6 +58,7 @@ import {
 	type TypographyAttributes,
 } from './geometry/measure';
 import { computeChartScale } from './geometry/scale';
+import { computeTooltipLayout } from './geometry/tooltip-layout';
 import { formatDistance, formatElevation } from './geometry/tooltip-format';
 import { computeTooltipPlacement } from './geometry/tooltip-placement';
 
@@ -470,21 +471,17 @@ export function Chart( {
 			? measureHeight( heightLabel )
 			: null;
 
+		// Resolve the rect dimensions from the visible-row bboxes so
+		// the placement helper has a final tooltipBox size to flip
+		// against.
 		const em = scale.em;
-		const padX = 0.5 * em;
-		const padY = 0.5 * em;
-		const lineGap = 0.25 * em;
-
-		const distH = distanceBBox?.height ?? 0;
-		const heightH = heightBBox?.height ?? 0;
-		const distW = distanceBBox?.width ?? 0;
-		const heightW = heightBBox?.width ?? 0;
-		const rowsHeight =
-			distH +
-			heightH +
-			( distanceBBox !== null && heightBBox !== null ? lineGap : 0 );
-		const rectWidth = Math.max( distW, heightW ) + 2 * padX;
-		const rectHeight = rowsHeight + 2 * padY;
+		const preliminaryLayout = computeTooltipLayout( {
+			placementX: 0,
+			placementY: 0,
+			em,
+			distance: distanceBBox,
+			height: heightBBox,
+		} );
 
 		const plotRect = {
 			x: scale.plotLeft,
@@ -495,38 +492,36 @@ export function Chart( {
 		const placement = computeTooltipPlacement( {
 			cursor: { cx: previewCursor.cx },
 			plotRect,
-			tooltipBox: { w: rectWidth, h: rectHeight },
+			tooltipBox: {
+				w: preliminaryLayout.rectWidth,
+				h: preliminaryLayout.rectHeight,
+			},
 			em,
 			previousSide: null,
 		} );
 
-		// Baseline-positioned <text>: y is the alphabetic baseline. Two
-		// rows stack from the top with the first row's baseline at
-		// `rectY + padY + distH`; the second row's baseline a full
-		// `heightH + lineGap` below. A single-row tooltip centres its
-		// row vertically in the shorter rect.
-		let distanceTextY: number;
-		let heightTextY: number;
-		if ( distanceBBox !== null && heightBBox !== null ) {
-			distanceTextY = placement.y + padY + distH;
-			heightTextY = distanceTextY + lineGap + heightH;
-		} else if ( distanceBBox !== null ) {
-			distanceTextY = placement.y + rectHeight / 2 + distH / 2;
-			heightTextY = 0;
-		} else {
-			heightTextY = placement.y + rectHeight / 2 + heightH / 2;
-			distanceTextY = 0;
-		}
+		// Resolve the final per-row text positions relative to the
+		// chosen placement origin. The pure layout helper positions
+		// each row by its visual bbox top so digit-only labels (no
+		// descenders) sit with symmetric padding above and below — see
+		// geometry/tooltip-layout.ts.
+		const layout = computeTooltipLayout( {
+			placementX: placement.x,
+			placementY: placement.y,
+			em,
+			distance: distanceBBox,
+			height: heightBBox,
+		} );
 
 		setTooltipLayout( {
 			rectX: placement.x,
 			rectY: placement.y,
-			rectWidth,
-			rectHeight,
-			distanceTextX: placement.x + padX,
-			distanceTextY,
-			heightTextX: placement.x + padX,
-			heightTextY,
+			rectWidth: layout.rectWidth,
+			rectHeight: layout.rectHeight,
+			distanceTextX: layout.distanceTextX,
+			distanceTextY: layout.distanceTextY,
+			heightTextX: layout.heightTextX,
+			heightTextY: layout.heightTextY,
 			distanceLabel,
 			heightLabel,
 			a11yLabel: buildTooltipA11yLabel(

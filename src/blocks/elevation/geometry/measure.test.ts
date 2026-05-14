@@ -44,14 +44,26 @@ function installLayoutStubs(): () => void {
 	 ).getBBox;
 	( SVGElement.prototype as unknown as { getBBox: () => DOMRect } ).getBBox =
 		function ( this: SVGElement ): DOMRect {
+			// Simulate an SVG text bbox that sits 16 px above the
+			// baseline (the text's `y` attribute) with a total height of
+			// 20 px — i.e. 4 px of phantom descender extent below the
+			// baseline. This is the case Step 7 pl.2 corrects for:
+			// digit-only labels whose visible glyphs do not reach the
+			// bottom of the reported bbox.
 			const length = this.textContent?.length ?? 0;
+			const baseline = Number.parseFloat(
+				this.getAttribute( 'y' ) ?? '0'
+			);
+			const ascent = 16;
+			const height = 20;
+			const top = baseline - ascent;
 			return {
 				x: 0,
-				y: 0,
+				y: top,
 				width: length * 10,
-				height: 20,
-				top: 0,
-				bottom: 20,
+				height,
+				top,
+				bottom: top + height,
 				left: 0,
 				right: length * 10,
 				toJSON: () => ( {} ),
@@ -87,12 +99,16 @@ describe( 'createTextMeasurer', () => {
 		restore();
 	} );
 
-	it( 'returns width, height, and font-size for a text run', () => {
+	it( 'returns width, height, top-offset, and font-size for a text run', () => {
 		const svg = makeSvg();
 		const measure = createTextMeasurer( svg );
 		const result = measure( '12345' );
 		expect( result.width ).toBe( 50 );
 		expect( result.height ).toBe( 20 );
+		// `topOffset` is signed: negative because the bbox top sits
+		// above the baseline. With the stub's 16 px ascent, the offset
+		// from `y = -10000` (baseline) to the bbox top is exactly -16.
+		expect( result.topOffset ).toBe( -16 );
 		expect( result.fontSize ).toBe( 16 );
 	} );
 
