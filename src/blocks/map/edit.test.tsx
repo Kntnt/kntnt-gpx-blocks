@@ -66,6 +66,16 @@ const capturedPanelBodies: CapturedPanelBody[] = [];
  */
 const capturedBlockPropsStyles: Array< Record< string, unknown > > = [];
 
+/**
+ * Captured `ToggleControl` label string across every render in the current
+ * test. The issue #143 tests assert the four affected toggles drop their
+ * `Show ` prefix; capturing every label here keeps that assertion
+ * straightforward without dragging in the real `ToggleControl` surface.
+ *
+ * @since 1.0.0
+ */
+const capturedToggleLabels: string[] = [];
+
 // Mock @wordpress/block-editor — `PanelColorSettings` is the surface under
 // test, so it records its props rather than rendering anything. The rest
 // of the surface (InspectorControls, BlockControls, useBlockProps, …) is
@@ -130,9 +140,12 @@ jest.mock(
 				title: props.title ?? '',
 				children: props.children,
 			} );
+			return props.children;
+		},
+		ToggleControl: ( props: { label?: string } ) => {
+			capturedToggleLabels.push( props.label ?? '' );
 			return null;
 		},
-		ToggleControl: () => null,
 		FontSizePicker: () => null,
 		SelectControl: () => null,
 		TextControl: () => null,
@@ -308,6 +321,7 @@ function renderAndCapture(
 	capturedColorPanels.length = 0;
 	capturedPanelBodies.length = 0;
 	capturedBlockPropsStyles.length = 0;
+	capturedToggleLabels.length = 0;
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
 	flushSync( () => {
@@ -530,6 +544,135 @@ describe( 'MapEdit typography panel cleanup (issue #85)', () => {
 		);
 		expect( panel ).toBeDefined();
 		expect( countTypographyToolsPanels( panel?.children ) ).toBe( 1 );
+	} );
+} );
+
+describe( 'MapEdit hides inert dependent controls (issue #143)', () => {
+	it( 'renames the Waypoint info toggles by dropping the redundant "Show " prefix', () => {
+		renderAndCapture( buildAttributes() );
+
+		expect( capturedToggleLabels ).toContain( 'Name' );
+		expect( capturedToggleLabels ).toContain( 'Description' );
+		expect( capturedToggleLabels ).not.toContain( 'Show name' );
+		expect( capturedToggleLabels ).not.toContain( 'Show description' );
+	} );
+
+	it( 'omits the "Cursor" colour row when enableTrackPositionCursor is false', () => {
+		const panels = renderAndCapture(
+			buildAttributes( { enableTrackPositionCursor: false } )
+		);
+
+		const labels = panels[ 0 ].colorSettings.map(
+			( entry ) => entry.label
+		);
+		expect( labels ).not.toContain( 'Cursor' );
+	} );
+
+	it( 'omits the "Waypoint name" colour row AND the "Waypoint name" PanelBody when tooltipShowName is false', () => {
+		const panels = renderAndCapture(
+			buildAttributes( { tooltipShowName: false } )
+		);
+
+		const labels = panels[ 0 ].colorSettings.map(
+			( entry ) => entry.label
+		);
+		expect( labels ).not.toContain( 'Waypoint name' );
+
+		const titles = getCapturedPanelBodies().map( ( panel ) => panel.title );
+		expect( titles ).not.toContain( 'Waypoint name' );
+	} );
+
+	it( 'omits the "Waypoint description" colour row AND the "Waypoint description" PanelBody when tooltipShowDesc is false', () => {
+		const panels = renderAndCapture(
+			buildAttributes( { tooltipShowDesc: false } )
+		);
+
+		const labels = panels[ 0 ].colorSettings.map(
+			( entry ) => entry.label
+		);
+		expect( labels ).not.toContain( 'Waypoint description' );
+
+		const titles = getCapturedPanelBodies().map( ( panel ) => panel.title );
+		expect( titles ).not.toContain( 'Waypoint description' );
+	} );
+
+	it( 'omits the shared "Waypoint background" colour row only when BOTH name and description are off', () => {
+		// Name off alone still keeps the background row — the description
+		// content surface still backs it.
+		const nameOff = renderAndCapture(
+			buildAttributes( { tooltipShowName: false } )
+		);
+		expect(
+			nameOff[ 0 ].colorSettings.map( ( entry ) => entry.label )
+		).toContain( 'Waypoint background' );
+
+		// Description off alone likewise keeps the background row.
+		const descOff = renderAndCapture(
+			buildAttributes( { tooltipShowDesc: false } )
+		);
+		expect(
+			descOff[ 0 ].colorSettings.map( ( entry ) => entry.label )
+		).toContain( 'Waypoint background' );
+
+		// Edge case — both off drops the row, both typography panels, and
+		// every dependent colour entry in one go.
+		const bothOff = renderAndCapture(
+			buildAttributes( {
+				tooltipShowName: false,
+				tooltipShowDesc: false,
+			} )
+		);
+		const labels = bothOff[ 0 ].colorSettings.map(
+			( entry ) => entry.label
+		);
+		expect( labels ).not.toContain( 'Waypoint background' );
+		expect( labels ).not.toContain( 'Waypoint name' );
+		expect( labels ).not.toContain( 'Waypoint description' );
+
+		const titles = getCapturedPanelBodies().map( ( panel ) => panel.title );
+		expect( titles ).not.toContain( 'Waypoint name' );
+		expect( titles ).not.toContain( 'Waypoint description' );
+	} );
+
+	it( 'preserves the saved colour value when the master toggle is off so re-enabling restores it', () => {
+		// First render with name off and a saved colour — the row is hidden
+		// but the attribute value must not be cleared.
+		const writes: Array< Record< string, unknown > > = [];
+		capturedColorPanels.length = 0;
+		const container = document.createElement( 'div' );
+		const root = createRoot( container );
+		flushSync( () => {
+			root.render(
+				createElement( MapEdit, {
+					attributes: buildAttributes( {
+						tooltipShowName: false,
+						tooltipNameColor: '#aabbcc',
+					} ),
+					setAttributes: ( next: Record< string, unknown > ) => {
+						writes.push( next );
+					},
+					clientId: 'test-client',
+					isSelected: false,
+					name: 'kntnt-gpx-blocks/map',
+				} as never )
+			);
+		} );
+		root.unmount();
+		expect( writes ).toEqual( [] );
+
+		// Then render with name back on — the row reappears and surfaces
+		// the saved value.
+		const panels = renderAndCapture(
+			buildAttributes( {
+				tooltipShowName: true,
+				tooltipNameColor: '#aabbcc',
+			} )
+		);
+		const nameRow = panels[ 0 ].colorSettings.find(
+			( entry ) => entry.label === 'Waypoint name'
+		);
+		expect( nameRow ).toBeDefined();
+		expect( nameRow?.value ).toBe( '#aabbcc' );
 	} );
 } );
 

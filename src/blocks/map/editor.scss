@@ -47,7 +47,7 @@
 	// `--kntnt-gpx-blocks-tooltip-*` custom properties the runtime tooltip
 	// reads (see style.scss); editing the inspector controls repaints both
 	// surfaces in lock-step. The element collapses entirely when both
-	// *Show name* and *Show description* are off — the empty container then
+	// *Name* and *Description* are off — the empty container then
 	// has no children and the `:empty` rule hides it. The shared
 	// `.kntnt-gpx-blocks-tooltip-{name,desc}` rules from style.scss already
 	// cover colour and typography, so this stylesheet only contributes the

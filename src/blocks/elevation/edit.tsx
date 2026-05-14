@@ -440,14 +440,14 @@ export function ElevationEdit( {
 			<InspectorControls>
 				<PanelBody title={ __( 'Tooltip info', 'kntnt-gpx-blocks' ) }>
 					<ToggleControl
-						label={ __( 'Show distance', 'kntnt-gpx-blocks' ) }
+						label={ __( 'Distance', 'kntnt-gpx-blocks' ) }
 						checked={ tooltipShowDistance }
 						onChange={ ( value: boolean ) =>
 							setAttributes( { tooltipShowDistance: value } )
 						}
 					/>
 					<ToggleControl
-						label={ __( 'Show height', 'kntnt-gpx-blocks' ) }
+						label={ __( 'Height', 'kntnt-gpx-blocks' ) }
 						checked={ tooltipShowHeight }
 						onChange={ ( value: boolean ) =>
 							setAttributes( { tooltipShowHeight: value } )
@@ -476,38 +476,42 @@ export function ElevationEdit( {
 						panelId={ `${ clientId }-tick-label` }
 					/>
 				</PanelBody>
-				<PanelBody
-					title={ __( 'Tooltip distance', 'kntnt-gpx-blocks' ) }
-					initialOpen={ false }
-				>
-					<TypographyToolsPanel
-						title={ __( 'Typography', 'kntnt-gpx-blocks' ) }
-						prefix="tooltipDistance"
-						attributes={ attributes }
-						setAttributes={ setAttributes }
-						defaultVisibility={ {
-							size: true,
-							appearance: true,
-						} }
-						panelId={ `${ clientId }-tooltip-distance` }
-					/>
-				</PanelBody>
-				<PanelBody
-					title={ __( 'Tooltip height', 'kntnt-gpx-blocks' ) }
-					initialOpen={ false }
-				>
-					<TypographyToolsPanel
-						title={ __( 'Typography', 'kntnt-gpx-blocks' ) }
-						prefix="tooltipHeight"
-						attributes={ attributes }
-						setAttributes={ setAttributes }
-						defaultVisibility={ {
-							size: true,
-							appearance: true,
-						} }
-						panelId={ `${ clientId }-tooltip-height` }
-					/>
-				</PanelBody>
+				{ tooltipShowDistance && (
+					<PanelBody
+						title={ __( 'Tooltip distance', 'kntnt-gpx-blocks' ) }
+						initialOpen={ false }
+					>
+						<TypographyToolsPanel
+							title={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+							prefix="tooltipDistance"
+							attributes={ attributes }
+							setAttributes={ setAttributes }
+							defaultVisibility={ {
+								size: true,
+								appearance: true,
+							} }
+							panelId={ `${ clientId }-tooltip-distance` }
+						/>
+					</PanelBody>
+				) }
+				{ tooltipShowHeight && (
+					<PanelBody
+						title={ __( 'Tooltip height', 'kntnt-gpx-blocks' ) }
+						initialOpen={ false }
+					>
+						<TypographyToolsPanel
+							title={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+							prefix="tooltipHeight"
+							attributes={ attributes }
+							setAttributes={ setAttributes }
+							defaultVisibility={ {
+								size: true,
+								appearance: true,
+							} }
+							panelId={ `${ clientId }-tooltip-height` }
+						/>
+					</PanelBody>
+				) }
 			</InspectorControls>
 			<div { ...blockProps }>
 				<ElevationPreview state={ resolution.state } />

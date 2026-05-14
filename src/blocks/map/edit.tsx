@@ -1119,6 +1119,139 @@ function TilesPanel( {
 }
 
 /**
+ * One row in the consolidated Color panel.
+ *
+ * Mirrors the shape `PanelColorSettings` accepts via `colorSettings`:
+ * a current value, a setter, and the row label. Kept as a local
+ * interface so {@link buildMapColorSettings} can both build and
+ * filter the array with the same type the caller forwards.
+ *
+ * @since 1.0.0
+ */
+interface MapColorSetting {
+	readonly value: string;
+	readonly onChange: ( value: string | undefined ) => void;
+	readonly label: string;
+}
+
+/**
+ * Builds the `colorSettings` array for the Map block's `PanelColorSettings`,
+ * filtering out rows whose master toggle in the *Controls* / *Waypoint info*
+ * panels is off.
+ *
+ * Issue #143 — `Cursor` hides when `enableTrackPositionCursor` is off,
+ * `Waypoint name` when `tooltipShowName` is off, `Waypoint description`
+ * when `tooltipShowDesc` is off, and `Waypoint background` only when
+ * *both* tooltip content sources are off (the shared backing surface
+ * has no work left to do). Hidden attribute values are not cleared on
+ * hide — the saved value is preserved so re-enabling the master toggle
+ * restores the previous picker state.
+ *
+ * @since 1.0.0
+ *
+ * @param params                           Toggle state, current colour values, and the
+ *                                         standard Gutenberg attribute setter.
+ * @param params.enableTrackPositionCursor Whether the `Track cursor` toggle is on.
+ * @param params.tooltipShowName           Whether the `Name` toggle is on.
+ * @param params.tooltipShowDesc           Whether the `Description` toggle is on.
+ * @param params.trackColor                Current `trackColor` attribute.
+ * @param params.trackCursorColor          Current `trackCursorColor` attribute.
+ * @param params.waypointColor             Current `waypointColor` attribute.
+ * @param params.tooltipBackground         Current `tooltipBackground` attribute.
+ * @param params.tooltipNameColor          Current `tooltipNameColor` attribute.
+ * @param params.tooltipDescColor          Current `tooltipDescColor` attribute.
+ * @param params.setAttributes             Standard Gutenberg attribute setter.
+ * @return The filtered `colorSettings` array in display order.
+ */
+function buildMapColorSettings( params: {
+	readonly enableTrackPositionCursor: boolean;
+	readonly tooltipShowName: boolean;
+	readonly tooltipShowDesc: boolean;
+	readonly trackColor: string;
+	readonly trackCursorColor: string;
+	readonly waypointColor: string;
+	readonly tooltipBackground: string;
+	readonly tooltipNameColor: string;
+	readonly tooltipDescColor: string;
+	readonly setAttributes: ( next: Partial< MapAttributes > ) => void;
+} ): MapColorSetting[] {
+	const {
+		enableTrackPositionCursor,
+		tooltipShowName,
+		tooltipShowDesc,
+		trackColor,
+		trackCursorColor,
+		waypointColor,
+		tooltipBackground,
+		tooltipNameColor,
+		tooltipDescColor,
+		setAttributes,
+	} = params;
+
+	const settings: MapColorSetting[] = [];
+
+	// `Track` always renders — it has no dependent master toggle.
+	settings.push( {
+		value: trackColor,
+		onChange: ( value: string | undefined ) =>
+			setAttributes( { trackColor: value ?? '' } ),
+		label: __( 'Track', 'kntnt-gpx-blocks' ),
+	} );
+
+	// `Cursor` depends on the `Track cursor` master toggle in the
+	// *Interactions* panel.
+	if ( enableTrackPositionCursor ) {
+		settings.push( {
+			value: trackCursorColor,
+			onChange: ( value: string | undefined ) =>
+				setAttributes( { trackCursorColor: value ?? '' } ),
+			label: __( 'Cursor', 'kntnt-gpx-blocks' ),
+		} );
+	}
+
+	// `Marker` always renders — it is the waypoint pin colour and has
+	// no master toggle in the *Waypoint info* panel.
+	settings.push( {
+		value: waypointColor,
+		onChange: ( value: string | undefined ) =>
+			setAttributes( { waypointColor: value ?? '' } ),
+		label: __( 'Marker', 'kntnt-gpx-blocks' ),
+	} );
+
+	// `Waypoint background` backs both tooltip content rows; hide only
+	// when *every* content source backing it is also off, mirroring the
+	// Elevation block's `Tooltip background` rule.
+	if ( tooltipShowName || tooltipShowDesc ) {
+		settings.push( {
+			value: tooltipBackground,
+			onChange: ( value: string | undefined ) =>
+				setAttributes( { tooltipBackground: value ?? '' } ),
+			label: __( 'Waypoint background', 'kntnt-gpx-blocks' ),
+		} );
+	}
+
+	if ( tooltipShowName ) {
+		settings.push( {
+			value: tooltipNameColor,
+			onChange: ( value: string | undefined ) =>
+				setAttributes( { tooltipNameColor: value ?? '' } ),
+			label: __( 'Waypoint name', 'kntnt-gpx-blocks' ),
+		} );
+	}
+
+	if ( tooltipShowDesc ) {
+		settings.push( {
+			value: tooltipDescColor,
+			onChange: ( value: string | undefined ) =>
+				setAttributes( { tooltipDescColor: value ?? '' } ),
+			label: __( 'Waypoint description', 'kntnt-gpx-blocks' ),
+		} );
+	}
+
+	return settings;
+}
+
+/**
  * Editor preview for the GPX Map block.
  *
  * Shows a MediaPlaceholder when no attachment is selected; otherwise
@@ -1496,14 +1629,14 @@ export const MapEdit = ( {
 				</PanelBody>
 				<PanelBody title={ __( 'Waypoint info', 'kntnt-gpx-blocks' ) }>
 					<ToggleControl
-						label={ __( 'Show name', 'kntnt-gpx-blocks' ) }
+						label={ __( 'Name', 'kntnt-gpx-blocks' ) }
 						checked={ tooltipShowName }
 						onChange={ ( value ) =>
 							setAttributes( { tooltipShowName: value } )
 						}
 					/>
 					<ToggleControl
-						label={ __( 'Show description', 'kntnt-gpx-blocks' ) }
+						label={ __( 'Description', 'kntnt-gpx-blocks' ) }
 						checked={ tooltipShowDesc }
 						onChange={ ( value ) =>
 							setAttributes( { tooltipShowDesc: value } )
@@ -1552,157 +1685,132 @@ export const MapEdit = ( {
 				<PanelColorSettings
 					title={ __( 'Color', 'kntnt-gpx-blocks' ) }
 					enableAlpha
-					colorSettings={ [
-						{
-							value: trackColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( { trackColor: value ?? '' } ),
-							label: __( 'Track', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: trackCursorColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									trackCursorColor: value ?? '',
-								} ),
-							label: __( 'Cursor', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: waypointColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( { waypointColor: value ?? '' } ),
-							label: __( 'Marker', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: tooltipBackground,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									tooltipBackground: value ?? '',
-								} ),
-							label: __(
-								'Waypoint background',
-								'kntnt-gpx-blocks'
-							),
-						},
-						{
-							value: tooltipNameColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									tooltipNameColor: value ?? '',
-								} ),
-							label: __( 'Waypoint name', 'kntnt-gpx-blocks' ),
-						},
-						{
-							value: tooltipDescColor,
-							onChange: ( value: string | undefined ) =>
-								setAttributes( {
-									tooltipDescColor: value ?? '',
-								} ),
-							label: __(
-								'Waypoint description',
-								'kntnt-gpx-blocks'
-							),
-						},
-					] }
+					colorSettings={ buildMapColorSettings( {
+						enableTrackPositionCursor,
+						tooltipShowName,
+						tooltipShowDesc,
+						trackColor,
+						trackCursorColor,
+						waypointColor,
+						tooltipBackground,
+						tooltipNameColor,
+						tooltipDescColor,
+						setAttributes,
+					} ) }
 				/>
-				<PanelBody
-					title={ __( 'Waypoint name', 'kntnt-gpx-blocks' ) }
-					initialOpen={ false }
-				>
-					<TypographyToolsPanel
-						label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
-						fontFamily={ tooltipNameFontFamily }
-						fontSize={ tooltipNameFontSize }
-						fontWeight={ tooltipNameFontWeight }
-						fontStyle={ tooltipNameFontStyle }
-						lineHeight={ tooltipNameLineHeight }
-						letterSpacing={ tooltipNameLetterSpacing }
-						textDecoration={ tooltipNameTextDecoration }
-						textTransform={ tooltipNameTextTransform }
-						fontFamilies={ fontFamilies }
-						fontSizes={ fontSizes }
-						setTypography={ ( values ) => {
-							const next: Partial< MapAttributes > = {};
-							if ( values.fontFamily !== undefined ) {
-								next.tooltipNameFontFamily = values.fontFamily;
-							}
-							if ( values.fontSize !== undefined ) {
-								next.tooltipNameFontSize = values.fontSize;
-							}
-							if ( values.fontWeight !== undefined ) {
-								next.tooltipNameFontWeight = values.fontWeight;
-							}
-							if ( values.fontStyle !== undefined ) {
-								next.tooltipNameFontStyle = values.fontStyle;
-							}
-							if ( values.lineHeight !== undefined ) {
-								next.tooltipNameLineHeight = values.lineHeight;
-							}
-							if ( values.letterSpacing !== undefined ) {
-								next.tooltipNameLetterSpacing =
-									values.letterSpacing;
-							}
-							if ( values.textDecoration !== undefined ) {
-								next.tooltipNameTextDecoration =
-									values.textDecoration;
-							}
-							if ( values.textTransform !== undefined ) {
-								next.tooltipNameTextTransform =
-									values.textTransform;
-							}
-							setAttributes( next );
-						} }
-					/>
-				</PanelBody>
-				<PanelBody
-					title={ __( 'Waypoint description', 'kntnt-gpx-blocks' ) }
-					initialOpen={ false }
-				>
-					<TypographyToolsPanel
-						label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
-						fontFamily={ tooltipDescFontFamily }
-						fontSize={ tooltipDescFontSize }
-						fontWeight={ tooltipDescFontWeight }
-						fontStyle={ tooltipDescFontStyle }
-						lineHeight={ tooltipDescLineHeight }
-						letterSpacing={ tooltipDescLetterSpacing }
-						textDecoration={ tooltipDescTextDecoration }
-						textTransform={ tooltipDescTextTransform }
-						fontFamilies={ fontFamilies }
-						fontSizes={ fontSizes }
-						setTypography={ ( values ) => {
-							const next: Partial< MapAttributes > = {};
-							if ( values.fontFamily !== undefined ) {
-								next.tooltipDescFontFamily = values.fontFamily;
-							}
-							if ( values.fontSize !== undefined ) {
-								next.tooltipDescFontSize = values.fontSize;
-							}
-							if ( values.fontWeight !== undefined ) {
-								next.tooltipDescFontWeight = values.fontWeight;
-							}
-							if ( values.fontStyle !== undefined ) {
-								next.tooltipDescFontStyle = values.fontStyle;
-							}
-							if ( values.lineHeight !== undefined ) {
-								next.tooltipDescLineHeight = values.lineHeight;
-							}
-							if ( values.letterSpacing !== undefined ) {
-								next.tooltipDescLetterSpacing =
-									values.letterSpacing;
-							}
-							if ( values.textDecoration !== undefined ) {
-								next.tooltipDescTextDecoration =
-									values.textDecoration;
-							}
-							if ( values.textTransform !== undefined ) {
-								next.tooltipDescTextTransform =
-									values.textTransform;
-							}
-							setAttributes( next );
-						} }
-					/>
-				</PanelBody>
+				{ tooltipShowName && (
+					<PanelBody
+						title={ __( 'Waypoint name', 'kntnt-gpx-blocks' ) }
+						initialOpen={ false }
+					>
+						<TypographyToolsPanel
+							label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+							fontFamily={ tooltipNameFontFamily }
+							fontSize={ tooltipNameFontSize }
+							fontWeight={ tooltipNameFontWeight }
+							fontStyle={ tooltipNameFontStyle }
+							lineHeight={ tooltipNameLineHeight }
+							letterSpacing={ tooltipNameLetterSpacing }
+							textDecoration={ tooltipNameTextDecoration }
+							textTransform={ tooltipNameTextTransform }
+							fontFamilies={ fontFamilies }
+							fontSizes={ fontSizes }
+							setTypography={ ( values ) => {
+								const next: Partial< MapAttributes > = {};
+								if ( values.fontFamily !== undefined ) {
+									next.tooltipNameFontFamily =
+										values.fontFamily;
+								}
+								if ( values.fontSize !== undefined ) {
+									next.tooltipNameFontSize = values.fontSize;
+								}
+								if ( values.fontWeight !== undefined ) {
+									next.tooltipNameFontWeight =
+										values.fontWeight;
+								}
+								if ( values.fontStyle !== undefined ) {
+									next.tooltipNameFontStyle =
+										values.fontStyle;
+								}
+								if ( values.lineHeight !== undefined ) {
+									next.tooltipNameLineHeight =
+										values.lineHeight;
+								}
+								if ( values.letterSpacing !== undefined ) {
+									next.tooltipNameLetterSpacing =
+										values.letterSpacing;
+								}
+								if ( values.textDecoration !== undefined ) {
+									next.tooltipNameTextDecoration =
+										values.textDecoration;
+								}
+								if ( values.textTransform !== undefined ) {
+									next.tooltipNameTextTransform =
+										values.textTransform;
+								}
+								setAttributes( next );
+							} }
+						/>
+					</PanelBody>
+				) }
+				{ tooltipShowDesc && (
+					<PanelBody
+						title={ __(
+							'Waypoint description',
+							'kntnt-gpx-blocks'
+						) }
+						initialOpen={ false }
+					>
+						<TypographyToolsPanel
+							label={ __( 'Typography', 'kntnt-gpx-blocks' ) }
+							fontFamily={ tooltipDescFontFamily }
+							fontSize={ tooltipDescFontSize }
+							fontWeight={ tooltipDescFontWeight }
+							fontStyle={ tooltipDescFontStyle }
+							lineHeight={ tooltipDescLineHeight }
+							letterSpacing={ tooltipDescLetterSpacing }
+							textDecoration={ tooltipDescTextDecoration }
+							textTransform={ tooltipDescTextTransform }
+							fontFamilies={ fontFamilies }
+							fontSizes={ fontSizes }
+							setTypography={ ( values ) => {
+								const next: Partial< MapAttributes > = {};
+								if ( values.fontFamily !== undefined ) {
+									next.tooltipDescFontFamily =
+										values.fontFamily;
+								}
+								if ( values.fontSize !== undefined ) {
+									next.tooltipDescFontSize = values.fontSize;
+								}
+								if ( values.fontWeight !== undefined ) {
+									next.tooltipDescFontWeight =
+										values.fontWeight;
+								}
+								if ( values.fontStyle !== undefined ) {
+									next.tooltipDescFontStyle =
+										values.fontStyle;
+								}
+								if ( values.lineHeight !== undefined ) {
+									next.tooltipDescLineHeight =
+										values.lineHeight;
+								}
+								if ( values.letterSpacing !== undefined ) {
+									next.tooltipDescLetterSpacing =
+										values.letterSpacing;
+								}
+								if ( values.textDecoration !== undefined ) {
+									next.tooltipDescTextDecoration =
+										values.textDecoration;
+								}
+								if ( values.textTransform !== undefined ) {
+									next.tooltipDescTextTransform =
+										values.textTransform;
+								}
+								setAttributes( next );
+							} }
+						/>
+					</PanelBody>
+				) }
 			</InspectorControls>
 			<div { ...blockProps }>
 				<MapEditorPreview

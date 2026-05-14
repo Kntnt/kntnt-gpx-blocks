@@ -96,6 +96,45 @@ export function elevationColorRows(): readonly ColorRow[] {
 }
 
 /**
+ * Returns the subset of attribute keys that should be hidden from the
+ * Color panel for the given toggle state.
+ *
+ * Issue #143 — dependent colour rows hide when their master toggle is
+ * off so the editor surface never shows controls that have no visible
+ * effect. `tooltipBackgroundColor` is shared by both tooltip content
+ * rows and therefore hides only when *every* content source backing it
+ * is also off. Hidden attribute values are not cleared on hide — the
+ * saved value is preserved so re-enabling the master toggle restores
+ * the previous picker state.
+ *
+ * Exported for direct testing against the acceptance-criteria table in
+ * issue #143; the caller in {@link InspectorColorPanel} consumes the
+ * resulting set to filter {@link elevationColorRows}.
+ *
+ * @since 1.0.0
+ *
+ * @param tooltipShowDistance Whether the `Distance` toggle is on.
+ * @param tooltipShowHeight   Whether the `Height` toggle is on.
+ * @return Attribute keys whose rows should be omitted.
+ */
+export function hiddenElevationColorAttributes(
+	tooltipShowDistance: boolean,
+	tooltipShowHeight: boolean
+): ReadonlySet< string > {
+	const hidden = new Set< string >();
+	if ( ! tooltipShowDistance ) {
+		hidden.add( 'tooltipDistanceColor' );
+	}
+	if ( ! tooltipShowHeight ) {
+		hidden.add( 'tooltipHeightColor' );
+	}
+	if ( ! tooltipShowDistance && ! tooltipShowHeight ) {
+		hidden.add( 'tooltipBackgroundColor' );
+	}
+	return hidden;
+}
+
+/**
  * Props for {@link InspectorColorPanel}.
  *
  * @since 1.0.0
@@ -126,7 +165,10 @@ function readColor(
 }
 
 /**
- * Renders the eight-row Color panel.
+ * Renders the Color panel, with rows filtered by the symmetry rule from
+ * issue #143 — rows that depend on a `Tooltip info` toggle are omitted
+ * when their master toggle is off, and `Tooltip background` is omitted
+ * only when *every* content source backing it is also off.
  *
  * @since 1.0.0
  *
@@ -138,7 +180,24 @@ export function InspectorColorPanel( {
 	attributes,
 	setAttributes,
 }: InspectorColorPanelProps ): JSX.Element {
-	const rows = elevationColorRows();
+	// Read the two `Tooltip info` toggles with the same default-on
+	// semantics `ElevationEdit` uses, so a fresh insert hides nothing.
+	const tooltipShowDistance =
+		typeof attributes.tooltipShowDistance === 'boolean'
+			? attributes.tooltipShowDistance
+			: true;
+	const tooltipShowHeight =
+		typeof attributes.tooltipShowHeight === 'boolean'
+			? attributes.tooltipShowHeight
+			: true;
+
+	const hidden = hiddenElevationColorAttributes(
+		tooltipShowDistance,
+		tooltipShowHeight
+	);
+	const rows = elevationColorRows().filter(
+		( row ) => ! hidden.has( row.attribute )
+	);
 
 	return (
 		// @ts-ignore — PanelColorSettings is exported from @wordpress/block-editor
