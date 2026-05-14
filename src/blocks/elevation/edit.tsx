@@ -128,6 +128,51 @@ function readTickLabelTypography(
 }
 
 /**
+ * Extracts the eight tooltip-row typography attributes for the given
+ * row into the {@link TypographyAttributes} shape.
+ *
+ * Step 7 pl.3 added these bundles so the editor preview's `Chart`
+ * component can list each tooltip-row font field in its layout
+ * effect's dep-list, which causes a per-row font-size change in the
+ * inspector to re-trigger the SVG measurement that sizes the tooltip
+ * `<rect>`. Without these props the wrapper's CSS custom properties
+ * would update (so the rendered text would adopt the new font-size),
+ * but the measurement that decides the rect's width and height would
+ * stay frozen on the previous frame's metrics — leaving the rendered
+ * rows escaping the rect on large font-size jumps.
+ *
+ * @since 1.0.0
+ *
+ * @param attributes Block attribute bag.
+ * @param prefix     Attribute key prefix (`'tooltipDistance'` for the
+ *                   distance row, `'tooltipHeight'` for the height row).
+ * @return The typography bundle, with empty fields omitted.
+ */
+function readTooltipRowTypography(
+	attributes: Record< string, unknown >,
+	prefix: 'tooltipDistance' | 'tooltipHeight'
+): TypographyAttributes {
+	const suffixes: Record< keyof TypographyAttributes, string > = {
+		fontFamily: 'FontFamily',
+		fontSize: 'FontSize',
+		fontWeight: 'FontWeight',
+		fontStyle: 'FontStyle',
+		lineHeight: 'LineHeight',
+		letterSpacing: 'LetterSpacing',
+		textTransform: 'TextTransform',
+		textDecoration: 'TextDecoration',
+	};
+	const result: Record< string, string > = {};
+	for ( const [ field, suffix ] of Object.entries( suffixes ) ) {
+		const value = readString( attributes, `${ prefix }${ suffix }` );
+		if ( value !== '' ) {
+			result[ field ] = value;
+		}
+	}
+	return result as TypographyAttributes;
+}
+
+/**
  * Cursor & guides + Tooltip info toggle bundle threaded into the
  * healthy `PreviewState`.
  *
@@ -150,16 +195,22 @@ interface CursorToggleBundle {
  *
  * @since 1.0.0
  *
- * @param mapId               Current `mapId` attribute.
- * @param mapBlocks           Every Map block on the page.
- * @param configuredMapBlocks Configured subset of `mapBlocks`.
- * @param payload             Cached payload from the REST endpoint.
- * @param isLoading           Whether the REST fetch is in flight.
- * @param error               REST error object, or `null`.
- * @param typography          Tick-labels typography forwarded into the
- *                            healthy state.
- * @param cursorToggles       The three `Cursor & guides` toggles from
- *                            issue #144.
+ * @param mapId                     Current `mapId` attribute.
+ * @param mapBlocks                 Every Map block on the page.
+ * @param configuredMapBlocks       Configured subset of `mapBlocks`.
+ * @param payload                   Cached payload from the REST endpoint.
+ * @param isLoading                 Whether the REST fetch is in flight.
+ * @param error                     REST error object, or `null`.
+ * @param typography                Tick-labels typography forwarded into the
+ *                                  healthy state.
+ * @param tooltipDistanceTypography Tooltip distance-row typography
+ *                                  forwarded into the healthy state
+ *                                  (Step 7 pl.3).
+ * @param tooltipHeightTypography   Tooltip height-row typography
+ *                                  forwarded into the healthy state
+ *                                  (Step 7 pl.3).
+ * @param cursorToggles             The three `Cursor & guides` toggles from
+ *                                  issue #144.
  */
 function resolveBinding(
 	mapId: string,
@@ -169,6 +220,8 @@ function resolveBinding(
 	isLoading: boolean,
 	error: BoundMapPayloadError | null,
 	typography: TypographyAttributes,
+	tooltipDistanceTypography: TypographyAttributes,
+	tooltipHeightTypography: TypographyAttributes,
 	cursorToggles: CursorToggleBundle
 ): BindingResolution {
 	// The "auto" sentinel or an empty mapId is the pre-auto-pick state.
@@ -264,6 +317,8 @@ function resolveBinding(
 			},
 			samples: payload.samples,
 			typography,
+			tooltipDistanceTypography,
+			tooltipHeightTypography,
 			showCursor: cursorToggles.showCursor,
 			showVerticalGuide: cursorToggles.showVerticalGuide,
 			showHorizontalGuide: cursorToggles.showHorizontalGuide,
@@ -529,6 +584,14 @@ export function ElevationEdit( {
 	const { data, isLoading, error } = useBoundMapPayload( boundAttachmentId );
 
 	const typography = readTickLabelTypography( attributes );
+	const tooltipDistanceTypography = readTooltipRowTypography(
+		attributes,
+		'tooltipDistance'
+	);
+	const tooltipHeightTypography = readTooltipRowTypography(
+		attributes,
+		'tooltipHeight'
+	);
 	const resolution = resolveBinding(
 		mapId,
 		mapBlocks,
@@ -537,6 +600,8 @@ export function ElevationEdit( {
 		isLoading,
 		error,
 		typography,
+		tooltipDistanceTypography,
+		tooltipHeightTypography,
 		{
 			showCursor,
 			showVerticalGuide,

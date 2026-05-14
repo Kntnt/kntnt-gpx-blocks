@@ -98,6 +98,8 @@ export interface ChartProps {
 	readonly data: MarginsInput;
 	readonly samples: readonly ElevationSample[];
 	readonly typography: TypographyAttributes;
+	readonly tooltipDistanceTypography: TypographyAttributes;
+	readonly tooltipHeightTypography: TypographyAttributes;
 	readonly showCursor: boolean;
 	readonly showVerticalGuide: boolean;
 	readonly showHorizontalGuide: boolean;
@@ -227,20 +229,24 @@ function readDimensions( svg: SVGSVGElement ): Dimensions {
  *
  * @since 1.0.0
  *
- * @param props                     See {@link ChartProps}.
- * @param props.data                Chart data (elevation range + distance).
- * @param props.samples             LTTB-downsampled (distance, elevation) pairs.
- * @param props.typography          Tick-labels typography bundle.
- * @param props.showCursor          Whether to render the cursor at all (issue #144).
- * @param props.showVerticalGuide   Whether the vertical guide line is drawn.
- * @param props.showHorizontalGuide Whether the horizontal guide line is drawn.
- * @param props.tooltipShowDistance Whether the tooltip's distance row is drawn (Step 7).
- * @param props.tooltipShowHeight   Whether the tooltip's elevation row is drawn (Step 7).
+ * @param props                           See {@link ChartProps}.
+ * @param props.data                      Chart data (elevation range + distance).
+ * @param props.samples                   LTTB-downsampled (distance, elevation) pairs.
+ * @param props.typography                Tick-labels typography bundle.
+ * @param props.showCursor                Whether to render the cursor at all (issue #144).
+ * @param props.showVerticalGuide         Whether the vertical guide line is drawn.
+ * @param props.showHorizontalGuide       Whether the horizontal guide line is drawn.
+ * @param props.tooltipShowDistance       Whether the tooltip's distance row is drawn (Step 7).
+ * @param props.tooltipShowHeight         Whether the tooltip's elevation row is drawn (Step 7).
+ * @param props.tooltipDistanceTypography Tooltip distance-row typography (Step 7 pl.3) — not consumed by render output (the SVG inherits the row's class-scoped custom properties from the wrapper), but enumerated in the tooltip layout effect's dep-list so a per-row font-size change re-runs the measurement.
+ * @param props.tooltipHeightTypography   Tooltip height-row typography (Step 7 pl.3) — same purpose as `tooltipDistanceTypography` for the elevation row.
  */
 export function Chart( {
 	data,
 	samples,
 	typography,
+	tooltipDistanceTypography,
+	tooltipHeightTypography,
 	showCursor,
 	showVerticalGuide,
 	showHorizontalGuide,
@@ -555,6 +561,22 @@ export function Chart( {
 		typography.letterSpacing,
 		typography.textTransform,
 		typography.textDecoration,
+		tooltipDistanceTypography.fontFamily,
+		tooltipDistanceTypography.fontSize,
+		tooltipDistanceTypography.fontWeight,
+		tooltipDistanceTypography.fontStyle,
+		tooltipDistanceTypography.lineHeight,
+		tooltipDistanceTypography.letterSpacing,
+		tooltipDistanceTypography.textTransform,
+		tooltipDistanceTypography.textDecoration,
+		tooltipHeightTypography.fontFamily,
+		tooltipHeightTypography.fontSize,
+		tooltipHeightTypography.fontWeight,
+		tooltipHeightTypography.fontStyle,
+		tooltipHeightTypography.lineHeight,
+		tooltipHeightTypography.letterSpacing,
+		tooltipHeightTypography.textTransform,
+		tooltipHeightTypography.textDecoration,
 	] );
 
 	return (
