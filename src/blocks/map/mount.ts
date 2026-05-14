@@ -23,28 +23,33 @@ import {
 } from './tooltip-placement';
 
 /**
- * Vertical gap, in pixels, Leaflet leaves between a `circleMarker` and a
- * tooltip placed in either the `top` or `bottom` direction. Mirrors the
- * `margin-top: ±6px` rules Leaflet ships on `.leaflet-tooltip-top` and
- * `.leaflet-tooltip-bottom` in its bundled stylesheet.
+ * Visible radius of a waypoint marker, in pixels.
+ *
+ * Mirrors the `radius` option on the `L.circleMarker` constructor call
+ * further down. The constant exists so the same value can be added to the
+ * tooltip gap below — Leaflet positions a tooltip relative to the marker's
+ * geographic centre, but the user-visible gap is measured from the marker's
+ * visible edge, which sits `radius` pixels away from that centre.
  *
  * @since 0.13.5
  */
-const LEAFLET_TOOLTIP_GAP_PX = 6;
+const WAYPOINT_MARKER_RADIUS_PX = 6;
 
 /**
- * Reads the root font size and converts the 0.5 rem padding that gates the
- * tooltip flip / shift logic into pixels.
+ * Reads the root font size and returns the 0.5 rem value the tooltip
+ * placement helpers use both as the minimum distance from the map
+ * container's edges and as the visible gap between the marker and the
+ * tooltip.
  *
  * Reading via `getComputedStyle` honours any site- or theme-supplied
- * `font-size` override on `<html>` so the padding scales with the rest of
+ * `font-size` override on `<html>` so the spacing scales with the rest of
  * the typography.
  *
  * @since 0.13.5
  *
- * @return The padding in pixels.
+ * @return The 0.5 rem spacing in pixels.
  */
-function tooltipPaddingPx(): number {
+function tooltipSpacingPx(): number {
 	const rootFontSize =
 		parseFloat( getComputedStyle( document.documentElement ).fontSize ) ||
 		16;
@@ -560,13 +565,18 @@ export function addWaypointMarkers(
 
 	// Pre-resolve placement constants used by every marker's tooltip. The
 	// pane reference is read once per call so we do not pay the lookup cost
-	// inside the per-marker loop, and the padding is converted from rem to
+	// inside the per-marker loop, and the 0.5 rem spacing is converted to
 	// pixels once because the runtime cost of `getComputedStyle` is small
-	// but non-zero.
+	// but non-zero. `gapPx` is the *visible* clearance between the marker's
+	// edge and the tooltip's edge — the SCSS rules on `.leaflet-tooltip-top`
+	// and `.leaflet-tooltip-bottom` use the matching
+	// `calc(±6px ± 0.5rem)` (with `6px` = `WAYPOINT_MARKER_RADIUS_PX`) so JS
+	// and CSS agree on the rendered position.
 	const tooltipPaneEl = map.getPane( 'tooltipPane' ) as
 		| HTMLElement
 		| undefined;
-	const paddingPx = tooltipPaddingPx();
+	const spacingPx = tooltipSpacingPx();
+	const gapPx = WAYPOINT_MARKER_RADIUS_PX + spacingPx;
 
 	const wfc = waypoints as GeoJSON.FeatureCollection;
 	for ( const feature of wfc.features ) {
@@ -652,14 +662,14 @@ export function addWaypointMarkers(
 				const direction = chooseTooltipDirection( {
 					markerY: point.y,
 					tooltipHeight: tooltipBox.height,
-					leafletGap: LEAFLET_TOOLTIP_GAP_PX,
-					paddingPx,
+					leafletGap: gapPx,
+					paddingPx: spacingPx,
 				} );
 				const offsetX = computeTooltipHorizontalOffset( {
 					markerX: point.x,
 					tooltipWidth: tooltipBox.width,
 					containerWidth: map.getSize().x,
-					paddingPx,
+					paddingPx: spacingPx,
 				} );
 				tooltip.options.direction = direction;
 				tooltip.options.offset = L.point( offsetX, 0 );

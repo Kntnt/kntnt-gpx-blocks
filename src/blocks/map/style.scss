@@ -199,6 +199,24 @@
 	display: none;
 }
 
+// Visible gap between the waypoint marker and its tooltip. Leaflet
+// positions the tooltip relative to the marker's geographic centre and
+// ships a ±6 px margin on the top / bottom directions to clear the now-
+// removed arrow tip. With the arrow gone, that 6 px exactly matches the
+// circleMarker's `radius: 6` (defined in `mount.ts`) and the tooltip ends
+// up flush with the marker's visible edge — the mouse cursor then sits on
+// top of the tooltip when hovering. Adding the marker radius and a 0.5
+// rem clearance produces a `0.5 rem` visible gap between the marker's
+// edge and the tooltip's edge. The matching JS-side gap is
+// `WAYPOINT_MARKER_RADIUS_PX + tooltipSpacingPx()` in `mount.ts`.
+.kntnt-gpx-blocks-map .leaflet-tooltip-top {
+	margin-top: calc(-6px - 0.5rem);
+}
+
+.kntnt-gpx-blocks-map .leaflet-tooltip-bottom {
+	margin-top: calc(6px + 0.5rem);
+}
+
 // Error notice — shown only to editors when the render layer surfaces an error.
 // The red left border and warm background make the notice visually distinct
 // from normal block content without relying on WordPress admin styles.
