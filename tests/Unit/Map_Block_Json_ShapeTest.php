@@ -74,6 +74,16 @@ test( 'tooltipBackground, tooltipNameColor, tooltipDescColor defaults are empty 
 
 } );
 
+test( 'tileApiKeys attribute is absent — keys live in the site-wide WP option (issue #149)', function (): void {
+
+	$decoded    = map_block_json_decoded();
+	$attributes = $decoded['attributes'] ?? [];
+
+	expect( $attributes )->toBeArray();
+	expect( $attributes )->not->toHaveKey( 'tileApiKeys' );
+
+} );
+
 test( 'border support uses the __experimentalBorder key (issue #107)', function (): void {
 
 	$decoded  = map_block_json_decoded();

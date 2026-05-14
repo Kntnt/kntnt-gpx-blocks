@@ -79,7 +79,7 @@ function createMapStub(): { map: L.Map; removeLayer: jest.Mock } {
 
 // Canonical sample records used across the suite. The "with key" record has
 // a usable URL — the "no key" record models the runtime state PHP emits
-// when `requiresKey && tileApiKeys[ tileProvider ] === ''`.
+// when a paid provider has no PHP-supplied key and no option-layer entry.
 const baseWithKey: TileLayerRecord = {
 	id: 'thunderforest-outdoors',
 	url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=ABC',

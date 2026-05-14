@@ -15,11 +15,17 @@
  *   the OSM entry sees the renamed label.
  *
  * - **Missing API key** — the resolved provider requires a key
- *   (`requiresKey === true`) but the per-provider entry in `tileApiKeys`
- *   is empty.
- *   Without a key the tile URL produces a request that fails to load
- *   tiles; this notice complements the Inspector help text by surfacing
- *   the issue louder, in the preview region itself.
+ *   (`requiresKey === true`) and the resolved-style URL emitted by the
+ *   server-side `Editor_Data_Enqueuer` still contains the literal `{KEY}`
+ *   placeholder. The enqueuer pre-substitutes from the PHP-supplied
+ *   value first and the site-wide option-layer value second (issue #149);
+ *   a residual `{KEY}` means neither layer supplied a usable key, so
+ *   the preview ships polyline-only. The Notice complements the
+ *   Inspector's link to the settings page by surfacing the issue louder,
+ *   in the preview region itself. PHP-engaged providers
+ *   (`apiKeyManagedExternally === true`) never fire this Notice — by
+ *   design, the editor stays out of the way and any misconfiguration
+ *   surfaces via `Plugin::warning()` logs rather than the editor UI.
  *
  * Extracted as a standalone module so it can be unit-tested via
  * `wp-scripts test-unit-js` without pulling in React, Leaflet, or the
@@ -30,13 +36,27 @@
  */
 
 /**
+ * Editor-side per-style record narrowed to the field the helper inspects.
+ *
+ * The URL is the only field the missing-key detector reads — the
+ * `{KEY}`-still-present invariant is the deterministic signal of
+ * fail-closed state, regardless of whether the PHP or option layer is
+ * the canonical key source.
+ *
+ * @since 1.0.0
+ */
+export interface PreviewNoticeStyle {
+	readonly url: string;
+}
+
+/**
  * Editor-side provider record shape — narrowed to the fields the helper
  * inspects.
  *
  * Mirrors `Editor_Data_Enqueuer::shape_providers()`'s output, keyed by
  * provider id (one entry per provider, not per composite provider/style
  * combination). The full shape (with the nested `styles` map) is
- * declared in `edit.tsx`; only the two fields read here are required for
+ * declared in `edit.tsx`; only the fields read here are required for
  * the detection logic, which keeps the helper trivially mockable from
  * tests.
  *
@@ -45,6 +65,8 @@
 export interface PreviewNoticeProvider {
 	readonly label: string;
 	readonly requiresKey: boolean;
+	readonly default?: string;
+	readonly styles?: Readonly< Record< string, PreviewNoticeStyle > >;
 	readonly apiKeyManagedExternally?: boolean;
 }
 
@@ -61,9 +83,12 @@ export interface PreviewNoticeProvider {
  * "what we fell back to" hint.
  *
  * `missingKey` is `true` when the resolved provider requires a key and
- * `apiKey` is empty. The "resolved" provider is the one looked up by
- * `providerId` if present, otherwise the fallback — mirroring the runtime
- * resolution in `resolveProviderForPreview()`.
+ * the resolved style URL still contains `{KEY}` after the server-side
+ * enqueuer has run. The "resolved" provider is the one looked up by
+ * `providerId` if present, otherwise the fallback — mirroring the
+ * runtime resolution in `resolveProviderForPreview()`. The "resolved
+ * style" is the saved `styleId` if present on the resolved provider,
+ * otherwise the provider's own `default` style — same fall-back chain.
  *
  * @since 1.0.0
  */
@@ -96,8 +121,9 @@ const DEFAULT_FALLBACK_LABEL = 'OpenStreetMap';
  *                           never treated as unknown — block.json's default
  *                           is `openstreetmap`, so an empty value here means
  *                           pre-default state, not a stale id.
- * @param apiKey             - Per-provider API key looked up from
- *                           `tileApiKeys[ providerId ]`.
+ * @param styleId            - Saved `tileStyle` attribute. Used to locate
+ *                           the resolved-style URL so the helper can
+ *                           inspect the residual `{KEY}` invariant.
  * @param providers          - Editor-data registry's `providers` object.
  * @param fallbackProviderId - Canonical fallback provider id (mirrors
  *                           `Tile_Layer_Registry::FALLBACK_PROVIDER_ID`).
@@ -105,7 +131,7 @@ const DEFAULT_FALLBACK_LABEL = 'OpenStreetMap';
  */
 export function detectPreviewNotices(
 	providerId: string,
-	apiKey: string,
+	styleId: string,
 	providers: Readonly< Record< string, PreviewNoticeProvider > >,
 	fallbackProviderId: string
 ): PreviewNoticeFlags {
@@ -123,15 +149,36 @@ export function detectPreviewNotices(
 	// resolveProviderForPreview() so the missing-key flag is computed
 	// against the *effective* provider, not the saved-but-stale id.
 	// When the PHP-supplied key path is engaged for the resolved provider
-	// (`apiKeyManagedExternally === true`), the attribute-path key is
-	// ignored entirely and the missing-key notice never fires — the
-	// site builder, not the editor, owns the key, and any misconfiguration
-	// surfaces in `Plugin::warning()` logs rather than the editor surface.
+	// (`apiKeyManagedExternally === true`), the missing-key notice never
+	// fires — by design, the editor stays out of the way and any
+	// misconfiguration surfaces in `Plugin::warning()` logs rather than
+	// the editor surface.
 	const resolved = providers[ providerId ] ?? fallbackRecord;
+
+	// Resolve the style record the same way `resolveProviderForPreview()`
+	// does: prefer the saved style id when it exists on the resolved
+	// provider, otherwise fall back to the provider's own `default`
+	// style. A missing style record (defensive — should not happen
+	// post-validation) suppresses the notice rather than firing it on
+	// what looks like a placeholder URL.
+	let resolvedStyle: PreviewNoticeStyle | undefined;
+	if ( resolved && resolved.styles ) {
+		resolvedStyle =
+			resolved.styles[ styleId ] ??
+			( resolved.default
+				? resolved.styles[ resolved.default ]
+				: undefined );
+	}
+
+	// The fail-closed signal is the residual `{KEY}` placeholder in the
+	// resolved style URL. The server-side enqueuer pre-substitutes
+	// `{KEY}` from whichever key layer supplied a value; a residual
+	// `{KEY}` means no layer did.
 	const missingKey =
 		resolved?.requiresKey === true &&
 		resolved.apiKeyManagedExternally !== true &&
-		apiKey === '';
+		resolvedStyle !== undefined &&
+		resolvedStyle.url.includes( '{KEY}' );
 
 	return {
 		unknownProviderFallbackLabel: isUnknownProvider ? fallbackLabel : null,

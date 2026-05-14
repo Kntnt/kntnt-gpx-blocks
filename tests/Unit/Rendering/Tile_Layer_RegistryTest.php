@@ -43,6 +43,22 @@ beforeEach( function (): void {
 		}
 	);
 
+	// Default get_option returns the per-test option-layer map for
+	// `kntnt_gpx_blocks_tile_provider_keys`, or the supplied default for
+	// every other option name. Tests that exercise the option-layer
+	// flow set $GLOBALS['kntnt_tlr_test_tile_keys'] before constructing
+	// the registry.
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [];
+	Functions\when( 'get_option' )->alias(
+		static function ( string $name, mixed $default = false ): mixed {
+			if ( $name === 'kntnt_gpx_blocks_tile_provider_keys' ) {
+				$store = $GLOBALS['kntnt_tlr_test_tile_keys'] ?? [];
+				return is_array( $store ) ? $store : [];
+			}
+			return $default;
+		}
+	);
+
 } );
 
 // ---------------------------------------------------------------------------
@@ -271,7 +287,7 @@ test( 'providers using {s} in their style URLs declare subdomains at the provide
 test( 'resolve_provider returns the requested (provider, style) record for known ids', function (): void {
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'openstreetmap', 'mapnik', '' );
+	$resolved = $registry->resolve_provider( 'openstreetmap', 'mapnik' );
 
 	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
 	expect( $resolved['url'] )->not->toContain( '{KEY}' );
@@ -284,7 +300,7 @@ test( 'resolve_provider returns the requested (provider, style) record for known
 test( 'resolve_provider falls back to the provider default style on unknown style id', function (): void {
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'openstreetmap', 'does-not-exist', '' );
+	$resolved = $registry->resolve_provider( 'openstreetmap', 'does-not-exist' );
 
 	// `openstreetmap`'s default is `mapnik`, so the fall-back should return
 	// the mapnik URL.
@@ -296,7 +312,7 @@ test( 'resolve_provider falls back to the provider default style on unknown styl
 test( 'resolve_provider falls back to openstreetmap on unknown provider id', function (): void {
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'definitely-not-a-real-provider', 'anything', '' );
+	$resolved = $registry->resolve_provider( 'definitely-not-a-real-provider', 'anything' );
 
 	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
 
@@ -317,27 +333,31 @@ test( 'resolve_provider falls back when the provider default itself cannot resol
 
 	// Unknown provider + unknown style; falls all the way through to
 	// openstreetmap/mapnik. This locks the fall-through chain's end state.
-	$resolved = $registry->resolve_provider( 'no-such-provider', 'no-such-style', '' );
+	$resolved = $registry->resolve_provider( 'no-such-provider', 'no-such-style' );
 
 	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
 	expect( $resolved['maxZoom'] )->toBe( 19 );
 
 } );
 
-test( 'resolve_provider substitutes the API key into {KEY} for key-required providers', function (): void {
+test( 'resolve_provider substitutes the option-layer key into {KEY} for key-required providers', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'thunderforest' => 'XYZ-TOKEN' ];
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', 'XYZ-TOKEN' );
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor' );
 
 	expect( $resolved['url'] )->not->toContain( '{KEY}' );
 	expect( $resolved['url'] )->toContain( 'apikey=XYZ-TOKEN' );
 
 } );
 
-test( 'resolve_provider trims surrounding whitespace before substituting the API key', function (): void {
+test( 'resolve_provider trims surrounding whitespace before substituting the option-layer key', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'thunderforest' => '  XYZ-TOKEN  ' ];
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', '  XYZ-TOKEN  ' );
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor' );
 
 	expect( $resolved['url'] )->not->toContain( '{KEY}' );
 	expect( $resolved['url'] )->toContain( 'apikey=XYZ-TOKEN' );
@@ -347,12 +367,14 @@ test( 'resolve_provider trims surrounding whitespace before substituting the API
 
 } );
 
-test( 'resolve_provider leaves {KEY} unsubstituted when the attribute-path key is whitespace-only (fail-closed)', function (): void {
+test( 'resolve_provider leaves {KEY} unsubstituted when the option-layer key is whitespace-only (fail-closed)', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'thunderforest' => "  \t\n  " ];
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', "  \t\n  " );
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor' );
 
-	// A whitespace-only attribute-path key must be treated identically to an
+	// A whitespace-only option-layer key must be treated identically to an
 	// empty string: leave {KEY} intact so the caller ships polyline-only,
 	// rather than substituting whitespace into the URL.
 	expect( $resolved['url'] )->toContain( '{KEY}' );
@@ -363,8 +385,10 @@ test( 'resolve_provider leaves {KEY} unsubstituted when the attribute-path key i
 
 test( 'resolve_provider does not substitute when provider does not require a key', function (): void {
 
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'openstreetmap' => 'spurious-key-value' ];
+
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'openstreetmap', 'mapnik', 'spurious-key-value' );
+	$resolved = $registry->resolve_provider( 'openstreetmap', 'mapnik' );
 
 	expect( $resolved['url'] )->not->toContain( 'spurious-key-value' );
 
@@ -373,7 +397,7 @@ test( 'resolve_provider does not substitute when provider does not require a key
 test( 'resolve_provider inherits provider-level subdomains into the resolved record', function (): void {
 
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'carto', 'voyager', '' );
+	$resolved = $registry->resolve_provider( 'carto', 'voyager' );
 
 	expect( $resolved )->toHaveKey( 'subdomains' );
 	expect( $resolved['subdomains'] )->toBe( [ 'a', 'b', 'c', 'd' ] );
@@ -382,8 +406,10 @@ test( 'resolve_provider inherits provider-level subdomains into the resolved rec
 
 test( 'resolve_provider omits subdomains when the provider has none', function (): void {
 
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'mapbox' => 'TOKEN' ];
+
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'mapbox', 'outdoors', 'TOKEN' );
+	$resolved = $registry->resolve_provider( 'mapbox', 'outdoors' );
 
 	expect( $resolved )->not->toHaveKey( 'subdomains' );
 
@@ -391,8 +417,10 @@ test( 'resolve_provider omits subdomains when the provider has none', function (
 
 test( 'resolve_provider returns only the four runtime fields (no id, no label, no requiresKey)', function (): void {
 
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'mapbox' => 'TOKEN' ];
+
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'mapbox', 'outdoors', 'TOKEN' );
+	$resolved = $registry->resolve_provider( 'mapbox', 'outdoors' );
 
 	expect( $resolved )->toHaveKey( 'url' );
 	expect( $resolved )->toHaveKey( 'attribution' );
@@ -1491,8 +1519,7 @@ test( 'resolver returns the orphan-recoverable fallback when the saved provider 
 
 	$resolved = ( new Tile_Layer_Registry() )->resolve_provider(
 		'orphaned-provider-id',
-		'orphaned-style-id',
-		''
+		'orphaned-style-id'
 	);
 
 	expect( $resolved['url'] )->toContain( 'tile.openstreetmap.org' );
@@ -1685,7 +1712,7 @@ test( 'php_supplied_api_key returns the validated string when the PHP path is en
 
 } );
 
-test( 'resolve_provider uses the PHP-supplied apiKey and ignores the attribute-path parameter when engaged', function (): void {
+test( 'resolve_provider uses the PHP-supplied apiKey and ignores the option-layer value when engaged', function (): void {
 
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_providers',
@@ -1704,23 +1731,28 @@ test( 'resolve_provider uses the PHP-supplied apiKey and ignores the attribute-p
 		]
 	);
 
+	// Option-layer is also populated; PHP path engagement supersedes it.
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => 'OPTION-IGNORED' ];
+
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'paid-provider', 'default', 'ATTRIBUTE-KEY-IGNORED' );
+	$resolved = $registry->resolve_provider( 'paid-provider', 'default' );
 
 	expect( $resolved['url'] )->toContain( 'key=PHP-WINS' );
-	expect( $resolved['url'] )->not->toContain( 'ATTRIBUTE-KEY-IGNORED' );
+	expect( $resolved['url'] )->not->toContain( 'OPTION-IGNORED' );
 	expect( $resolved['url'] )->not->toContain( '{KEY}' );
 
 } );
 
-test( 'resolve_provider falls through to the attribute-path key when PHP path is not engaged', function (): void {
+test( 'resolve_provider falls through to the option-layer key when PHP path is not engaged', function (): void {
 
-	// Default registry — no PHP path engagement. The attribute-path key
-	// `ATTRIBUTE-KEY` substitutes into `{KEY}` as before.
+	// Default registry — no PHP path engagement. The option-layer key
+	// `OPTION-KEY` substitutes into `{KEY}` (issue #149).
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'thunderforest' => 'OPTION-KEY' ];
+
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor', 'ATTRIBUTE-KEY' );
+	$resolved = $registry->resolve_provider( 'thunderforest', 'outdoor' );
 
-	expect( $resolved['url'] )->toContain( 'apikey=ATTRIBUTE-KEY' );
+	expect( $resolved['url'] )->toContain( 'apikey=OPTION-KEY' );
 	expect( $resolved['url'] )->not->toContain( '{KEY}' );
 
 } );
@@ -1744,14 +1776,18 @@ test( 'resolve_provider leaves {KEY} unsubstituted when the PHP-supplied apiKey 
 		]
 	);
 
+	// Option-layer also populated; PHP path engagement still wins, even
+	// when the PHP value is empty (the fail-closed contract).
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => 'OPTION-IGNORED' ];
+
 	$registry = new Tile_Layer_Registry();
-	$resolved = $registry->resolve_provider( 'paid-provider', 'default', 'ATTRIBUTE-KEY-IGNORED' );
+	$resolved = $registry->resolve_provider( 'paid-provider', 'default' );
 
 	// Fail-closed: `{KEY}` is left intact so the caller (Render_Map)
 	// detects it and nulls out the URL for polyline-only state. The
-	// attribute-path key is ignored — PHP path engagement is binary.
+	// option-layer key is ignored — PHP path engagement is binary.
 	expect( $resolved['url'] )->toContain( '{KEY}' );
-	expect( $resolved['url'] )->not->toContain( 'ATTRIBUTE-KEY-IGNORED' );
+	expect( $resolved['url'] )->not->toContain( 'OPTION-IGNORED' );
 
 } );
 
@@ -1781,7 +1817,7 @@ test( 'resolve_provider logs a warning naming the provider id but never the PHP-
 
 	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
-		$registry->resolve_provider( 'paid-provider', 'default', '' );
+		$registry->resolve_provider( 'paid-provider', 'default' );
 	} );
 
 	// The provider id appears in the warning so the integrator can locate
@@ -1794,11 +1830,6 @@ test( 'resolve_provider logs a warning naming the provider id but never the PHP-
 
 test( 'no PHP-supplied key value (or its sentinel) ever appears in the warning log', function (): void {
 
-	// Use a high-entropy sentinel key so the no-leak assertion is
-	// unambiguous: the empty-key path under PHP engagement must never
-	// reveal the configured value, even when the value is non-empty
-	// in input but trimmed to empty. Combine with a stale-attribute
-	// path key to also assert it never leaks.
 	$sentinel_php_attempt = 'S3CR3T-DO-NOT-LEAK';
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_providers',
@@ -1808,9 +1839,7 @@ test( 'no PHP-supplied key value (or its sentinel) ever appears in the warning l
 					'requiresKey' => true,
 					// Whitespace pads a value the validator will trim to a
 					// non-empty string; the resolver's success branch
-					// substitutes it into the URL but does not log. Run a
-					// fresh registry with empty value below to also cover
-					// the fail-closed log branch in the same test.
+					// substitutes it into the URL but does not log.
 					'apiKey'      => '   ' . $sentinel_php_attempt . '   ',
 				],
 				[
@@ -1826,32 +1855,24 @@ test( 'no PHP-supplied key value (or its sentinel) ever appears in the warning l
 		$registry = new Tile_Layer_Registry();
 		// Resolve once with the populated PHP key; resolve_provider
 		// substitutes silently and does not log.
-		$registry->resolve_provider( 'paid-provider', 'default', 'ANOTHER-SENTINEL-ATTRIBUTE' );
+		$registry->resolve_provider( 'paid-provider', 'default' );
 	} );
 
 	expect( $logged )->not->toContain( $sentinel_php_attempt );
-	expect( $logged )->not->toContain( 'ANOTHER-SENTINEL-ATTRIBUTE' );
 
 } );
 
-test( 'fail-closed warning log never contains the attempted PHP-supplied key', function (): void {
+test( 'fail-closed warning log never contains any key value (PHP nor option)', function (): void {
 
-	$sentinel = 'EMPTY-AFTER-TRIM-VALUE-DO-NOT-LEAK';
+	$option_sentinel = 'OPTION-VALUE-DO-NOT-LEAK';
 	// Construct a value that the validator trims to '' (just whitespace
 	// in input). The log branch fires only on the trimmed-empty state.
-	// To exercise the no-leak invariant for the value the validator saw
-	// before trimming, the validator itself must not log the input — and
-	// it doesn't: the validator silently normalises and stores ''. The
-	// resolver then logs only the provider id. Use a non-trivial sentinel
-	// as the in-input value to lock the invariant down.
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_providers',
 		[
 			'paid-provider' => tlr_provider_record(
 				[
 					'requiresKey' => true,
-					// The validator trims, but the input the validator
-					// receives must never end up in the log either.
 					'apiKey'      => "  \t\n",
 				],
 				[
@@ -1863,22 +1884,22 @@ test( 'fail-closed warning log never contains the attempted PHP-supplied key', f
 		]
 	);
 
-	$logged = tlr_capture_warning_log( static function () use ( $sentinel ): void {
+	// Option-layer is irrelevant under PHP engagement; verify it never
+	// leaks into the log regardless.
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => $option_sentinel ];
+
+	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
-		$registry->resolve_provider( 'paid-provider', 'default', $sentinel );
+		$registry->resolve_provider( 'paid-provider', 'default' );
 	} );
 
-	// The attribute-path sentinel is the only string the validator saw
-	// that could plausibly leak; the no-leak invariant excludes it.
-	expect( $logged )->not->toContain( $sentinel );
-	// Likewise, the literal whitespace input cannot reach the log under
-	// trimmed=='' fail-closed semantics. The log line carries the id
-	// alone.
+	expect( $logged )->not->toContain( $option_sentinel );
+	// The log line carries the id alone.
 	expect( $logged )->toContain( 'paid-provider' );
 
 } );
 
-test( 'attribute-bypass: PHP path engagement makes the attribute-path key irrelevant for paid providers', function (): void {
+test( 'option-layer-bypass: PHP path engagement makes the option-layer key irrelevant for paid providers', function (): void {
 
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_providers',
@@ -1899,14 +1920,64 @@ test( 'attribute-bypass: PHP path engagement makes the attribute-path key irrele
 
 	$registry = new Tile_Layer_Registry();
 
-	// Three different attribute-path values, identical resolved URL.
-	$a = $registry->resolve_provider( 'paid-provider', 'default', '' );
-	$b = $registry->resolve_provider( 'paid-provider', 'default', 'something-else' );
-	$c = $registry->resolve_provider( 'paid-provider', 'default', 'yet-another' );
+	// Three different option-layer values, identical resolved URL.
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => '' ];
+	$a = $registry->resolve_provider( 'paid-provider', 'default' );
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => 'something-else' ];
+	$b = $registry->resolve_provider( 'paid-provider', 'default' );
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => 'yet-another' ];
+	$c = $registry->resolve_provider( 'paid-provider', 'default' );
 
 	expect( $a['url'] )->toBe( $b['url'] );
 	expect( $b['url'] )->toBe( $c['url'] );
 	expect( $a['url'] )->toContain( 'key=PHP-VALUE' );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Effective_api_key — exposes the combined precedence rule used by
+// Render_Map's polyline-only gate.
+// ---------------------------------------------------------------------------
+
+test( 'effective_api_key returns the PHP-supplied value when the path is engaged', function (): void {
+
+	tlr_filter_returns(
+		'kntnt_gpx_blocks_tile_providers',
+		[
+			'paid-provider' => tlr_provider_record(
+				[
+					'requiresKey' => true,
+					'apiKey'      => 'PHP-VAL',
+				],
+				[
+					'default' => tlr_style_record( [
+						'url' => 'https://tiles.example.com/{z}/{x}/{y}.png?key={KEY}',
+					] ),
+				]
+			),
+		]
+	);
+
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'paid-provider' => 'OPTION-VAL' ];
+
+	$registry = new Tile_Layer_Registry();
+	expect( $registry->effective_api_key( 'paid-provider' ) )->toBe( 'PHP-VAL' );
+
+} );
+
+test( 'effective_api_key returns the option-layer value when the PHP path is not engaged', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_keys'] = [ 'thunderforest' => 'FROM-OPTION' ];
+
+	$registry = new Tile_Layer_Registry();
+	expect( $registry->effective_api_key( 'thunderforest' ) )->toBe( 'FROM-OPTION' );
+
+} );
+
+test( 'effective_api_key returns the empty string when neither layer supplies a value', function (): void {
+
+	$registry = new Tile_Layer_Registry();
+	expect( $registry->effective_api_key( 'thunderforest' ) )->toBe( '' );
 
 } );
 

@@ -172,10 +172,6 @@
 			"type": "string",
 			"default": "mapnik"
 		},
-		"tileApiKeys": {
-			"type": "object",
-			"default": {}
-		},
 		"tileOverlays": {
 			"type": "array",
 			"default": [],

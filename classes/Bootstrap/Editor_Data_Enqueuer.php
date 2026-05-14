@@ -11,10 +11,12 @@
  * The payload is JSON-encoded and attached as a `'before'` inline script on
  * the GPX Map block's editor handle, so it lands in the editor document
  * before the block's React entry runs and reads the global. API keys are
- * deliberately excluded from the payload: attribute-path keys are per-block
- * (`attributes.tileApiKeys` and `attributes.tileOverlayApiKeys`, both
- * provider-keyed objects) and never leave PHP except as the substituted
- * `{KEY}` value in the rendered tile URL, and PHP-supplied keys (engaged
+ * deliberately excluded from the payload as raw values: base-provider
+ * keys are read from the site-wide `kntnt_gpx_blocks_tile_provider_keys`
+ * option (issue #149) and substituted into `{KEY}` server-side before
+ * the URL reaches the editor; overlay-provider keys are still per-block
+ * (`attributes.tileOverlayApiKeys`) and substituted client-side (the
+ * overlay option-layer flow ships in #150); PHP-supplied keys (engaged
  * via the optional `apiKey` field on a `kntnt_gpx_blocks_tile_providers`
  * or `kntnt_gpx_blocks_tile_overlays` callback) are substituted
  * server-side before the URL reaches the editor — the editor receives a
@@ -29,6 +31,7 @@ declare( strict_types = 1 );
 
 namespace Kntnt\Gpx_Blocks\Bootstrap;
 
+use Kntnt\Gpx_Blocks\Admin\Settings_Page;
 use Kntnt\Gpx_Blocks\Plugin;
 use Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry;
 
@@ -83,13 +86,13 @@ final class Editor_Data_Enqueuer {
 	 * `signupUrl` powers the "Get one" help-text link, and the URL /
 	 * attribution / maxZoom / optional subdomains let the preview mount the
 	 * selected provider's tile layer directly via `L.tileLayer()`. API keys
-	 * are deliberately *not* in the payload — they remain a per-block
-	 * attribute (`tileApiKeys[ tileProvider ]`) and reach the browser only
-	 * as the substituted `{KEY}` value at render time. When JSON encoding
-	 * fails or the
-	 * inline-script call is unavailable, a warning is logged and the method
-	 * returns silently — the editor reads `window.kntntGpxBlocks` defensively
-	 * and degrades to an empty Tiles dropdown rather than throwing.
+	 * are deliberately *not* in the payload — base-provider keys live in
+	 * the site-wide option (issue #149) and reach the browser only as the
+	 * substituted `{KEY}` value at render time. When JSON encoding fails
+	 * or the inline-script call is unavailable, a warning is logged and
+	 * the method returns silently — the editor reads `window.kntntGpxBlocks`
+	 * defensively and degrades to an empty Tiles dropdown rather than
+	 * throwing.
 	 *
 	 * @since 1.0.0
 	 */
@@ -104,21 +107,31 @@ final class Editor_Data_Enqueuer {
 		// key (`styles` vs `layers`), the `default` field (providers only),
 		// and the warning wording that distinguishes the two halves in the
 		// log so a site builder can locate the failure from the log alone.
+		// The `settingsUrl` and `canManageSettings` fields surface the
+		// site-wide tile-API-key admin page (issue #149) to the Map
+		// block's Inspector so its key-required Notice can link to the
+		// page when the current user holds `manage_options`. The URL is
+		// emitted unconditionally; the editor JS chooses whether to
+		// render it as a link or as plain text based on the capability
+		// flag.
 		$payload = [
-			'providers' => self::shape_collection(
+			'providers'         => self::shape_collection(
 				$registry->get_providers(),
 				'styles',
 				true,
 				'tile provider',
 				'fail closed (polyline-only)',
+				Settings_Page::get_stored_keys(),
 			),
-			'overlays'  => self::shape_collection(
+			'overlays'          => self::shape_collection(
 				$registry->get_overlays(),
 				'layers',
 				false,
 				'tile-overlay provider',
 				'drop its layers (base map and other overlays still render)',
 			),
+			'settingsUrl'       => self::resolve_settings_url(),
+			'canManageSettings' => function_exists( 'current_user_can' ) && current_user_can( 'manage_options' ),
 		];
 
 		// Encode the payload. wp_json_encode() returns false on failure, in
@@ -212,6 +225,13 @@ final class Editor_Data_Enqueuer {
 	 *                                                                  (`'fail closed (polyline-only)'` or
 	 *                                                                  `'drop its layers (base map and other overlays still render)'`).
 	 *
+	 * @param array<string, string>                $option_keys         Per-provider option-layer keys keyed by provider id.
+	 *                                                                  An entry pre-substitutes `{KEY}` server-side from the
+	 *                                                                  site-wide option (issue #149) for providers where the
+	 *                                                                  PHP path is *not* engaged. Pass the empty array for
+	 *                                                                  collections without an option-layer source (overlays
+	 *                                                                  still use the per-block attribute path in this slice).
+	 *
 	 * @return array<string, array<string, mixed>>
 	 */
 	private static function shape_collection(
@@ -220,6 +240,7 @@ final class Editor_Data_Enqueuer {
 		bool $has_default,
 		string $kind_for_warning,
 		string $consequence_phrase,
+		array $option_keys = [],
 	): array {
 
 		$out = [];
@@ -249,22 +270,37 @@ final class Editor_Data_Enqueuer {
 				);
 			}
 
+			// Resolve the option-layer substitution candidate. Issue #149
+			// centralised per-base-provider tile API keys in a site-wide
+			// option; for collections that opt into the option-layer
+			// flow (`$option_keys` non-empty), a present entry pre-
+			// substitutes `{KEY}` server-side so the editor preview
+			// mounts the tile layer the same way the frontend does.
+			// PHP engagement still wins — `$option_keys` is only
+			// consulted when the PHP path is *not* engaged for this id.
+			$raw_option_key       = $option_keys[ $id ] ?? '';
+			$option_key           = is_string( $raw_option_key ) ? trim( $raw_option_key ) : '';
+			$option_path_engaged  = ! $php_path_engaged && $option_key !== '';
+
 			// Compose the nested child sub-map. The shape mirrors the
 			// validator's typed child record verbatim; the validator has
 			// already enforced the URL/maxZoom/{KEY}-placeholder rules.
-			// When the PHP path is engaged with a non-empty key, the
-			// `{KEY}` placeholder is substituted server-side so the
-			// editor preview never sees the raw key in its props graph;
-			// when the PHP key is empty, `{KEY}` is left intact so the
-			// preview's fail-closed detector (unsubstituted `{KEY}`)
-			// ships polyline-only (base providers) or drops just the
-			// affected layer (overlays).
+			// When either the PHP path is engaged with a non-empty key,
+			// or the option-layer key is non-empty, the `{KEY}`
+			// placeholder is substituted server-side so the editor
+			// preview never sees the raw key in its props graph; when
+			// neither layer supplies a usable key, `{KEY}` is left
+			// intact so the preview's fail-closed detector
+			// (unsubstituted `{KEY}`) ships polyline-only (base
+			// providers) or drops just the affected layer (overlays).
 			$nested = $record[ $nested_key ] ?? [];
 			$children = [];
 			foreach ( $nested as $child_id => $child ) {
 				$url = $child['url'];
 				if ( $php_path_engaged && ! $php_key_empty ) {
 					$url = str_replace( '{KEY}', $php_key, $url );
+				} elseif ( $option_path_engaged ) {
+					$url = str_replace( '{KEY}', $option_key, $url );
 				}
 				$children[ $child_id ] = [
 					'label'       => $child['label'],
@@ -300,6 +336,41 @@ final class Editor_Data_Enqueuer {
 		}
 
 		return $out;
+
+	}
+
+	/**
+	 * Resolves the absolute URL of the plugin's settings page.
+	 *
+	 * Prefers `menu_page_url()`, the WordPress canonical way to obtain a
+	 * registered admin page URL. The function returns the URL when the
+	 * page is registered at the time of the call (which is true for
+	 * every editor request, because `admin_menu` fires before
+	 * `enqueue_block_editor_assets`); a defensive fall-back builds the
+	 * URL from `admin_url()` for the unusual case where the function is
+	 * missing or returns an empty string. When neither is available
+	 * (e.g. a non-WordPress test runner), the method returns the empty
+	 * string and the editor JS treats the absent URL as a non-link.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return string Absolute URL of `Settings → Kntnt GPX Blocks`, or
+	 *                `''` when no resolution path succeeds.
+	 */
+	private static function resolve_settings_url(): string {
+
+		if ( function_exists( 'menu_page_url' ) ) {
+			$url = menu_page_url( Settings_Page::MENU_SLUG, false );
+			if ( is_string( $url ) && $url !== '' ) {
+				return $url;
+			}
+		}
+
+		if ( function_exists( 'admin_url' ) ) {
+			return admin_url( 'options-general.php?page=' . Settings_Page::MENU_SLUG );
+		}
+
+		return '';
 
 	}
 

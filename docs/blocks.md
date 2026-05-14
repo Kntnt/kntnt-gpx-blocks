@@ -58,8 +58,7 @@ The data source. Renders an interactive Leaflet map with the recorded track, opt
 | `tooltipDescTextTransform` | string | `""` | Description-line letter case. |
 | `tileProvider` | string | `"openstreetmap"` | Base-tile provider id from the validated registry. Unknown ids fall back silently to `openstreetmap` (and to its default style). |
 | `tileStyle` | string | `"mapnik"` | Style id within the selected provider. Unknown style ids inside a known provider fall back silently to the provider's own `default` style. The default seed (`openstreetmap` + `mapnik`) renders OpenStreetMap Mapnik. |
-| `tileApiKeys` | object | `{}` | Per-provider API-key map keyed by provider id (e.g. `{ "mapbox": "ABC", "maptiler": "XYZ" }`). One key per provider, shared across all that provider's styles. The renderer looks up `tileApiKeys[ tileProvider ]` and substitutes it into `{KEY}` in the resolved tile URL. Switching providers preserves the other entries, so the editor keeps every previously-entered key. Surrounding whitespace is trimmed before substitution; whitespace-only entries are treated as empty. Missing entries (and a malformed/null attribute) coerce to the empty string and engage the polyline-only fall-back when the provider requires a key. |
-| `tileOverlays` | string[] | `[]` | Ordered list of overlay-layer ids stacked on top of the base provider. Unknown ids are dropped at render time. |
+| `tileOverlays` | string[] | `[]` | Ordered list of overlay-layer ids stacked on top of the base provider. Unknown ids are dropped at render time. Per-base-provider tile API keys live in the site-wide `kntnt_gpx_blocks_tile_provider_keys` option (issue #149) configured via *Settings → Kntnt GPX Blocks*, not in block attributes. |
 
 ### Editor UI
 

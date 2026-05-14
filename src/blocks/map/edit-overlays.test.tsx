@@ -357,7 +357,6 @@ function buildAttributes(
 		tooltipDescTextTransform: '',
 		tileProvider: 'openstreetmap',
 		tileStyle: 'mapnik',
-		tileApiKeys: {},
 		tileOverlays: [],
 		tileOverlayApiKeys: {},
 		...overrides,

@@ -25,13 +25,14 @@
  * Base providers may additionally carry an optional `apiKey` field
  * supplied by a `kntnt_gpx_blocks_tile_providers` filter callback.
  * Presence of the key (`isset`) — not value — engages the **PHP-supplied
- * key path**: the per-block `attributes.tileApiKeys[ providerId ]` value
- * is ignored entirely, the editor hides the per-provider API-key
- * TextControl, and the resolver substitutes the PHP-supplied value into
- * `{KEY}` for both editor preview and frontend. A whitespace-only or
- * empty PHP-supplied key fails closed (no tile layer; polyline-only)
- * and emits a `Plugin::warning()` log that names the provider id but
- * never the key value. See `docs/hooks.md` for the formal contract.
+ * key path**: the site-wide `kntnt_gpx_blocks_tile_provider_keys`
+ * option entry for that provider is ignored entirely, the settings
+ * page renders the provider's field disabled with a read-only notice,
+ * and the resolver substitutes the PHP-supplied value into `{KEY}` for
+ * both editor preview and frontend. A whitespace-only or empty
+ * PHP-supplied key fails closed (no tile layer; polyline-only) and
+ * emits a `Plugin::warning()` log that names the provider id but never
+ * the key value. See `docs/hooks.md` for the formal contract.
  *
  * Overlay providers carry the same optional `apiKey` field via the
  * `kntnt_gpx_blocks_tile_overlays` filter, with the same engagement
@@ -254,15 +255,18 @@ final class Tile_Layer_Registry {
 	 * Key resolution is binary on PHP-engagement:
 	 *
 	 * - **PHP-supplied key** (`isset( $record['apiKey'] )`): the
-	 *   PHP-supplied value is used; `$api_key` is ignored. An empty or
-	 *   whitespace-only PHP value fails closed — the URL is returned with
-	 *   its `{KEY}` placeholder intact and a `Plugin::warning()` log
-	 *   names the provider id (never the key value). Callers (e.g.
-	 *   `Render_Map`) detect the unsubstituted `{KEY}` and ship
-	 *   polyline-only.
-	 * - **Attribute path** (otherwise): the `$api_key` parameter
-	 *   (looked up by the caller from `attributes.tileApiKeys[ id ]`)
-	 *   is substituted into `{KEY}` as before.
+	 *   PHP-supplied value is used; the option-layer value is ignored.
+	 *   An empty or whitespace-only PHP value fails closed — the URL is
+	 *   returned with its `{KEY}` placeholder intact and a
+	 *   `Plugin::warning()` log names the provider id (never the key
+	 *   value). Callers (e.g. `Render_Map`) detect the unsubstituted
+	 *   `{KEY}` and ship polyline-only.
+	 * - **Option layer** (otherwise): the site-wide
+	 *   `kntnt_gpx_blocks_tile_provider_keys` option entry for this
+	 *   provider id is substituted into `{KEY}`. The option is the
+	 *   canonical UI for site-wide tile API keys (issue #149); a
+	 *   missing or whitespace-only entry yields the same fail-closed
+	 *   behaviour as an empty PHP-supplied key.
 	 *
 	 * Resolution fall-backs, in order:
 	 *
@@ -282,15 +286,10 @@ final class Tile_Layer_Registry {
 	 *
 	 * @param string $provider_id Provider id from saved block attributes.
 	 * @param string $style_id    Style id from saved block attributes.
-	 * @param string $api_key     Per-provider tile API key from the
-	 *                            attribute path (empty when the provider
-	 *                            does not require one). Ignored when the
-	 *                            resolved provider record carries an
-	 *                            `apiKey` field — see method docblock.
 	 *
 	 * @return ResolvedProvider
 	 */
-	public function resolve_provider( string $provider_id, string $style_id, string $api_key ): array {
+	public function resolve_provider( string $provider_id, string $style_id ): array {
 
 		$providers = $this->get_providers();
 
@@ -342,13 +341,13 @@ final class Tile_Layer_Registry {
 		// `{KEY}` when `requiresKey === true`; on the other branch the
 		// URL has no `{KEY}` and `str_replace()` is a no-op. The
 		// PHP-supplied key path (provider record carries `apiKey`)
-		// supersedes the attribute-path `$api_key` parameter: when
-		// engaged with a non-empty key, the PHP value substitutes into
-		// `{KEY}`; when engaged with an empty/whitespace-only key, the
-		// `{KEY}` placeholder is left intact and the caller treats the
+		// supersedes the option-layer value: when engaged with a
+		// non-empty key, the PHP value substitutes into `{KEY}`; when
+		// engaged with an empty/whitespace-only key, the `{KEY}`
+		// placeholder is left intact and the caller treats the
 		// unsubstituted URL as polyline-only. The empty-PHP-key warning
 		// is logged here, once per render, naming only the provider id.
-		// The attribute-path key is trimmed before both the emptiness
+		// The option-layer key is trimmed before both the emptiness
 		// decision and the substitution so a whitespace-only entry is
 		// treated identically to `''` (fail-closed) and a value with
 		// stray whitespace around it does not leak that whitespace into
@@ -368,7 +367,8 @@ final class Tile_Layer_Registry {
 					$url = str_replace( '{KEY}', $php_key, $url );
 				}
 			} else {
-				$trimmed_key = trim( $api_key );
+				$option_key  = self::option_key_for( $provider_id );
+				$trimmed_key = trim( $option_key );
 				if ( '' !== $trimmed_key ) {
 					$url = str_replace( '{KEY}', $trimmed_key, $url );
 				}
@@ -420,6 +420,90 @@ final class Tile_Layer_Registry {
 		}
 
 		return $provider['apiKey'] ?? null;
+
+	}
+
+	/**
+	 * Returns the site-wide tile API key for a base provider from the
+	 * `kntnt_gpx_blocks_tile_provider_keys` option.
+	 *
+	 * Issue #149 centralised per-base-provider tile API keys in a single
+	 * WP option; this helper is the only place the option name lives.
+	 * The raw read goes through `get_option()` with a default of `[]`,
+	 * is coerced defensively to `array<string, string>` (the option's
+	 * sanitize callback enforces this on write, but a direct DB edit
+	 * could store a non-array shape), and a missing entry is reported
+	 * as the empty string. Trimming and the empty-after-trim decision
+	 * live in the caller (`resolve_provider`) so the same logic that
+	 * applied to the previous attribute-path key applies verbatim.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $provider_id Base-provider id (typically the saved
+	 *                            `tileProvider` block attribute).
+	 *
+	 * @return string The option-layer key, or `''` when the option lacks
+	 *                an entry for this provider.
+	 */
+	private static function option_key_for( string $provider_id ): string {
+
+		// `function_exists` guards against environments that load
+		// Tile_Layer_Registry outside the WordPress runtime (such as
+		// the Pest tests' Brain Monkey stubs, which only override
+		// `get_option` when the test explicitly arranges it). When no
+		// option API is available, the option is treated as missing
+		// and the key falls back to `''` — the same fail-closed
+		// outcome the renderer already handles.
+		if ( ! function_exists( 'get_option' ) ) {
+			return '';
+		}
+
+		$raw = get_option( 'kntnt_gpx_blocks_tile_provider_keys', [] );
+		if ( ! is_array( $raw ) ) {
+			return '';
+		}
+
+		$value = $raw[ $provider_id ] ?? '';
+		return is_string( $value ) ? $value : '';
+
+	}
+
+	/**
+	 * Returns the site-wide tile API key for a base provider after the
+	 * PHP-supplied key path has been considered.
+	 *
+	 * Mirrors the binary precedence rule documented on
+	 * `resolve_provider()` and `php_supplied_api_key()`:
+	 *
+	 * - When the PHP path is engaged for `$provider_id` (presence of
+	 *   `apiKey` on the validated record), the PHP value is returned
+	 *   verbatim. An empty PHP value still wins over the option-layer
+	 *   value — that is the fail-closed contract.
+	 * - Otherwise the option-layer value (or `''` when missing) is
+	 *   returned.
+	 *
+	 * Exposed so `Render_Map`'s polyline-only gate can read the
+	 * *effective* key for the requested provider id without
+	 * re-implementing the precedence rule. The returned value is
+	 * untrimmed so the caller's `trim() === ''` check sees the same
+	 * input the registry's resolver would.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $provider_id Base-provider id (typically the saved
+	 *                            `tileProvider` block attribute).
+	 *
+	 * @return string The effective key — PHP-supplied when engaged,
+	 *                option-layer otherwise; `''` when neither applies.
+	 */
+	public function effective_api_key( string $provider_id ): string {
+
+		$php = $this->php_supplied_api_key( $provider_id );
+		if ( $php !== null ) {
+			return $php;
+		}
+
+		return self::option_key_for( $provider_id );
 
 	}
 

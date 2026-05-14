@@ -171,9 +171,15 @@ If your optimization plugin identifies inline scripts by content rather than by 
 
 If you do not need consent gating — for example you self-host tiles, your jurisdiction does not require consent for embedded maps, or it is an internal tool — simply do not install the JavaScript glue. With no `kntnt_gpx_blocks:consent` event ever dispatched, the plugin's default-allow rule keeps the map loading on every page. There is *no* setting on the plugin side that turns the gate "on" — the gate is opt-in via your glue, not opt-out via configuration.
 
-### Protect your API key from other editors
+### Tile API keys
 
-If you use a paid tile provider (Thunderforest, Mapbox, MapTiler, Jawg Maps, Stadia Maps), the default workflow asks every editor of every post to paste the API key into the GPX Map block's Inspector. The key then lives in `post_content` and is readable by anyone with `edit_posts` capability — every author, contributor, or freelancer on the site. To keep the key out of the editor and out of `post_content`, supply it from PHP through the `kntnt_gpx_blocks_tile_providers` filter:
+If you use a paid tile provider (Thunderforest, Mapbox, MapTiler, Jawg Maps, Stadia Maps), you supply the API key once for the whole site through **Settings → Kntnt GPX Blocks** in the WordPress admin. The page lists every base-tile provider that needs a key and stores the entries in the single option `kntnt_gpx_blocks_tile_provider_keys`. Rotating a key on a site with N Map blocks is one edit, not N. The same key is used by every Map block that selects that provider; site editors (authors, contributors, freelancers) do not need to know or paste the key — they choose the provider in the Map block's Inspector and the plugin substitutes the configured key at render time.
+
+Only users with `manage_options` (typically administrators) can read or write the option through the WordPress admin. Editors with `edit_posts` see a Notice in the Map block's Inspector pointing them at the settings page, but cannot follow the link unless they hold `manage_options`. The link is rendered as plain text for `edit_posts`-only users.
+
+### Protect your API key from other administrators
+
+If you do not want even site administrators to see the API key in the WordPress admin — for example, when freelance administrators have access to the dashboard but not to your deployment configuration — supply the key from PHP through the `kntnt_gpx_blocks_tile_providers` filter:
 
 ```php
 add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $providers ): array {
@@ -197,7 +203,7 @@ add_filter( 'kntnt_gpx_blocks_tile_providers', static function ( array $provider
 } );
 ```
 
-Presence of the `apiKey` field (not its value) engages the PHP path. For any provider where PHP supplies the key, the block's Inspector hides the API-key field, the per-block `tileApiKeys` attribute is ignored, and the plugin substitutes the PHP-supplied value into the tile URL on both the frontend and the editor preview. An empty or whitespace-only PHP value fails closed — the map renders polyline-only and the misconfiguration is logged via `Plugin::warning()` — without leaking the value into the log.
+Presence of the `apiKey` field (not its value) engages the PHP path. For any provider where PHP supplies the key, the settings page renders that provider's field disabled with a "Supplied by code; this field is read-only." notice, the option-layer entry for that provider is ignored, and the plugin substitutes the PHP-supplied value into the tile URL on both the frontend and the editor preview. An empty or whitespace-only PHP value fails closed — the map renders polyline-only and the misconfiguration is logged via `Plugin::warning()` — without leaking the value into the log.
 
 The same mechanism is available for **overlay providers** (OpenWeatherMap is the only paid overlay shipped by default) via the parallel `kntnt_gpx_blocks_tile_overlays` filter:
 

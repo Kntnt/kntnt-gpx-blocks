@@ -165,27 +165,21 @@ final class Render_Map {
 		$tooltip_desc_text_decoration = Typography_Sanitizer::text_decoration( $attributes['tooltipDescTextDecoration'] ?? '' );
 		$tooltip_desc_text_transform  = Typography_Sanitizer::text_transform( $attributes['tooltipDescTextTransform'] ?? '' );
 
-		// Read the saved tile-provider id, style id, and the per-provider
-		// API-key map. The provider/style ids are resolved against the
-		// validated registry below; an unknown provider falls back to
-		// OpenStreetMap (and to its default style), an unknown style id
-		// inside a known provider falls back to the provider's own default
-		// style — both fallbacks emit a `Plugin::warning()`. The key map
-		// stores one entry per provider id so switching between paid
-		// providers preserves each provider's key; the lookup pulls the
-		// current provider's key (or empty string when the entry is missing
-		// or the map is malformed) and forwards it verbatim to the registry,
-		// which substitutes it into the URL.
+		// Read the saved tile-provider id and style id. The provider/style
+		// ids are resolved against the validated registry below; an unknown
+		// provider falls back to OpenStreetMap (and to its default style),
+		// an unknown style id inside a known provider falls back to the
+		// provider's own default style — both fallbacks emit a
+		// `Plugin::warning()`. Per-base-provider tile API keys live in a
+		// site-wide WP option (`kntnt_gpx_blocks_tile_provider_keys`,
+		// issue #149) read by the registry itself; this render path
+		// no longer reads any key from block attributes.
 		$tile_provider_id = isset( $attributes['tileProvider'] ) && is_string( $attributes['tileProvider'] ) && '' !== $attributes['tileProvider']
 			? $attributes['tileProvider']
 			: Tile_Layer_Registry::FALLBACK_PROVIDER_ID;
 		$tile_style_id = isset( $attributes['tileStyle'] ) && is_string( $attributes['tileStyle'] ) && '' !== $attributes['tileStyle']
 			? $attributes['tileStyle']
 			: '';
-		$raw_tile_api_keys = $attributes['tileApiKeys'] ?? [];
-		$tile_api_keys     = is_array( $raw_tile_api_keys ) ? $raw_tile_api_keys : [];
-		$raw_tile_api_key  = $tile_api_keys[ $tile_provider_id ] ?? '';
-		$tile_api_key      = is_string( $raw_tile_api_key ) ? $raw_tile_api_key : '';
 
 		// Read the saved overlay (provider, layer) pair list and the
 		// per-overlay-provider API-key map. Each pair is validated and
@@ -289,10 +283,9 @@ final class Render_Map {
 		// When the validated provider record carries an `apiKey` field
 		// (PHP-supplied key path, engaged via the
 		// `kntnt_gpx_blocks_tile_providers` filter), the registry uses
-		// that value and ignores the attribute-path `$tile_api_key`
-		// parameter entirely — the editor's API-key TextControl for that
-		// provider is hidden, and any stale value still sitting in
-		// `attributes.tileApiKeys[ providerId ]` is dead data.
+		// that value and ignores the site-wide option entry for that
+		// provider entirely — the settings page renders the field
+		// disabled and any stored option entry is dead data.
 		// Overlay resolution walks each saved (provider, layer) pair down
 		// the parallel nested overlay map, substituting the per-overlay-
 		// provider key (from `tileOverlayApiKeys`) into `{KEY}` for paid
@@ -303,7 +296,7 @@ final class Render_Map {
 		// from these records to build its tile layer; the {KEY}-substituted
 		// URL is the only place the API key reaches the browser.
 		$tile_registry = new Tile_Layer_Registry();
-		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_style_id, $tile_api_key );
+		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_style_id );
 		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_pairs, $tile_overlay_api_keys );
 
 		// Polyline-only gate: when the resolved provider requires an API
@@ -322,14 +315,13 @@ final class Render_Map {
 		// emits the null URL when no usable key is configured. The
 		// effective key is the PHP-supplied value when the path is
 		// engaged for this provider (presence of `apiKey` on the
-		// validated record); otherwise the attribute-path key the
-		// caller already looked up from `tileApiKeys`. The empty-PHP-key
-		// warning is emitted by the registry, not here, so a single
-		// resolve pass produces a single log line.
+		// validated record); otherwise the option-layer value the
+		// registry reads from `kntnt_gpx_blocks_tile_provider_keys`.
+		// The empty-PHP-key warning is emitted by the registry, not
+		// here, so a single resolve pass produces a single log line.
 		$resolved_provider_record = $tile_registry->get_providers()[ $tile_provider_id ] ?? null;
 		$requires_key             = $resolved_provider_record !== null ? $resolved_provider_record['requiresKey'] : false;
-		$php_supplied_key         = $tile_registry->php_supplied_api_key( $tile_provider_id );
-		$effective_key            = $php_supplied_key ?? $tile_api_key;
+		$effective_key            = $tile_registry->effective_api_key( $tile_provider_id );
 		$key_is_empty             = '' === trim( $effective_key );
 		if ( $requires_key && $key_is_empty ) {
 			$tile_provider['url'] = null;

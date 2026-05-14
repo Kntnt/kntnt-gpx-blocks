@@ -30,6 +30,7 @@ import {
 	SelectControl,
 	TextControl,
 	ExternalLink,
+	Notice,
 } from '@wordpress/components';
 import { useMemo } from '@wordpress/element';
 import { useSelect, dispatch } from '@wordpress/data';
@@ -142,20 +143,17 @@ interface EditorRegistryStyle {
  * the `apiKeyManagedExternally` boolean that signals whether the PHP
  * path is engaged for this provider.
  *
- * When `apiKeyManagedExternally === false` the per-style URL still
- * contains the literal `{KEY}` placeholder for paid providers —
- * substitution against `attributes.tileApiKeys[ tileProvider ]` happens
- * client-side in `edit.tsx` immediately before the resolved record is
- * handed to the preview, mirroring how `Render_Map` substitutes
- * server-side for the frontend.
- *
- * When `apiKeyManagedExternally === true` (the site builder supplied
- * `apiKey` via the `kntnt_gpx_blocks_tile_providers` filter), the URL
- * has already been substituted server-side by `Editor_Data_Enqueuer`,
- * the editor's API-key TextControl is hidden, and the
- * `attributes.tileApiKeys[ tileProvider ]` entry is ignored. A still-
- * unsubstituted `{KEY}` in this branch means the PHP-supplied key was
- * empty (fail-closed) — the preview ships polyline-only.
+ * The per-style URL is always pre-substituted server-side: either
+ * `Editor_Data_Enqueuer` substitutes `{KEY}` from the PHP-supplied
+ * `apiKey` (when `apiKeyManagedExternally === true`), or it substitutes
+ * from the site-wide `kntnt_gpx_blocks_tile_provider_keys` option
+ * (issue #149) when the PHP path is not engaged. A residual `{KEY}` in
+ * the URL means neither layer supplied a usable key — the preview
+ * ships polyline-only via `resolveProviderForPreview()`'s fail-closed
+ * branch. `apiKeyManagedExternally === true` additionally tells the
+ * Inspector not to render the key-required Notice for this provider,
+ * because the site builder owns the key in code and the editor stays
+ * out of the way.
  *
  * @since 1.0.0
  */
@@ -172,6 +170,13 @@ interface EditorRegistryProvider {
 /**
  * Shape of the editor data global injected by PHP.
  *
+ * `settingsUrl` and `canManageSettings` (issue #149) surface the
+ * site-wide tile-API-key admin page so the Inspector's
+ * key-required Notice can link to the page when the current user
+ * holds `manage_options`. The URL is emitted unconditionally —
+ * `canManageSettings` is the binary flag the editor JS reads to
+ * decide whether to wrap the page name in an anchor element.
+ *
  * @since 1.0.0
  */
 interface EditorRegistry {
@@ -179,6 +184,8 @@ interface EditorRegistry {
 	readonly overlays: Readonly<
 		Record< string, EditorRegistryOverlayProvider >
 	>;
+	readonly settingsUrl?: string;
+	readonly canManageSettings?: boolean;
 }
 
 /**
@@ -253,7 +260,6 @@ interface MapAttributes {
 	tooltipDescTextTransform: string;
 	tileProvider: string;
 	tileStyle: string;
-	tileApiKeys: Record< string, string >;
 	tileOverlays: OverlayPair[];
 	tileOverlayApiKeys: Record< string, string >;
 	[ key: string ]: unknown;
@@ -603,36 +609,35 @@ function resolveOverlaysForPreview(
 }
 
 /**
- * Resolves the saved (provider id, style id) pair and per-block API key to
- * the runtime record the editor preview mounts.
+ * Resolves the saved (provider id, style id) pair to the runtime record
+ * the editor preview mounts.
  *
  * Mirrors `Tile_Layer_Registry::resolve_provider()` on the JS side: the
  * lookup falls back to the canonical OpenStreetMap provider when the
  * saved provider id is not in the editor-data global, and to the
  * provider's own `default` style when the saved style id is unknown
- * within a known provider. `{KEY}` is substituted with the per-block key
- * just like the server does for the frontend. When the registry is
- * missing entirely (the inline script was stripped), the helper returns
- * `null` and the caller renders without a tile layer — the editor
- * preview's single useEffect handles the null-provider case defensively
- * rather than crashing.
+ * within a known provider. Per-base-provider API keys live in a
+ * site-wide WP option (issue #149); the server-side
+ * `Editor_Data_Enqueuer` pre-substitutes `{KEY}` from either the
+ * PHP-supplied value or the option-layer value before the URL reaches
+ * the editor. The only remaining client-side branch is the fail-closed
+ * detector: a URL that still contains `{KEY}` after the enqueuer has
+ * had its turn means no usable key was available — the preview ships
+ * polyline-only by returning `null`. When the registry is missing
+ * entirely (the inline script was stripped), the helper returns `null`
+ * and the caller renders without a tile layer.
  *
  * @since 1.0.0
  *
  * @param providerId - Saved `tileProvider` attribute.
  * @param styleId    - Saved `tileStyle` attribute.
- * @param apiKey     - Per-provider API key looked up from
- *                   `attributes.tileApiKeys[providerId]` (may be empty for
- *                   paid providers; the resulting URL will produce
- *                   `null` and the preview ships polyline-only).
- * @return Resolved record with `{KEY}` substituted, or `null` when the
- *         registry global is absent or the resolved provider requires a
- *         key the editor has not supplied.
+ * @return Resolved record with `{KEY}` already substituted server-side,
+ *         or `null` when the resolved provider requires a key the
+ *         server-side substitution could not supply.
  */
 function resolveProviderForPreview(
 	providerId: string,
-	styleId: string,
-	apiKey: string
+	styleId: string
 ): EditorProviderRecord | null {
 	const providers = window.kntntGpxBlocks?.providers ?? {};
 
@@ -653,44 +658,17 @@ function resolveProviderForPreview(
 		return null;
 	}
 
-	// PHP-supplied key path. When `apiKeyManagedExternally === true`, the
-	// `Editor_Data_Enqueuer` has already substituted `{KEY}` server-side
-	// (with a non-empty PHP value), so the URL is mounted directly. The
-	// attribute-path `apiKey` parameter is ignored entirely. A residual
-	// `{KEY}` in the URL means the PHP-supplied key was empty —
-	// fail-closed — so the preview ships polyline-only, mirroring the
-	// frontend's URL-null gate in `Render_Map`.
-	if ( provider.apiKeyManagedExternally === true ) {
-		if ( style.url.includes( '{KEY}' ) ) {
-			return null;
-		}
-		const out: EditorProviderRecord = {
-			url: style.url,
-			attribution: style.attribution,
-			maxZoom: style.maxZoom,
-		};
-		if ( provider.subdomains && provider.subdomains.length > 0 ) {
-			out.subdomains = [ ...provider.subdomains ];
-		}
-		return out;
-	}
-
-	// Attribute path. Polyline-only gate: when the resolved provider
-	// requires a key and the per-provider key is empty (or whitespace-
-	// only), do not return a preview record at all. Returning `null`
-	// makes the preview's base-tile useEffect skip the tile layer
-	// entirely, mirroring the frontend `Render_Map` PHP gate where the
-	// URL is nulled in state.
-	if ( provider.requiresKey && apiKey.trim() === '' ) {
+	// Fail-closed detector. The server-side enqueuer pre-substitutes
+	// `{KEY}` from whichever layer (PHP or option) supplied a non-empty
+	// key; a residual `{KEY}` means no layer supplied one, so the
+	// preview ships polyline-only — same outcome the frontend's
+	// `Render_Map` URL-null gate produces.
+	if ( style.url.includes( '{KEY}' ) ) {
 		return null;
 	}
 
-	const url = provider.requiresKey
-		? substituteTileApiKey( style.url, apiKey )
-		: style.url;
-
 	const out: EditorProviderRecord = {
-		url,
+		url: style.url,
 		attribution: style.attribution,
 		maxZoom: style.maxZoom,
 	};
@@ -717,7 +695,7 @@ const FALLBACK_PROVIDER_ID = 'openstreetmap';
  * Renders the "Tiles" inspector panel.
  *
  * Surfaces a two-step base-tile choice — provider first, then style
- * within that provider — plus a conditional API-key field driven by the
+ * within that provider — plus a conditional Notice driven by the
  * resolved provider's `requiresKey` flag. The dropdown options are
  * populated from `window.kntntGpxBlocks.providers` (see
  * `Bootstrap\Editor_Data_Enqueuer`); when the global is missing or empty
@@ -726,6 +704,18 @@ const FALLBACK_PROVIDER_ID = 'openstreetmap';
  * dropdown is always rendered, even when the selected provider declares
  * a single style — the affordance is consistent across providers, and
  * the user sees what the canonical style for the provider is named.
+ *
+ * Per-base-provider tile API keys live in the site-wide
+ * `kntnt_gpx_blocks_tile_provider_keys` option (issue #149); the
+ * Inspector no longer carries a per-block API-key TextControl. For
+ * key-required providers that are *not* PHP-engaged, a Notice points
+ * the user at `Settings → Kntnt GPX Blocks`. The Notice text is plain
+ * by default; users who hold `manage_options` see the settings-page
+ * name wrapped in a link (resolved via `window.kntntGpxBlocks.settingsUrl`)
+ * so they can jump directly to the configuration page. PHP-engaged
+ * providers (`apiKeyManagedExternally === true`) emit no Notice at all
+ * — the editor stays out of the way and any misconfiguration surfaces
+ * via the underlying `Plugin::warning()` log.
  *
  * Stale-state surfacing — when the saved `tileProvider` or `tileStyle`
  * is no longer in the validated registry (filter dropped it, or a stale
@@ -739,30 +729,23 @@ const FALLBACK_PROVIDER_ID = 'openstreetmap';
  * @param props          Component props.
  * @param props.provider Current `tileProvider` attribute.
  * @param props.style    Current `tileStyle` attribute.
- * @param props.apiKey   Per-provider API key for the currently-selected
- *                       provider, looked up from
- *                       `tileApiKeys[ tileProvider ]`.
- * @param props.onChange Setter — receives the new provider id, style id,
- *                       and/or key.
+ * @param props.onChange Setter — receives the new provider id and/or
+ *                       style id.
  */
 function TilesPanel( {
 	provider,
 	style,
-	apiKey,
 	onChange,
 }: {
 	provider: string;
 	style: string;
-	apiKey: string;
-	onChange: ( next: {
-		provider?: string;
-		style?: string;
-		apiKey?: string;
-	} ) => void;
+	onChange: ( next: { provider?: string; style?: string } ) => void;
 } ): JSX.Element {
 	const providers = window.kntntGpxBlocks?.providers ?? {};
 	const providerIds = Object.keys( providers );
 	const selectedProvider = providers[ provider ] ?? null;
+	const settingsUrl = window.kntntGpxBlocks?.settingsUrl ?? '';
+	const canManageSettings = window.kntntGpxBlocks?.canManageSettings === true;
 
 	// Build the provider-dropdown options. When the saved provider id is
 	// an orphan (no longer in the registry), prepend it as a placeholder
@@ -793,6 +776,14 @@ function TilesPanel( {
 		styleOptions.unshift( { value: style, label: style } );
 	}
 
+	// Decide whether to render the key-required Notice. The notice fires
+	// only for key-required providers whose key is not already supplied
+	// by code (PHP-engaged providers behave like free providers in the
+	// editor UI by design).
+	const shouldShowKeyNotice =
+		selectedProvider?.requiresKey === true &&
+		selectedProvider.apiKeyManagedExternally !== true;
+
 	return (
 		<PanelBody title={ __( 'Tiles', 'kntnt-gpx-blocks' ) }>
 			<SelectControl
@@ -807,10 +798,7 @@ function TilesPanel( {
 					// per-provider style memory. Switching back to a
 					// previously-used provider does *not* restore a
 					// previously-chosen style on that provider; it always
-					// lands on the provider's default. The API key, by
-					// contrast, *is* per-provider in attribute storage
-					// (`tileApiKeys[ providerId ]`), so the inspector
-					// surfaces whichever key the new provider has stored.
+					// lands on the provider's default.
 					const nextProvider = providers[ next ];
 					const nextStyle = nextProvider?.default ?? '';
 					onChange( { provider: next, style: nextStyle } );
@@ -824,38 +812,42 @@ function TilesPanel( {
 				options={ styleOptions }
 				onChange={ ( next: string ) => onChange( { style: next } ) }
 			/>
-			{ selectedProvider?.requiresKey &&
-				selectedProvider.apiKeyManagedExternally !== true && (
-					<TextControl
-						__next40pxDefaultSize
-						__nextHasNoMarginBottom
-						label={ __( 'API key', 'kntnt-gpx-blocks' ) }
-						value={ apiKey }
-						onChange={ ( next: string ) =>
-							onChange( { apiKey: next } )
-						}
-						help={
-							selectedProvider.signupUrl ? (
-								<>
-									{ __(
-										'This provider requires an API key.',
-										'kntnt-gpx-blocks'
-									) }{ ' ' }
-									<ExternalLink
-										href={ selectedProvider.signupUrl }
-									>
-										{ __( 'Get one', 'kntnt-gpx-blocks' ) }
-									</ExternalLink>
-								</>
-							) : (
-								__(
-									"This provider requires an API key. See the provider's documentation.",
+			{ shouldShowKeyNotice && (
+				<Notice
+					status="info"
+					isDismissible={ false }
+					className="kntnt-gpx-blocks-tile-key-notice"
+				>
+					{ canManageSettings && settingsUrl !== '' ? (
+						<>
+							{ __(
+								'This provider needs an API key. Configure it in',
+								'kntnt-gpx-blocks'
+							) }{ ' ' }
+							<a href={ settingsUrl }>
+								{ __(
+									'Settings → Kntnt GPX Blocks',
 									'kntnt-gpx-blocks'
-								)
-							)
-						}
-					/>
-				) }
+								) }
+							</a>
+							{ '.' }
+						</>
+					) : (
+						__(
+							'This provider needs an API key. Configure it in Settings → Kntnt GPX Blocks.',
+							'kntnt-gpx-blocks'
+						)
+					) }
+					{ selectedProvider?.signupUrl && (
+						<>
+							{ ' ' }
+							<ExternalLink href={ selectedProvider.signupUrl }>
+								{ __( 'Get one', 'kntnt-gpx-blocks' ) }
+							</ExternalLink>
+						</>
+					) }
+				</Notice>
+			) }
 		</PanelBody>
 	);
 }
@@ -1056,7 +1048,6 @@ export const MapEdit = ( {
 		tooltipDescTextTransform,
 		tileProvider,
 		tileStyle,
-		tileApiKeys,
 		tileOverlays,
 		tileOverlayApiKeys,
 	} = attributes;
@@ -1100,17 +1091,14 @@ export const MapEdit = ( {
 	// `resolveProviderForPreview()` returns a fresh object on every parent
 	// render, which would re-fire the preview's base-tile useEffect on every
 	// keystroke in an unrelated control. The dep array tracks the inputs the
-	// resolver actually reads — saved provider/style ids plus the per-provider
-	// API key — so a colour-picker drag or a typography change keeps the
-	// previous reference and the effect stays quiet.
+	// resolver actually reads — saved provider/style ids only; per-base-
+	// provider tile API keys live in the site-wide WP option (issue #149)
+	// and the server-side `Editor_Data_Enqueuer` pre-substitutes `{KEY}`
+	// before the URL reaches the editor, so the editor JS no longer touches
+	// any API-key value.
 	const providerForPreview = useMemo(
-		() =>
-			resolveProviderForPreview(
-				tileProvider,
-				tileStyle,
-				tileApiKeys?.[ tileProvider ] ?? ''
-			),
-		[ tileProvider, tileStyle, tileApiKeys ]
+		() => resolveProviderForPreview( tileProvider, tileStyle ),
+		[ tileProvider, tileStyle ]
 	);
 
 	// Same pattern for the resolved overlay records. The overlay effect wipes
@@ -1437,7 +1425,6 @@ export const MapEdit = ( {
 				<TilesPanel
 					provider={ tileProvider }
 					style={ tileStyle }
-					apiKey={ tileApiKeys?.[ tileProvider ] ?? '' }
 					onChange={ ( next ) => {
 						const update: Partial< MapAttributes > = {};
 						if ( next.provider !== undefined ) {
@@ -1445,12 +1432,6 @@ export const MapEdit = ( {
 						}
 						if ( next.style !== undefined ) {
 							update.tileStyle = next.style;
-						}
-						if ( next.apiKey !== undefined ) {
-							update.tileApiKeys = {
-								...( tileApiKeys ?? {} ),
-								[ tileProvider ]: next.apiKey,
-							};
 						}
 						setAttributes( update );
 					} }
@@ -1543,7 +1524,7 @@ export const MapEdit = ( {
 					} }
 					{ ...detectPreviewNotices(
 						tileProvider,
-						tileApiKeys?.[ tileProvider ] ?? '',
+						tileStyle,
 						window.kntntGpxBlocks?.providers ?? {},
 						FALLBACK_PROVIDER_ID
 					) }

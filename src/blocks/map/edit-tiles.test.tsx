@@ -1,49 +1,37 @@
 /**
- * Inspector-shape test for the GPX Map Edit component's Tiles panel
- * (issue #105 — provider/style hierarchy with per-provider API keys).
+ * Inspector-shape test for the GPX Map Edit component's Tiles panel.
  *
- * The Map block now stores its tile-layer choice as a two-step
- * (provider, style) pair plus a `tileApiKeys` object keyed by provider
- * id (one API key per provider, shared across all that provider's
- * styles). The inspector's `TilesPanel` renders two `SelectControl`s
- * (provider, style) plus a conditional `TextControl` (API key) for
- * key-required providers.
+ * The Map block stores its tile-layer choice as a two-step (provider,
+ * style) pair. Per-base-provider tile API keys live in the site-wide
+ * `kntnt_gpx_blocks_tile_provider_keys` option (issue #149), not in
+ * per-block attributes; the inspector's `TilesPanel` therefore renders
+ * two `SelectControl`s (provider, style) plus a conditional `Notice`
+ * that points the user at `Settings → Kntnt GPX Blocks` for
+ * key-required providers whose key is not already supplied by code.
  *
  * This file mounts `MapEdit` with the Tiles panel's controls captured
  * via mocks, then asserts:
  *
  * - The provider dropdown lists every validated provider; an orphan
- *   saved provider id surfaces as a placeholder option in the affected
- *   dropdown.
- * - The style dropdown is always rendered (even when the selected
- *   provider has only one style) and lists every style of the currently
- *   selected provider, with orphan saved style ids surfacing as a
- *   placeholder option in the affected dropdown.
- * - The API-key field appears only for `requiresKey === true` providers,
- *   reads the value from `tileApiKeys[ tileProvider ]`, and writes back
- *   a merged map that preserves other providers' keys.
+ *   saved provider id surfaces as a placeholder option.
+ * - The style dropdown is always rendered and lists every style of the
+ *   currently selected provider; an orphan saved style id surfaces as
+ *   a placeholder option.
+ * - The key-required Notice fires for paid providers whose record does
+ *   not carry `apiKeyManagedExternally: true`, and is absent for both
+ *   free providers and PHP-engaged paid providers.
+ * - The Notice contains a link to the settings page when the editor
+ *   payload reports `canManageSettings === true`, and renders plain
+ *   text otherwise (so `edit_posts`-only users see the same hint
+ *   without a non-functional link).
  * - Switching providers resets `tileStyle` to the new provider's
- *   `default` unconditionally and preserves every other provider's
- *   stored API key intact.
+ *   `default`; no API-key state is written, because no API-key
+ *   attribute exists.
  *
  * @since 1.0.0
  */
 
 import { createElement, createRoot, flushSync } from '@wordpress/element';
-
-/**
- * Captured `TextControl` props payload across every render in the
- * current test. The Tiles panel renders exactly one TextControl when
- * the resolved provider requires a key, so each entry corresponds to
- * one render of the panel.
- *
- * @since 1.0.0
- */
-type CapturedTextControl = {
-	label: string;
-	value: string;
-	onChange: ( next: string ) => void;
-};
 
 /**
  * Captured `SelectControl` props payload across every render. The
@@ -59,8 +47,25 @@ type CapturedSelectControl = {
 	onChange: ( next: string ) => void;
 };
 
-const capturedTextControls: CapturedTextControl[] = [];
+/**
+ * Captured `Notice` mount across every render. The Tiles panel renders
+ * exactly one Notice for the key-required, non-PHP-engaged branch and
+ * none otherwise — tests count the array length to assert presence or
+ * absence, and inspect the children to verify the link branch.
+ *
+ * `children` is captured as the React element tree the Notice wraps so
+ * tests can recurse into it and assert on the presence/absence of an
+ * anchor element regardless of the exact wrapper markup.
+ *
+ * @since 1.0.0
+ */
+type CapturedNotice = {
+	status?: string;
+	children: unknown;
+};
+
 const capturedSelectControls: CapturedSelectControl[] = [];
+const capturedNotices: CapturedNotice[] = [];
 
 // Mock @wordpress/block-editor — collapses every surface MapEdit reaches
 // to a passthrough or noop. The Tiles-panel test does not care about
@@ -97,38 +102,63 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Mock @wordpress/components — capture TextControl and SelectControl
-// props; collapse everything else to noops or passthroughs.
+// Mock @wordpress/components — capture SelectControl + Notice props;
+// collapse everything else to noops or passthroughs. The mocked
+// `Notice` captures the React element tree it received as `children`
+// before returning null; the tests inspect that tree via
+// `flattenChildren` to assert link presence and text content.
+//
+// `ExternalLink` is rendered as a real anchor element via React's
+// `createElement` (resolved at factory time through require() inside
+// the factory body — the inline require keeps Jest's out-of-scope
+// guard happy).
 jest.mock(
 	'@wordpress/components',
-	() => ( {
-		__esModule: true,
-		PanelBody: ( { children }: { children: React.ReactNode } ) => children,
-		ToggleControl: () => null,
-		ToolbarButton: () => null,
-		FontSizePicker: () => null,
-		SelectControl: ( props: CapturedSelectControl ) => {
-			capturedSelectControls.push( {
-				label: props.label,
-				value: props.value,
-				options: props.options,
-				onChange: props.onChange,
-			} );
-			return null;
-		},
-		TextControl: ( props: CapturedTextControl ) => {
-			capturedTextControls.push( {
-				label: props.label,
-				value: props.value,
-				onChange: props.onChange,
-			} );
-			return null;
-		},
-		ExternalLink: () => null,
-		Notice: () => null,
-		__experimentalToolsPanel: () => null,
-		__experimentalToolsPanelItem: () => null,
-	} ),
+	() => {
+		const wpElement = require( '@wordpress/element' );
+		return {
+			__esModule: true,
+			PanelBody: ( { children }: { children: React.ReactNode } ) =>
+				children,
+			ToggleControl: () => null,
+			ToolbarButton: () => null,
+			FontSizePicker: () => null,
+			SelectControl: ( props: CapturedSelectControl ) => {
+				capturedSelectControls.push( {
+					label: props.label,
+					value: props.value,
+					options: props.options,
+					onChange: props.onChange,
+				} );
+				return null;
+			},
+			TextControl: () => null,
+			ExternalLink: ( {
+				children,
+				href,
+			}: {
+				children: React.ReactNode;
+				href: string;
+			} ) =>
+				wpElement.createElement(
+					'a',
+					{ href, 'data-external': 'true' },
+					children
+				),
+			Notice: ( {
+				children,
+				status,
+			}: {
+				children: React.ReactNode;
+				status?: string;
+			} ) => {
+				capturedNotices.push( { status, children } );
+				return null;
+			},
+			__experimentalToolsPanel: () => null,
+			__experimentalToolsPanelItem: () => null,
+		};
+	},
 	{ virtual: true }
 );
 
@@ -194,23 +224,34 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Editor data globals — the Tiles-panel test needs both free providers
-// (openstreetmap with two styles; opentopomap with a single style) and
-// paid providers (Thunderforest with multiple styles, Mapbox with
-// multiple styles) so the switching-preserves-keys assertion has more
-// than one paid provider to flip between, and the single-style
-// assertion has a concrete fixture.
-(
-	globalThis as {
-		kntntGpxBlocks?: { providers: unknown; overlays: unknown };
-	}
- ).kntntGpxBlocks = {
+/**
+ * Editor data globals. Mirrors what `Editor_Data_Enqueuer` emits after
+ * issue #149: providers carry the same shape as before plus an
+ * `apiKeyManagedExternally` flag, and the payload root carries
+ * `settingsUrl` + `canManageSettings`. The PHP path is *not* engaged
+ * for any of the seeded providers in the default fixture — tests that
+ * want to exercise the PHP-engaged branch override the global locally.
+ *
+ * The Thunderforest URL is left with `{KEY}` intact so the default
+ * fixture exercises the option-not-supplied / fail-closed branch; a
+ * test that wants a pre-substituted URL overrides the registry to
+ * supply a substituted URL instead.
+ */
+interface RegistryShape {
+	providers: unknown;
+	overlays: unknown;
+	settingsUrl?: string;
+	canManageSettings?: boolean;
+}
+
+const defaultRegistry: RegistryShape = {
 	providers: {
 		openstreetmap: {
 			label: 'OpenStreetMap',
 			requiresKey: false,
 			default: 'mapnik',
 			subdomains: [ 'a', 'b', 'c' ],
+			apiKeyManagedExternally: false,
 			styles: {
 				mapnik: {
 					label: 'Mapnik',
@@ -231,6 +272,7 @@ jest.mock(
 			requiresKey: false,
 			default: 'standard',
 			subdomains: [ 'a', 'b', 'c' ],
+			apiKeyManagedExternally: false,
 			styles: {
 				standard: {
 					label: 'Standard',
@@ -245,6 +287,7 @@ jest.mock(
 			requiresKey: true,
 			default: 'outdoor',
 			signupUrl: 'https://www.thunderforest.com/',
+			apiKeyManagedExternally: false,
 			styles: {
 				atlas: {
 					label: 'Atlas',
@@ -265,6 +308,7 @@ jest.mock(
 			requiresKey: true,
 			default: 'outdoors',
 			signupUrl: 'https://www.mapbox.com/',
+			apiKeyManagedExternally: false,
 			styles: {
 				outdoors: {
 					label: 'Outdoors',
@@ -282,7 +326,13 @@ jest.mock(
 		},
 	},
 	overlays: {},
+	settingsUrl:
+		'https://example.test/wp-admin/options-general.php?page=kntnt-gpx-blocks',
+	canManageSettings: true,
 };
+
+( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks =
+	defaultRegistry;
 
 // Import the component under test AFTER all mocks are registered.
 import { MapEdit } from './edit';
@@ -334,7 +384,6 @@ function buildAttributes(
 		tooltipDescTextTransform: '',
 		tileProvider: 'openstreetmap',
 		tileStyle: 'mapnik',
-		tileApiKeys: {},
 		tileOverlays: [],
 		tileOverlayApiKeys: {},
 		...overrides,
@@ -342,21 +391,21 @@ function buildAttributes(
 }
 
 /**
- * Mounts MapEdit and returns the captured TextControl / SelectControl
- * props plus the array of setAttributes writes performed during mount.
+ * Mounts MapEdit and returns the captured SelectControl + Notice props
+ * plus the array of setAttributes writes performed during mount.
  *
  * @param attributes Attribute payload to feed into MapEdit.
  *
  * @return Tuple of captures and writes for assertion.
  */
 function mountAndCapture( attributes: Record< string, unknown > ): {
-	texts: CapturedTextControl[];
 	selects: CapturedSelectControl[];
+	notices: CapturedNotice[];
 	writes: Array< Record< string, unknown > >;
 	previewProps: Array< Record< string, unknown > >;
 } {
-	capturedTextControls.length = 0;
 	capturedSelectControls.length = 0;
+	capturedNotices.length = 0;
 	capturedPreviewProps.length = 0;
 	const writes: Array< Record< string, unknown > > = [];
 	const container = document.createElement( 'div' );
@@ -376,14 +425,66 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 	} );
 	root.unmount();
 	return {
-		texts: [ ...capturedTextControls ],
 		selects: [ ...capturedSelectControls ],
+		notices: [ ...capturedNotices ],
 		writes,
 		previewProps: [ ...capturedPreviewProps ],
 	};
 }
 
-describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () => {
+/**
+ * Recursively flattens a React-element tree to its rendered string
+ * content. Used so a test can assert "the notice copy mentions the
+ * settings-page name" or "the notice copy includes an anchor element"
+ * without binding to a specific markup structure.
+ *
+ * React elements expose `type` (the component or HTML tag) and `props`
+ * (including `children`); fragments expose `type === Symbol.for(...)`
+ * but the flatten walker doesn't care about the fragment marker — it
+ * descends into `props.children` and continues. The walker emits a
+ * minimal `<a href="…">…</a>` marker when it encounters an element
+ * whose `type` is the string `'a'` (the mocked ExternalLink renders an
+ * actual anchor) so tests can grep for the anchor marker.
+ *
+ * @param node React element, array of elements, primitive, or null.
+ *
+ * @return Flattened string content with anchor markers spliced in.
+ */
+function flattenChildren( node: unknown ): string {
+	if ( node === null || node === undefined || typeof node === 'boolean' ) {
+		return '';
+	}
+	if ( typeof node === 'string' || typeof node === 'number' ) {
+		return String( node );
+	}
+	if ( Array.isArray( node ) ) {
+		return node.map( ( child ) => flattenChildren( child ) ).join( '' );
+	}
+	if ( typeof node === 'object' ) {
+		const element = node as {
+			type?: unknown;
+			props?: { children?: unknown; href?: string };
+		};
+		if ( ! element.props ) {
+			return '';
+		}
+		const inner = flattenChildren( element.props.children );
+		// Surface anchor presence with a marker tag the test can grep for.
+		if ( element.type === 'a' ) {
+			const href = element.props.href ?? '';
+			return '<a href="' + href + '">' + inner + '</a>';
+		}
+		return inner;
+	}
+	return '';
+}
+
+describe( 'MapEdit Tiles panel — provider/style hierarchy', () => {
+	beforeEach( () => {
+		( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks =
+			defaultRegistry;
+	} );
+
 	it( 'renders both Provider and Style SelectControls for a free provider with multiple styles', () => {
 		const { selects } = mountAndCapture( buildAttributes() );
 
@@ -416,88 +517,19 @@ describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () =>
 		] );
 	} );
 
-	it( 'shows no API-key field for a free provider', () => {
+	it( 'shows no key-required Notice for a free provider', () => {
 		// openstreetmap has requiresKey: false. The Tiles panel renders
-		// only the two SelectControls in that case.
-		const { texts } = mountAndCapture( buildAttributes() );
+		// only the two SelectControls — no Notice.
+		const { notices } = mountAndCapture( buildAttributes() );
 
-		const apiKeyFields = texts.filter( ( t ) => t.label === 'API key' );
-		expect( apiKeyFields ).toHaveLength( 0 );
+		expect( notices ).toHaveLength( 0 );
 	} );
 
-	it( 'reads the API-key value from tileApiKeys[ tileProvider ] for a paid provider', () => {
-		const { texts } = mountAndCapture(
-			buildAttributes( {
-				tileProvider: 'thunderforest',
-				tileStyle: 'outdoor',
-				tileApiKeys: {
-					thunderforest: 'THUNDER_KEY',
-					mapbox: 'MAPBOX_KEY',
-				},
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		expect( apiKeyField?.value ).toBe( 'THUNDER_KEY' );
-	} );
-
-	it( 'falls back to the empty string when the selected provider has no key entry', () => {
-		const { texts } = mountAndCapture(
-			buildAttributes( {
-				tileProvider: 'mapbox',
-				tileStyle: 'outdoors',
-				tileApiKeys: {
-					thunderforest: 'THUNDER_KEY',
-				},
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		expect( apiKeyField?.value ).toBe( '' );
-	} );
-
-	it( 'writes back via tileApiKeys merged with existing entries, preserving other providers keys', () => {
-		const { texts, writes } = mountAndCapture(
-			buildAttributes( {
-				tileProvider: 'thunderforest',
-				tileStyle: 'outdoor',
-				tileApiKeys: {
-					thunderforest: 'OLD_THUNDER',
-					mapbox: 'MAPBOX_KEY',
-				},
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		apiKeyField?.onChange( 'NEW_THUNDER' );
-
-		expect( writes ).toEqual( [
-			{
-				tileApiKeys: {
-					thunderforest: 'NEW_THUNDER',
-					mapbox: 'MAPBOX_KEY',
-				},
-			},
-		] );
-	} );
-
-	it( 'switching providers resets tileStyle to the new provider default and preserves every other provider key', () => {
-		// Per-provider style memory is NOT retained: switching to Mapbox
-		// always lands on Mapbox's `default` (`outdoors`), regardless of
-		// which Mapbox style the user might have picked previously.
-		// Per-provider key memory IS retained: every key in tileApiKeys
-		// carries forward untouched.
+	it( 'writes only tileProvider+tileStyle when switching providers; no key state involved', () => {
 		const { selects, writes } = mountAndCapture(
 			buildAttributes( {
 				tileProvider: 'thunderforest',
 				tileStyle: 'outdoor',
-				tileApiKeys: {
-					thunderforest: 'THUNDER_KEY',
-					mapbox: 'MAPBOX_KEY',
-				},
 			} )
 		);
 
@@ -505,9 +537,9 @@ describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () =>
 		expect( providerSelect ).toBeDefined();
 		providerSelect?.onChange( 'mapbox' );
 
-		// One write that carries both the new provider and the reset style.
-		// `tileApiKeys` is left intact in the attribute store so both
-		// keys survive the provider switch.
+		// One write that carries the new provider and the reset style.
+		// Per-block API-key state no longer exists; switching providers
+		// touches only the (provider, style) pair.
 		expect( writes ).toEqual( [
 			{ tileProvider: 'mapbox', tileStyle: 'outdoors' },
 		] );
@@ -529,10 +561,6 @@ describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () =>
 	} );
 
 	it( 'surfaces an orphan saved tileProvider as a placeholder option in the Provider dropdown', () => {
-		// The saved provider id is not in the registry. The dropdown
-		// prepends it as a placeholder labelled with the id itself so
-		// the editor reflects the persisted state without silently
-		// rewriting it.
 		const { selects } = mountAndCapture(
 			buildAttributes( {
 				tileProvider: 'dropped-by-filter',
@@ -549,9 +577,6 @@ describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () =>
 	} );
 
 	it( 'surfaces an orphan saved tileStyle as a placeholder option in the Style dropdown', () => {
-		// The saved provider is valid but the saved style id is not in
-		// that provider's styles map. The Style dropdown prepends the
-		// orphan style id as a placeholder.
 		const { selects } = mountAndCapture(
 			buildAttributes( {
 				tileProvider: 'openstreetmap',
@@ -566,61 +591,73 @@ describe( 'MapEdit Tiles panel — provider/style hierarchy (issue #105)', () =>
 			label: 'dropped-style',
 		} );
 	} );
+} );
 
-	it( 'sets the first per-provider entry when tileApiKeys starts empty', () => {
-		const { texts, writes } = mountAndCapture(
+describe( 'MapEdit Tiles panel — key-required Notice (issue #149)', () => {
+	beforeEach( () => {
+		( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks =
+			defaultRegistry;
+	} );
+
+	it( 'renders a Notice for a key-required provider whose key is not managed externally', () => {
+		const { notices } = mountAndCapture(
 			buildAttributes( {
 				tileProvider: 'thunderforest',
 				tileStyle: 'outdoor',
-				tileApiKeys: {},
 			} )
 		);
 
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		apiKeyField?.onChange( 'FIRST_KEY' );
-
-		expect( writes ).toEqual( [
-			{
-				tileApiKeys: {
-					thunderforest: 'FIRST_KEY',
-				},
-			},
-		] );
+		expect( notices ).toHaveLength( 1 );
+		const flat = flattenChildren( notices[ 0 ].children );
+		expect( flat ).toContain( 'Settings → Kntnt GPX Blocks' );
 	} );
-} );
 
-// PHP-supplied API key (issue #113). When the editor-data registry marks
-// a provider with `apiKeyManagedExternally: true`, the per-provider API-key
-// TextControl is hidden — the site builder owns the key in PHP and the
-// editor must not surface it. The flag is presence-based (engagement is
-// driven by the existence of the `apiKey` field on the
-// `kntnt_gpx_blocks_tile_providers` filter callback's record, not its
-// value), so the editor never sees the key value itself: only the URL
-// the server pre-substituted, and the boolean flag.
-describe( 'MapEdit Tiles panel — PHP-supplied apiKey (issue #113)', () => {
-	const originalRegistry = (
-		globalThis as {
-			kntntGpxBlocks?: { providers: unknown; overlays: unknown };
-		}
-	 ).kntntGpxBlocks;
+	it( 'wraps the settings-page name in a link when canManageSettings is true', () => {
+		const { notices } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
+			} )
+		);
 
-	beforeAll( () => {
-		// Add two providers to the editor-data registry, mirroring what
-		// `Editor_Data_Enqueuer::shape_providers()` would emit when the
-		// PHP path is engaged: `apiKeyManagedExternally: true`, with
-		// `{KEY}` either already substituted server-side (the resolved
-		// key was non-empty) or still present (the resolved key was
-		// empty, signalling fail-closed / polyline-only).
-		(
-			globalThis as {
-				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
-			}
-		 ).kntntGpxBlocks = {
+		const flat = flattenChildren( notices[ 0 ].children );
+		expect( flat ).toContain( '<a href="https://example.test' );
+		expect( flat ).toContain( 'Settings → Kntnt GPX Blocks</a>' );
+	} );
+
+	it( 'renders the settings-page name as plain text when canManageSettings is false', () => {
+		( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks = {
+			...defaultRegistry,
+			canManageSettings: false,
+		};
+
+		const { notices } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
+			} )
+		);
+
+		expect( notices ).toHaveLength( 1 );
+		const flat = flattenChildren( notices[ 0 ].children );
+		// The settings-page name still appears, but not as an anchor —
+		// `edit_posts`-only users see the hint without a link they
+		// could follow uselessly.
+		expect( flat ).toContain( 'Settings → Kntnt GPX Blocks' );
+		// Filter the captured tree for anchor markers that point at the
+		// settings page; the settings-page name must not be one.
+		expect( flat ).not.toContain(
+			'<a href="https://example.test/wp-admin/options-general.php?page=kntnt-gpx-blocks">Settings → Kntnt GPX Blocks</a>'
+		);
+	} );
+
+	it( 'omits the Notice when apiKeyManagedExternally is true (PHP path engaged)', () => {
+		( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks = {
+			...defaultRegistry,
 			providers: {
-				...( originalRegistry as { providers: object } ).providers,
-				thunderforestExternal: {
-					label: 'Thunderforest (PHP key)',
+				...( defaultRegistry.providers as Record< string, unknown > ),
+				phpProvider: {
+					label: 'Thunderforest (PHP)',
 					requiresKey: true,
 					default: 'outdoor',
 					apiKeyManagedExternally: true,
@@ -634,8 +671,26 @@ describe( 'MapEdit Tiles panel — PHP-supplied apiKey (issue #113)', () => {
 						},
 					},
 				},
-				thunderforestExternalEmpty: {
-					label: 'Thunderforest (PHP key, empty)',
+			},
+		};
+
+		const { notices } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'phpProvider',
+				tileStyle: 'outdoor',
+			} )
+		);
+
+		expect( notices ).toHaveLength( 0 );
+	} );
+
+	it( 'still mounts the preview without invoking client-side substitution for PHP-engaged providers', () => {
+		( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks = {
+			...defaultRegistry,
+			providers: {
+				...( defaultRegistry.providers as Record< string, unknown > ),
+				phpProvider: {
+					label: 'Thunderforest (PHP)',
 					requiresKey: true,
 					default: 'outdoor',
 					apiKeyManagedExternally: true,
@@ -643,84 +698,19 @@ describe( 'MapEdit Tiles panel — PHP-supplied apiKey (issue #113)', () => {
 					styles: {
 						outdoor: {
 							label: 'Outdoors',
-							url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={KEY}',
+							url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=PHP-SUBSTITUTED',
 							attribution: 'Thunderforest',
 							maxZoom: 22,
 						},
 					},
 				},
 			},
-			overlays: {},
 		};
-	} );
 
-	afterAll( () => {
-		(
-			globalThis as {
-				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
-			}
-		 ).kntntGpxBlocks = originalRegistry;
-	} );
-
-	it( 'hides the API-key TextControl for a provider whose apiKey is managed externally', () => {
-		const { texts } = mountAndCapture(
-			buildAttributes( {
-				tileProvider: 'thunderforestExternal',
-				tileStyle: 'outdoor',
-				tileApiKeys: {
-					thunderforestExternal: 'this-attribute-key-is-ignored',
-				},
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeUndefined();
-	} );
-
-	it( 'still hides the API-key TextControl when the PHP-supplied key is empty (polyline-only preview branch)', () => {
-		// The `apiKeyManagedExternally` flag remains `true` regardless
-		// of whether the resolved PHP key was empty; engagement is
-		// presence-based. The user must not see a TextControl that
-		// would tempt them into supplying an attribute-path key the
-		// renderer would never read.
-		const { texts } = mountAndCapture(
-			buildAttributes( {
-				tileProvider: 'thunderforestExternalEmpty',
-				tileStyle: 'outdoor',
-				tileApiKeys: {},
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeUndefined();
-	} );
-
-	it( 'still renders the API-key TextControl for paid providers whose apiKey is not managed externally (attribute-path behaviour unchanged)', () => {
-		const { texts } = mountAndCapture(
-			buildAttributes( {
-				tileProvider: 'thunderforest',
-				tileStyle: 'outdoor',
-				tileApiKeys: { thunderforest: 'ATTR_KEY' },
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		expect( apiKeyField?.value ).toBe( 'ATTR_KEY' );
-	} );
-
-	it( 'forwards the pre-substituted URL to MapEditorPreview without invoking client substitution', () => {
-		// Engaged-with-non-empty-key path: the server-side URL has
-		// already had `{KEY}` replaced, so the preview receives that
-		// URL verbatim — no `{KEY}` placeholder and no attribute-path
-		// substitution.
 		const { previewProps } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'thunderforestExternal',
+				tileProvider: 'phpProvider',
 				tileStyle: 'outdoor',
-				tileApiKeys: {
-					thunderforestExternal: 'this-attribute-key-is-ignored',
-				},
 			} )
 		);
 
@@ -736,23 +726,71 @@ describe( 'MapEdit Tiles panel — PHP-supplied apiKey (issue #113)', () => {
 			'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=PHP-SUBSTITUTED'
 		);
 		expect( provider?.url ).not.toContain( '{KEY}' );
-		// Attribute-path key never reaches the URL — the bypass is binary.
-		expect( provider?.url ).not.toContain(
-			'this-attribute-key-is-ignored'
-		);
 	} );
 
-	it( 'forwards provider=null to MapEditorPreview (polyline-only) when the PHP key is empty and the URL still contains {KEY}', () => {
+	it( 'forwards provider=null to MapEditorPreview (polyline-only) when the URL still contains {KEY}', () => {
+		// Default Thunderforest URL contains `{KEY}` because no key
+		// layer (PHP or option) supplied one. The preview's
+		// fail-closed detector recognises the unsubstituted placeholder
+		// and returns null, mirroring the frontend's URL-null gate.
 		const { previewProps } = mountAndCapture(
 			buildAttributes( {
-				tileProvider: 'thunderforestExternalEmpty',
+				tileProvider: 'thunderforest',
 				tileStyle: 'outdoor',
-				tileApiKeys: {},
 			} )
 		);
 
 		const lastProps = previewProps[ previewProps.length - 1 ];
 		const attributes = lastProps?.attributes as { provider: unknown };
 		expect( attributes?.provider ).toBeNull();
+	} );
+
+	it( 'mounts the preview with the option-substituted URL verbatim when the server pre-substituted the option-layer key', () => {
+		( globalThis as { kntntGpxBlocks?: RegistryShape } ).kntntGpxBlocks = {
+			...defaultRegistry,
+			providers: {
+				...( defaultRegistry.providers as Record< string, unknown > ),
+				thunderforest: {
+					label: 'Thunderforest',
+					requiresKey: true,
+					default: 'outdoor',
+					apiKeyManagedExternally: false,
+					signupUrl: 'https://www.thunderforest.com/',
+					styles: {
+						outdoor: {
+							label: 'Outdoors',
+							url: 'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=OPTION-KEY',
+							attribution: 'Thunderforest',
+							maxZoom: 22,
+						},
+					},
+				},
+			},
+		};
+
+		const { previewProps, notices } = mountAndCapture(
+			buildAttributes( {
+				tileProvider: 'thunderforest',
+				tileStyle: 'outdoor',
+			} )
+		);
+
+		const lastProps = previewProps[ previewProps.length - 1 ];
+		const attributes = lastProps?.attributes as { provider: unknown };
+		const provider = attributes?.provider as {
+			url: string;
+		} | null;
+
+		// Pre-substituted URL flows through verbatim; the editor
+		// preview mounts the working tile layer.
+		expect( provider?.url ).toBe(
+			'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=OPTION-KEY'
+		);
+
+		// The inspector Notice fires for every paid non-PHP-engaged
+		// provider per the issue spec — it points the user at the
+		// settings page so they can review or rotate the key, even
+		// when the key is already configured.
+		expect( notices ).toHaveLength( 1 );
 	} );
 } );

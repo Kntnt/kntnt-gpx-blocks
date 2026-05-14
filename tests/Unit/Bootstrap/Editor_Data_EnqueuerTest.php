@@ -38,6 +38,38 @@ beforeEach( function (): void {
 		static fn ( mixed $v ): string|false => json_encode( $v )
 	);
 
+	// Option store for the per-base-provider tile API keys (issue #149).
+	// Defaults to empty; tests that exercise the option-layer flow set
+	// $GLOBALS['kntnt_ede_test_tile_keys'] before invoking enqueue().
+	$GLOBALS['kntnt_ede_test_tile_keys'] = [];
+	Functions\when( 'get_option' )->alias(
+		static function ( string $name, mixed $default = false ): mixed {
+			if ( $name === 'kntnt_gpx_blocks_tile_provider_keys' ) {
+				$store = $GLOBALS['kntnt_ede_test_tile_keys'] ?? [];
+				return is_array( $store ) ? $store : [];
+			}
+			return $default;
+		}
+	);
+
+	// menu_page_url and admin_url stubs let the resolve_settings_url()
+	// helper produce a deterministic URL the test asserts against.
+	Functions\when( 'menu_page_url' )->alias(
+		static function ( string $slug, bool $echo = true ): string {
+			return 'https://example.test/wp-admin/options-general.php?page=' . $slug;
+		}
+	);
+	Functions\when( 'admin_url' )->alias(
+		static function ( string $path = '' ): string {
+			return 'https://example.test/wp-admin/' . $path;
+		}
+	);
+
+	// current_user_can stub controls whether the editor payload reports
+	// `canManageSettings: true`. Default to false so the assertion is
+	// strict; tests that want true override locally.
+	Functions\when( 'current_user_can' )->justReturn( false );
+
 } );
 
 // ---------------------------------------------------------------------------
@@ -246,7 +278,7 @@ test( 'provider records expose signupUrl for paid providers, omit it for free on
 
 } );
 
-test( 'payload omits API keys (per-block tileApiKeys / tileOverlayApiKeys maps are never inlined; PHP-supplied keys never reach the editor)', function (): void {
+test( 'payload omits raw API keys (the value of an `apiKey` field is never inlined)', function (): void {
 
 	$captured_inline = null;
 	Functions\when( 'wp_add_inline_script' )->alias(
@@ -260,17 +292,13 @@ test( 'payload omits API keys (per-block tileApiKeys / tileOverlayApiKeys maps a
 
 	$payload = (string) $captured_inline;
 
-	// Structural assertion: no per-block key field (`tileApiKeys`,
-	// `tileOverlayApiKeys`) and no provider-level `"apiKey":` field may
+	// Structural assertion: no provider-level `"apiKey":` field may
 	// appear in the inlined string. The editor payload does carry the
 	// `apiKeyManagedExternally` boolean flag per provider, so we assert
 	// against the surrounding JSON syntax (`"apiKey":`) rather than the
 	// substring `apiKey` alone — the flag is *signalled*, the value is
 	// *never* leaked.
 	expect( $payload )->not->toContain( '"apiKey":' );
-	expect( $payload )->not->toContain( 'tileApiKey' );
-	expect( $payload )->not->toContain( 'tileApiKeys' );
-	expect( $payload )->not->toContain( 'tileOverlayApiKeys' );
 
 } );
 
@@ -808,5 +836,176 @@ test( 'empty PHP-supplied overlay apiKey log entry never carries the apiKey valu
 
 	expect( $logged )->toContain( 'paid-overlay' );
 	expect( $logged )->not->toContain( "\t" );
+
+} );
+
+// ---------------------------------------------------------------------------
+// Option-layer pre-substitution and settings-page link (issue #149)
+//
+// The editor payload now surfaces:
+// - `settingsUrl` — absolute URL to the plugin's settings page.
+// - `canManageSettings` — whether the current user holds `manage_options`.
+// The payload also pre-substitutes `{KEY}` in base-provider style URLs
+// from the site-wide `kntnt_gpx_blocks_tile_provider_keys` option when
+// the PHP path is not engaged for that provider. Overlay providers
+// are unchanged in this slice (the option-layer flow ships in #150).
+// ---------------------------------------------------------------------------
+
+test( 'payload carries settingsUrl resolved via menu_page_url', function (): void {
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	expect( $decoded )->toHaveKey( 'settingsUrl' );
+	expect( $decoded['settingsUrl'] )->toBe(
+		'https://example.test/wp-admin/options-general.php?page=kntnt-gpx-blocks'
+	);
+
+} );
+
+test( 'payload reflects current_user_can manage_options in canManageSettings', function (): void {
+
+	Functions\when( 'current_user_can' )->alias(
+		static function ( string $cap ): bool {
+			return $cap === 'manage_options';
+		}
+	);
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	expect( $decoded['canManageSettings'] )->toBeTrue();
+
+} );
+
+test( 'payload reports canManageSettings false when the user lacks manage_options', function (): void {
+
+	// Default beforeEach stub returns false for every capability check.
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	expect( $decoded['canManageSettings'] )->toBeFalse();
+
+} );
+
+test( 'base-provider style URLs are pre-substituted server-side from the option-layer map', function (): void {
+
+	$GLOBALS['kntnt_ede_test_tile_keys'] = [
+		'thunderforest' => 'OPTION-TF-KEY',
+		'mapbox'        => 'OPTION-MB-KEY',
+	];
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	// Thunderforest styles are pre-substituted with the option key.
+	foreach ( $decoded['providers']['thunderforest']['styles'] as $style ) {
+		expect( $style['url'] )->not->toContain( '{KEY}' );
+		expect( $style['url'] )->toContain( 'OPTION-TF-KEY' );
+	}
+
+	// Mapbox styles likewise. Free providers are unaffected.
+	expect( $decoded['providers']['mapbox']['styles']['outdoors']['url'] )
+		->toContain( 'OPTION-MB-KEY' );
+
+	// `apiKeyManagedExternally` stays false — option-layer engagement is
+	// not the same as PHP-path engagement; the settings page still
+	// renders the field as editable.
+	expect( $decoded['providers']['thunderforest']['apiKeyManagedExternally'] )
+		->toBeFalse();
+
+} );
+
+test( 'base-provider style URLs retain {KEY} when neither PHP path nor option layer supplies a key', function (): void {
+
+	// Default option store is empty. The thunderforest URL therefore
+	// keeps the `{KEY}` placeholder — the editor preview's fail-closed
+	// detector returns null on this signal.
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	foreach ( $decoded['providers']['thunderforest']['styles'] as $style ) {
+		expect( $style['url'] )->toContain( '{KEY}' );
+	}
+
+} );
+
+test( 'PHP-path engagement wins over option-layer entry for the same provider id', function (): void {
+
+	ede_install_paid_provider( [ 'apiKey' => 'PHP-VALUE' ] );
+	$GLOBALS['kntnt_ede_test_tile_keys'] = [ 'paid-provider' => 'OPTION-VALUE' ];
+
+	$captured_inline = null;
+	Functions\when( 'wp_add_inline_script' )->alias(
+		static function ( string $handle, string $data ) use ( &$captured_inline ): bool {
+			$captured_inline = $data;
+			return true;
+		}
+	);
+
+	( new Editor_Data_Enqueuer() )->enqueue();
+
+	$json    = substr( (string) $captured_inline, strlen( 'window.kntntGpxBlocks = ' ) );
+	$json    = rtrim( $json, ';' );
+	$decoded = json_decode( $json, true );
+
+	$style = $decoded['providers']['paid-provider']['styles']['default'];
+	expect( $style['url'] )->toContain( 'PHP-VALUE' );
+	expect( $style['url'] )->not->toContain( 'OPTION-VALUE' );
 
 } );

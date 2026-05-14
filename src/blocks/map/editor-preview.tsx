@@ -119,13 +119,15 @@ interface PreviewAttributes {
 	tooltipShowName: boolean;
 	tooltipShowDesc: boolean;
 	/**
-	 * Resolved base-tile provider with `{KEY}` already substituted client-side
-	 * from `attributes.tileApiKeys[ tileProvider ]`. `null` in two cases: the
-	 * editor-data global is unavailable, or the resolved provider requires a
-	 * key and the per-provider entry in `tileApiKeys` is empty (the documented
-	 * polyline-only state — issue #81). Either way the preview renders polyline + waypoints over
-	 * an empty tile background; the editor surface ships polyline-only
-	 * rather than issuing failing tile requests.
+	 * Resolved base-tile provider with `{KEY}` already substituted
+	 * server-side by `Editor_Data_Enqueuer` from either the
+	 * PHP-supplied value or the site-wide option-layer value (issue
+	 * #149). `null` in two cases: the editor-data global is unavailable,
+	 * or the resolved provider requires a key and no layer supplied one
+	 * (the documented polyline-only state). Either way the preview
+	 * renders polyline + waypoints over an empty tile background; the
+	 * editor surface ships polyline-only rather than issuing failing
+	 * tile requests.
 	 */
 	provider: EditorProviderRecord | null;
 	overlays: readonly EditorOverlayRecord[];
@@ -160,8 +162,10 @@ interface MapEditorPreviewProps {
 	unknownProviderFallbackLabel?: string | null;
 	/**
 	 * `true` when the resolved provider requires an API key
-	 * (`requiresKey === true`) and the per-provider entry in `tileApiKeys`
-	 * is empty.
+	 * (`requiresKey === true`) and the server-side `Editor_Data_Enqueuer`
+	 * left `{KEY}` in the resolved-style URL because neither the
+	 * PHP-supplied value nor the site-wide option-layer value supplied
+	 * a usable key (issue #149).
 	 */
 	missingKey?: boolean;
 }
@@ -484,10 +488,10 @@ export const MapEditorPreview = ( {
 		layer.bringToBack();
 		baseTileLayerRef.current = layer;
 		// `provider` is memoized by the caller (`edit.tsx`'s `useMemo` keyed
-		// on tileProvider / tileStyle / tileApiKeys), so referential equality
-		// here is the same as field equality and the effect stays quiet on
-		// unrelated parent re-renders. `payload` is listed too because the
-		// mount effect creates the `L.Map` only after the REST fetch resolves;
+		// on tileProvider / tileStyle), so referential equality here is the
+		// same as field equality and the effect stays quiet on unrelated
+		// parent re-renders. `payload` is listed too because the mount
+		// effect creates the `L.Map` only after the REST fetch resolves;
 		// without re-firing on first payload arrival, the base tile layer is
 		// never attached when `provider` is unchanged between the initial
 		// render and the post-fetch render (issue #100).

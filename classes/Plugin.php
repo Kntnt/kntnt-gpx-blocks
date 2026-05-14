@@ -392,6 +392,16 @@ final class Plugin {
 		$dimensions_defaults = new Rendering\Dimensions_Defaults();
 		add_filter( 'render_block_data', [ $dimensions_defaults, 'filter' ] );
 
+		// Register the Settings → Kntnt GPX Blocks admin page that
+		// surfaces the central per-base-provider tile-API-key option
+		// (issue #149). The page is the canonical UI for the option;
+		// site administrators rotate one entry per provider instead of
+		// editing every Map block in turn. The overlay-provider half
+		// (#150) plugs a parallel sub-section into the same page.
+		$settings_page = new Admin\Settings_Page();
+		add_action( 'admin_menu', [ $settings_page, 'register_menu' ] );
+		add_action( 'admin_init', [ $settings_page, 'register_settings' ] );
+
 	}
 
 }

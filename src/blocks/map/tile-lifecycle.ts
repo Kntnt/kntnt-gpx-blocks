@@ -27,10 +27,11 @@ import L from 'leaflet';
  *
  * Mirrors the validated shape `Tile_Layer_Registry` writes server-side.
  * The `url` may be `null` when the resolved provider requires an API
- * key (`requiresKey === true`) and the per-provider entry in
- * `tileApiKeys` is empty — this is the documented "polyline-only"
- * state for paid providers without a key. The view module checks
- * `url !== null` before calling `addTiles`.
+ * key (`requiresKey === true`) and no key layer (PHP-supplied or the
+ * site-wide `kntnt_gpx_blocks_tile_provider_keys` option) supplied one
+ * — this is the documented "polyline-only" state for paid providers
+ * without a key. The view module checks `url !== null` before calling
+ * `addTiles`.
  *
  * The base-provider record drops `id` entirely (the runtime never
  * needs it — the provider is identified by what the user picked in
@@ -87,9 +88,10 @@ export function createEmptyTileRefs(): TileLayerRefs {
  * Returns true when the resolved record has a usable URL.
  *
  * The URL is `null` exactly in the documented "polyline-only" cases:
- * `requiresKey && tileApiKeys[ tileProvider ] === ''` for the base provider, or any future
- * runtime path where PHP cannot resolve a usable URL. The check is centralised
- * here so the call sites read declaratively.
+ * a paid base provider with no PHP-supplied key and no option-layer
+ * entry, or any future runtime path where PHP cannot resolve a usable
+ * URL. The check is centralised here so the call sites read
+ * declaratively.
  *
  * @since 1.0.0
  *
