@@ -141,9 +141,17 @@ describe( 'hiddenElevationColorAttributes (issues #143 + #144)', () => {
 		);
 	} );
 
-	it( 'hides Cursor when showCursor is off (issue #144)', () => {
+	it( 'hides Cursor AND every tooltip row when showCursor is off (issue #144 + Step 7)', () => {
+		// Step 7 extends issue #144's symmetry to the tooltip: with the
+		// cursor master off, the tooltip never renders either, so all
+		// three tooltip Color rows hide alongside the Cursor row.
 		expect( hiddenElevationColorAttributes( true, true, false ) ).toEqual(
-			new Set( [ 'cursorColor' ] )
+			new Set( [
+				'cursorColor',
+				'tooltipBackgroundColor',
+				'tooltipDistanceColor',
+				'tooltipHeightColor',
+			] )
 		);
 	} );
 
@@ -209,16 +217,21 @@ describe( 'InspectorColorPanel (issue #143)', () => {
 		expect( labels ).toContain( 'Plot line' );
 	} );
 
-	it( 'omits "Cursor" when showCursor is false (issue #144)', () => {
+	it( 'omits "Cursor" AND every tooltip row when showCursor is false (issue #144 + Step 7)', () => {
 		const panels = renderAndCapture( { showCursor: false } );
 
 		const labels = panels[ 0 ].colorSettings.map( ( e ) => e.label );
 		expect( labels ).not.toContain( 'Cursor' );
-		// The other dependent rows remain — Tooltip toggles are still on
-		// by default — so this is a pure cursor-only hide.
-		expect( labels ).toContain( 'Tooltip background' );
-		expect( labels ).toContain( 'Tooltip distance' );
-		expect( labels ).toContain( 'Tooltip height' );
+		// Step 7 extends issue #144's symmetry to the tooltip: with the
+		// cursor master off, no tooltip surface renders either, so the
+		// three tooltip rows hide alongside the Cursor row.
+		expect( labels ).not.toContain( 'Tooltip background' );
+		expect( labels ).not.toContain( 'Tooltip distance' );
+		expect( labels ).not.toContain( 'Tooltip height' );
+		// Non-dependent rows remain.
+		expect( labels ).toContain( 'Background' );
+		expect( labels ).toContain( 'Plot line' );
+		expect( labels ).toContain( 'Axis' );
 	} );
 
 	it( 'preserves a saved Cursor colour across hide → re-enable (no clear-on-hide, issue #144)', () => {

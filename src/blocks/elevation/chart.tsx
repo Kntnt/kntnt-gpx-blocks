@@ -41,9 +41,12 @@ import {
 	useRef,
 	useState,
 } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 
-import { interpolateSample, projectCursor } from './geometry/cursor';
+import {
+	interpolateSample,
+	projectCursor,
+} from './geometry/sample-interpolation';
 import { buildFillPathD, buildStrokePathD } from './geometry/curve';
 import {
 	computeMargins,
@@ -55,6 +58,8 @@ import {
 	type TypographyAttributes,
 } from './geometry/measure';
 import { computeChartScale } from './geometry/scale';
+import { formatDistance, formatElevation } from './geometry/tooltip-format';
+import { computeTooltipPlacement } from './geometry/tooltip-placement';
 
 /**
  * A single LTTB-downsampled `(distance, elevation)` sample, as emitted
@@ -95,6 +100,92 @@ export interface ChartProps {
 	readonly showCursor: boolean;
 	readonly showVerticalGuide: boolean;
 	readonly showHorizontalGuide: boolean;
+	readonly tooltipShowDistance: boolean;
+	readonly tooltipShowHeight: boolean;
+}
+
+/**
+ * Resolved tooltip layout produced by the measurement effect and
+ * consumed by the editor preview's tooltip JSX. `null` whenever the
+ * tooltip should not render (master toggle off, both rows off, fewer
+ * than two samples, …).
+ *
+ * @since 1.0.0
+ */
+interface TooltipLayoutState {
+	readonly rectX: number;
+	readonly rectY: number;
+	readonly rectWidth: number;
+	readonly rectHeight: number;
+	readonly distanceTextX: number;
+	readonly distanceTextY: number;
+	readonly heightTextX: number;
+	readonly heightTextY: number;
+	readonly distanceLabel: string;
+	readonly heightLabel: string;
+	readonly a11yLabel: string;
+	readonly showDistance: boolean;
+	readonly showHeight: boolean;
+}
+
+/**
+ * Resolves the locale string used for tooltip number formatting. Reads
+ * `<html lang>` and falls back to `'sv-SE'` so the editor preview
+ * matches the frontend's deterministic locale resolution (see
+ * `geometry/format.ts`).
+ *
+ * @since 1.0.0
+ *
+ * @return The resolved locale string.
+ */
+function resolveDocumentLocale(): string {
+	if ( typeof document !== 'undefined' ) {
+		const lang = document.documentElement?.lang;
+		if ( typeof lang === 'string' && lang !== '' ) {
+			return lang;
+		}
+	}
+	return 'sv-SE';
+}
+
+/**
+ * Builds the tooltip's `<title>` accessibility label from the two
+ * visible-row labels.
+ *
+ * @since 1.0.0
+ *
+ * @param distanceLabel Formatted distance string.
+ * @param heightLabel   Formatted elevation string.
+ * @param showDistance  Whether the distance row is visible.
+ * @param showHeight    Whether the elevation row is visible.
+ * @return The translated a11y label.
+ */
+function buildTooltipA11yLabel(
+	distanceLabel: string,
+	heightLabel: string,
+	showDistance: boolean,
+	showHeight: boolean
+): string {
+	if ( showDistance && showHeight ) {
+		return sprintf(
+			/* translators: 1: distance, 2: elevation */
+			__( 'Distance %1$s, elevation %2$s', 'kntnt-gpx-blocks' ),
+			distanceLabel,
+			heightLabel
+		);
+	}
+	if ( showDistance ) {
+		return sprintf(
+			/* translators: %s: distance */
+			__( 'Distance %s', 'kntnt-gpx-blocks' ),
+			distanceLabel
+		);
+	}
+	return sprintf(
+		/* translators: %s: elevation */
+		__( 'Elevation %s', 'kntnt-gpx-blocks' ),
+		heightLabel
+	);
 }
 
 /**
@@ -142,6 +233,8 @@ function readDimensions( svg: SVGSVGElement ): Dimensions {
  * @param props.showCursor          Whether to render the cursor at all (issue #144).
  * @param props.showVerticalGuide   Whether the vertical guide line is drawn.
  * @param props.showHorizontalGuide Whether the horizontal guide line is drawn.
+ * @param props.tooltipShowDistance Whether the tooltip's distance row is drawn (Step 7).
+ * @param props.tooltipShowHeight   Whether the tooltip's elevation row is drawn (Step 7).
  */
 export function Chart( {
 	data,
@@ -150,10 +243,14 @@ export function Chart( {
 	showCursor,
 	showVerticalGuide,
 	showHorizontalGuide,
+	tooltipShowDistance,
+	tooltipShowHeight,
 }: ChartProps ): JSX.Element {
 	const svgRef = useRef< SVGSVGElement | null >( null );
 	const [ margins, setMargins ] = useState< Margins | null >( null );
 	const [ dims, setDims ] = useState< Dimensions >( { w: 0, h: 0 } );
+	const [ tooltipLayout, setTooltipLayout ] =
+		useState< TooltipLayoutState | null >( null );
 	const [ fontsReady, setFontsReady ] = useState< boolean >(
 		() =>
 			typeof document === 'undefined' ||
@@ -320,6 +417,151 @@ export function Chart( {
 			? projectCursor( previewSample, scale )
 			: null;
 
+	// Tooltip labels for the midpoint sample. Locale is resolved from
+	// `<html lang>` (with an sv-SE fallback) so the editor preview
+	// matches the frontend deterministic resolution.
+	const tooltipLocale = resolveDocumentLocale();
+	const distanceLabel =
+		previewSample !== null
+			? formatDistance( previewSample.distance, tooltipLocale )
+			: '';
+	const heightLabel =
+		previewSample !== null
+			? formatElevation( previewSample.elevation, tooltipLocale )
+			: '';
+
+	// Whether the tooltip should be rendered at all on this frame.
+	// Master cursor toggle off → no tooltip; both row toggles off →
+	// no tooltip; fewer than two samples → no tooltip.
+	const tooltipEnabled =
+		showCursor &&
+		previewCursor !== null &&
+		( tooltipShowDistance || tooltipShowHeight );
+
+	// Measure the tooltip's two rows under their class-scoped typography
+	// and compute the rect dimensions + placement. Runs in a layout
+	// effect so the measurement reflects the freshly committed wrapper
+	// custom properties (Step 4 pl.7 architecture). Resets the layout
+	// to `null` whenever the tooltip should not render so a previous
+	// frame's geometry does not leak into a now-hidden state.
+	useLayoutEffect( () => {
+		const svg = svgRef.current;
+		if ( ! svg ) {
+			setTooltipLayout( null );
+			return;
+		}
+		if ( ! tooltipEnabled || ! scale || ! previewCursor ) {
+			setTooltipLayout( null );
+			return;
+		}
+
+		const measureDistance = createTextMeasurer(
+			svg,
+			'kntnt-gpx-blocks-elevation-tooltip-distance'
+		);
+		const measureHeight = createTextMeasurer(
+			svg,
+			'kntnt-gpx-blocks-elevation-tooltip-height'
+		);
+		const distanceBBox = tooltipShowDistance
+			? measureDistance( distanceLabel )
+			: null;
+		const heightBBox = tooltipShowHeight
+			? measureHeight( heightLabel )
+			: null;
+
+		const em = scale.em;
+		const padX = 0.5 * em;
+		const padY = 0.5 * em;
+		const lineGap = 0.25 * em;
+
+		const distH = distanceBBox?.height ?? 0;
+		const heightH = heightBBox?.height ?? 0;
+		const distW = distanceBBox?.width ?? 0;
+		const heightW = heightBBox?.width ?? 0;
+		const rowsHeight =
+			distH +
+			heightH +
+			( distanceBBox !== null && heightBBox !== null ? lineGap : 0 );
+		const rectWidth = Math.max( distW, heightW ) + 2 * padX;
+		const rectHeight = rowsHeight + 2 * padY;
+
+		const plotRect = {
+			x: scale.plotLeft,
+			y: scale.plotTop,
+			w: scale.plotRight - scale.plotLeft,
+			h: scale.plotBottom - scale.plotTop,
+		};
+		const placement = computeTooltipPlacement( {
+			cursor: { cx: previewCursor.cx },
+			plotRect,
+			tooltipBox: { w: rectWidth, h: rectHeight },
+			em,
+			previousSide: null,
+		} );
+
+		// Baseline-positioned <text>: y is the alphabetic baseline. Two
+		// rows stack from the top with the first row's baseline at
+		// `rectY + padY + distH`; the second row's baseline a full
+		// `heightH + lineGap` below. A single-row tooltip centres its
+		// row vertically in the shorter rect.
+		let distanceTextY: number;
+		let heightTextY: number;
+		if ( distanceBBox !== null && heightBBox !== null ) {
+			distanceTextY = placement.y + padY + distH;
+			heightTextY = distanceTextY + lineGap + heightH;
+		} else if ( distanceBBox !== null ) {
+			distanceTextY = placement.y + rectHeight / 2 + distH / 2;
+			heightTextY = 0;
+		} else {
+			heightTextY = placement.y + rectHeight / 2 + heightH / 2;
+			distanceTextY = 0;
+		}
+
+		setTooltipLayout( {
+			rectX: placement.x,
+			rectY: placement.y,
+			rectWidth,
+			rectHeight,
+			distanceTextX: placement.x + padX,
+			distanceTextY,
+			heightTextX: placement.x + padX,
+			heightTextY,
+			distanceLabel,
+			heightLabel,
+			a11yLabel: buildTooltipA11yLabel(
+				distanceLabel,
+				heightLabel,
+				tooltipShowDistance,
+				tooltipShowHeight
+			),
+			showDistance: tooltipShowDistance,
+			showHeight: tooltipShowHeight,
+		} );
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [
+		tooltipEnabled,
+		tooltipShowDistance,
+		tooltipShowHeight,
+		distanceLabel,
+		heightLabel,
+		previewCursor?.cx,
+		previewCursor?.cy,
+		scale?.plotLeft,
+		scale?.plotRight,
+		scale?.plotTop,
+		scale?.plotBottom,
+		scale?.em,
+		typography.fontFamily,
+		typography.fontSize,
+		typography.fontWeight,
+		typography.fontStyle,
+		typography.lineHeight,
+		typography.letterSpacing,
+		typography.textTransform,
+		typography.textDecoration,
+	] );
+
 	return (
 		<svg
 			ref={ svgRef }
@@ -465,6 +707,45 @@ export function Chart( {
 								stroke="var(--kntnt-gpx-blocks-elevation-cursor)"
 								strokeWidth={ 2 }
 							/>
+						</g>
+					) }
+					{ tooltipEnabled && tooltipLayout !== null && (
+						<g
+							className="kntnt-gpx-blocks-elevation-tooltip"
+							pointerEvents="none"
+						>
+							<title>{ tooltipLayout.a11yLabel }</title>
+							<rect
+								className="kntnt-gpx-blocks-elevation-tooltip-bg"
+								x={ tooltipLayout.rectX }
+								y={ tooltipLayout.rectY }
+								width={ tooltipLayout.rectWidth }
+								height={ tooltipLayout.rectHeight }
+								rx="0.25em"
+								fill="var(--kntnt-gpx-blocks-elevation-tooltip-background)"
+							/>
+							{ tooltipLayout.showDistance && (
+								<text
+									className="kntnt-gpx-blocks-elevation-tooltip-distance"
+									x={ tooltipLayout.distanceTextX }
+									y={ tooltipLayout.distanceTextY }
+									textAnchor="start"
+									fill="var(--kntnt-gpx-blocks-elevation-tooltip-distance)"
+								>
+									{ tooltipLayout.distanceLabel }
+								</text>
+							) }
+							{ tooltipLayout.showHeight && (
+								<text
+									className="kntnt-gpx-blocks-elevation-tooltip-height"
+									x={ tooltipLayout.heightTextX }
+									y={ tooltipLayout.heightTextY }
+									textAnchor="start"
+									fill="var(--kntnt-gpx-blocks-elevation-tooltip-height)"
+								>
+									{ tooltipLayout.heightLabel }
+								</text>
+							) }
 						</g>
 					) }
 				</>

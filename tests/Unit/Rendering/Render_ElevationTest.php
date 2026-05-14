@@ -490,3 +490,141 @@ test( 'render_chart_wrapper threads the explicit Cursor & guides toggles into th
 	expect( $html )->toContain( '"showVerticalGuide":false' );
 	expect( $html )->toContain( '"showHorizontalGuide":true' );
 } );
+
+// ---------------------------------------------------------------------------
+// Step 7 — Tooltip info toggles mirrored into the per-block context.
+// ---------------------------------------------------------------------------
+
+test( 'render_chart_wrapper mirrors the default Tooltip info toggles into the per-block context (Step 7)', function (): void {
+	// A fresh-insert attribute bag (no explicit toggles) must produce
+	// the documented defaults: tooltipShowDistance=true,
+	// tooltipShowHeight=true.
+	$html = Render_Elevation::render_chart_wrapper( [], 'map-x' );
+
+	expect( $html )->toContain( '"tooltipShowDistance":true' );
+	expect( $html )->toContain( '"tooltipShowHeight":true' );
+} );
+
+test( 'render_chart_wrapper threads the explicit Tooltip info toggles into the per-block context (Step 7)', function (): void {
+	$attributes = [
+		'tooltipShowDistance' => false,
+		'tooltipShowHeight'   => false,
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->toContain( '"tooltipShowDistance":false' );
+	expect( $html )->toContain( '"tooltipShowHeight":false' );
+} );
+
+// ---------------------------------------------------------------------------
+// Step 7 — Tooltip colour custom properties.
+// ---------------------------------------------------------------------------
+
+test( 'render_chart_wrapper threads sanitised tooltip colour custom properties through the wrapper style (Step 7)', function (): void {
+	$attributes = [
+		'tooltipBackgroundColor' => '#000000cc',
+		'tooltipDistanceColor'   => '#ffffff',
+		'tooltipHeightColor'     => '#dddddd',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-background: #000000cc' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance: #ffffff' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height: #dddddd' );
+} );
+
+test( 'render_chart_wrapper rejects malformed tooltip colours via Color_Sanitizer (Step 7)', function (): void {
+	$attributes = [
+		'tooltipBackgroundColor' => 'javascript:alert(1)',
+		'tooltipDistanceColor'   => '#GGG',
+		'tooltipHeightColor'     => 'expression(alert(1))',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-background:' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance:' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height:' );
+	expect( $html )->not->toContain( 'javascript:' );
+	expect( $html )->not->toContain( 'expression(' );
+} );
+
+test( 'render_chart_wrapper omits the tooltip colour custom properties when attributes are empty (Step 7)', function (): void {
+	$attributes = [
+		'tooltipBackgroundColor' => '',
+		'tooltipDistanceColor'   => '',
+		'tooltipHeightColor'     => '',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-background:' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance:' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height:' );
+} );
+
+// ---------------------------------------------------------------------------
+// Step 7 — Tooltip typography custom properties.
+// ---------------------------------------------------------------------------
+
+test( 'render_chart_wrapper threads sanitised tooltip distance typography custom properties (Step 7)', function (): void {
+	$attributes = [
+		'tooltipDistanceFontFamily'     => 'Inter',
+		'tooltipDistanceFontSize'       => '14px',
+		'tooltipDistanceFontWeight'     => '700',
+		'tooltipDistanceFontStyle'      => 'italic',
+		'tooltipDistanceLineHeight'     => '1.4',
+		'tooltipDistanceLetterSpacing'  => '0.05em',
+		'tooltipDistanceTextTransform'  => 'uppercase',
+		'tooltipDistanceTextDecoration' => 'underline',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-font-family: Inter' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-font-size: 14px' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-font-weight: 700' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-font-style: italic' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-line-height: 1.4' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-letter-spacing: 0.05em' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-text-transform: uppercase' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-text-decoration: underline' );
+} );
+
+test( 'render_chart_wrapper threads sanitised tooltip height typography custom properties (Step 7)', function (): void {
+	$attributes = [
+		'tooltipHeightFontFamily'     => 'Inter',
+		'tooltipHeightFontSize'       => '14px',
+		'tooltipHeightFontWeight'     => '300',
+		'tooltipHeightFontStyle'      => 'italic',
+		'tooltipHeightLineHeight'     => '1.2',
+		'tooltipHeightLetterSpacing'  => '-0.02em',
+		'tooltipHeightTextTransform'  => 'capitalize',
+		'tooltipHeightTextDecoration' => 'overline',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-font-family: Inter' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-font-size: 14px' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-font-weight: 300' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-font-style: italic' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-line-height: 1.2' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-letter-spacing: -0.02em' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-text-transform: capitalize' );
+	expect( $html )->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-text-decoration: overline' );
+} );
+
+test( 'render_chart_wrapper rejects malformed tooltip typography values via Typography_Sanitizer (Step 7)', function (): void {
+	$attributes = [
+		'tooltipDistanceFontFamily'     => 'Arial; background: red',
+		'tooltipDistanceFontWeight'     => '350',
+		'tooltipDistanceTextDecoration' => 'underline dotted red',
+		'tooltipHeightFontStyle'        => 'oblique 10deg',
+		'tooltipHeightLetterSpacing'    => '2',
+	];
+	$html = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
+
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-font-family' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-font-weight' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-distance-text-decoration' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-font-style' );
+	expect( $html )->not->toContain( '--kntnt-gpx-blocks-elevation-tooltip-height-letter-spacing' );
+	expect( $html )->not->toContain( 'background: red' );
+} );

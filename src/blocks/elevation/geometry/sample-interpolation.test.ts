@@ -1,12 +1,12 @@
 /**
- * Unit tests for the elevation chart's pure cursor math.
+ * Unit tests for the elevation chart's pure sample-interpolation and
+ * projection helpers.
  *
- * Step 6 of `docs/elevation-rebuild.md` introduces a cursor on the
- * elevation curve plus an L-shape pair of guide lines. This file pins
- * the two pure helpers — {@link interpolateSample} and
- * {@link projectCursor} — that resolve a fraction-derived distance to a
- * `(distance, elevation)` sample on the curve and project it into SVG
- * user units through the {@link ChartScale}.
+ * Step 6 of `docs/elevation-rebuild.md` introduced these helpers under
+ * `geometry/cursor.ts` because the cursor was their only consumer; Step 7
+ * adds the tooltip as a second consumer and migrates them to their own
+ * SRP-clean module. This file pins the same behavioural contract as
+ * `geometry/cursor.test.ts` did — only the import path changes.
  *
  * The DOM-bound pieces (SVG element construction, attribute writes,
  * pointer handlers) live in their own test files; this file is pure
@@ -15,11 +15,11 @@
  * @since 1.0.0
  */
 import type { ChartScale } from './scale';
-import { interpolateSample, projectCursor } from './cursor';
+import { interpolateSample, projectCursor } from './sample-interpolation';
 
 /**
  * Builds a {@link ChartScale} with identity-scaled projections so the
- * cursor tests can assert against exact values. The plot rectangle is
+ * tests can assert against exact values. The plot rectangle is
  * placed at `[ 0, distance ] × [ 0, elevation ]`; the projection
  * functions reflect Y so a higher elevation maps to a smaller `cy`,
  * matching the production scale's coordinate convention.

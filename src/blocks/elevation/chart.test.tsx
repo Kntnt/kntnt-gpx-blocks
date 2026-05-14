@@ -24,6 +24,12 @@ jest.mock(
 	() => ( {
 		__esModule: true,
 		__: ( s: string ) => s,
+		sprintf: ( template: string, ...args: unknown[] ) =>
+			template
+				.replace( /%(\d+)\$s/g, ( _m, i ) =>
+					String( args[ Number( i ) - 1 ] ?? '' )
+				)
+				.replace( /%s/g, () => String( args.shift() ?? '' ) ),
 	} ),
 	{ virtual: true }
 );
@@ -139,12 +145,14 @@ function installSvgStubs( widthPerChar: number, height: number ): void {
  * @param data.maxElevation
  * @param data.distance
  * @param samples
- * @param cursorToggles                     Optional overrides for the three
- *                                          Cursor & guides toggles (issue
- *                                          #144). Defaults mirror block.json.
+ * @param cursorToggles                     Optional overrides for the
+ *                                          Cursor & guides + Tooltip info
+ *                                          toggles. Defaults mirror block.json.
  * @param cursorToggles.showCursor
  * @param cursorToggles.showVerticalGuide
  * @param cursorToggles.showHorizontalGuide
+ * @param cursorToggles.tooltipShowDistance
+ * @param cursorToggles.tooltipShowHeight
  * @return The rendered SVG element.
  */
 async function renderChart(
@@ -163,6 +171,8 @@ async function renderChart(
 		showCursor?: boolean;
 		showVerticalGuide?: boolean;
 		showHorizontalGuide?: boolean;
+		tooltipShowDistance?: boolean;
+		tooltipShowHeight?: boolean;
 	} = {}
 ): Promise< SVGSVGElement > {
 	const container = document.createElement( 'div' );
@@ -177,11 +187,20 @@ async function renderChart(
 				showCursor: cursorToggles.showCursor ?? true,
 				showVerticalGuide: cursorToggles.showVerticalGuide ?? true,
 				showHorizontalGuide: cursorToggles.showHorizontalGuide ?? false,
+				tooltipShowDistance: cursorToggles.tooltipShowDistance ?? true,
+				tooltipShowHeight: cursorToggles.tooltipShowHeight ?? true,
 			} )
 		);
 	} );
 	// Allow effects to run (fonts.ready Promise resolves on the next
 	// microtask).
+	await act( async () => {
+		await Promise.resolve();
+	} );
+	// Allow the tooltip layout-effect setState to commit (useLayoutEffect
+	// runs after the initial render's measurement pass; the resulting
+	// state update triggers a second render where the tooltip <g> first
+	// appears in the DOM).
 	await act( async () => {
 		await Promise.resolve();
 	} );
@@ -613,6 +632,8 @@ describe( 'Chart', () => {
 					showCursor: true,
 					showVerticalGuide: true,
 					showHorizontalGuide: false,
+					tooltipShowDistance: true,
+					tooltipShowHeight: true,
 				} )
 			);
 		} );
@@ -663,6 +684,8 @@ describe( 'Chart', () => {
 					showCursor: true,
 					showVerticalGuide: true,
 					showHorizontalGuide: false,
+					tooltipShowDistance: true,
+					tooltipShowHeight: true,
 				} )
 			);
 		} );
@@ -704,6 +727,8 @@ describe( 'Chart', () => {
 					showCursor: true,
 					showVerticalGuide: true,
 					showHorizontalGuide: false,
+					tooltipShowDistance: true,
+					tooltipShowHeight: true,
 				} )
 			);
 		} );
@@ -788,6 +813,8 @@ describe( 'Chart', () => {
 						showCursor: true,
 						showVerticalGuide: true,
 						showHorizontalGuide: false,
+						tooltipShowDistance: true,
+						tooltipShowHeight: true,
 					} )
 				);
 			} );
@@ -806,6 +833,8 @@ describe( 'Chart', () => {
 						showCursor: true,
 						showVerticalGuide: true,
 						showHorizontalGuide: false,
+						tooltipShowDistance: true,
+						tooltipShowHeight: true,
 					} )
 				);
 			} );
@@ -886,6 +915,8 @@ describe( 'Chart', () => {
 						showCursor: true,
 						showVerticalGuide: true,
 						showHorizontalGuide: false,
+						tooltipShowDistance: true,
+						tooltipShowHeight: true,
 					} )
 				);
 			} );
@@ -950,5 +981,177 @@ describe( 'Chart', () => {
 		// "5,0 km" that the unfiltered nice-tick set would have produced.
 		const last = labels[ labels.length - 1 ];
 		expect( last ).not.toMatch( /^5[.,]0 km$/ );
+	} );
+
+	// -----------------------------------------------------------------
+	// Step 7 — tooltip surface.
+	// -----------------------------------------------------------------
+
+	it( 'renders the tooltip <g> after the cursor <g> when both row toggles are on (Step 7)', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const order = Array.from( svg.children ).map(
+			( el ) => el.classList[ 0 ]
+		);
+		const idxCursor = order.indexOf( 'kntnt-gpx-blocks-elevation-cursor' );
+		const idxTooltip = order.indexOf(
+			'kntnt-gpx-blocks-elevation-tooltip'
+		);
+		expect( idxCursor ).toBeGreaterThan( 0 );
+		expect( idxTooltip ).toBeGreaterThan( idxCursor );
+	} );
+
+	it( 'mounts the tooltip group with pointer-events="none", a <title>, a <rect>, and the two <text> rows', async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-tooltip'
+		);
+		expect( group ).not.toBeNull();
+		// React renders camelCase `pointerEvents` as `pointer-events`.
+		expect( group!.getAttribute( 'pointer-events' ) ).toBe( 'none' );
+
+		const title = group!.querySelector( 'title' );
+		const rect = group!.querySelector(
+			'rect.kntnt-gpx-blocks-elevation-tooltip-bg'
+		);
+		const distance = group!.querySelector(
+			'text.kntnt-gpx-blocks-elevation-tooltip-distance'
+		);
+		const height = group!.querySelector(
+			'text.kntnt-gpx-blocks-elevation-tooltip-height'
+		);
+		expect( title ).not.toBeNull();
+		expect( rect ).not.toBeNull();
+		expect( distance ).not.toBeNull();
+		expect( height ).not.toBeNull();
+
+		// Soft corners + colour-variable wiring on the <rect>.
+		expect( rect!.getAttribute( 'rx' ) ).toBe( '0.25em' );
+		expect( rect!.getAttribute( 'fill' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-tooltip-background)'
+		);
+		// Both rows align left at a shared anchor and pipe their colour
+		// through their own custom property.
+		expect( distance!.getAttribute( 'text-anchor' ) ).toBe( 'start' );
+		expect( height!.getAttribute( 'text-anchor' ) ).toBe( 'start' );
+		expect( distance!.getAttribute( 'fill' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-tooltip-distance)'
+		);
+		expect( height!.getAttribute( 'fill' ) ).toBe(
+			'var(--kntnt-gpx-blocks-elevation-tooltip-height)'
+		);
+	} );
+
+	it( 'omits the distance row but keeps the height row when tooltipShowDistance is false', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ tooltipShowDistance: false }
+		);
+		const group = svg.querySelector(
+			'g.kntnt-gpx-blocks-elevation-tooltip'
+		);
+		expect( group ).not.toBeNull();
+		expect(
+			group!.querySelector(
+				'text.kntnt-gpx-blocks-elevation-tooltip-distance'
+			)
+		).toBeNull();
+		expect(
+			group!.querySelector(
+				'text.kntnt-gpx-blocks-elevation-tooltip-height'
+			)
+		).not.toBeNull();
+	} );
+
+	it( 'omits the tooltip group entirely when both row toggles are off (Step 7)', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ tooltipShowDistance: false, tooltipShowHeight: false }
+		);
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-tooltip' )
+		).toBeNull();
+	} );
+
+	it( 'omits the tooltip group when showCursor is off (Step 7 hide-on-master-off)', async () => {
+		const svg = await renderChart(
+			{
+				minElevation: 0,
+				maxElevation: 500,
+				distance: 5000,
+			},
+			undefined,
+			{ showCursor: false }
+		);
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-tooltip' )
+		).toBeNull();
+	} );
+
+	it( 'omits the tooltip group when samples.length < 2 (Step 7)', async () => {
+		const container = document.createElement( 'div' );
+		document.body.appendChild( container );
+		const root = createRoot( container );
+		await act( async () => {
+			root.render(
+				createElement( Chart, {
+					data: {
+						minElevation: 0,
+						maxElevation: 500,
+						distance: 5000,
+					},
+					samples: [],
+					typography: {},
+					showCursor: true,
+					showVerticalGuide: true,
+					showHorizontalGuide: false,
+					tooltipShowDistance: true,
+					tooltipShowHeight: true,
+				} )
+			);
+		} );
+		await act( async () => {
+			await Promise.resolve();
+		} );
+		const svg = container.querySelector( 'svg' )!;
+		expect(
+			svg.querySelector( 'g.kntnt-gpx-blocks-elevation-tooltip' )
+		).toBeNull();
+	} );
+
+	it( "pins the tooltip's y to plotRect.y + 0.5em (Step 7 top-pinned anchor)", async () => {
+		const svg = await renderChart( {
+			minElevation: 0,
+			maxElevation: 500,
+			distance: 5000,
+		} );
+		const rect = svg.querySelector(
+			'rect.kntnt-gpx-blocks-elevation-tooltip-bg'
+		);
+		expect( rect ).not.toBeNull();
+		const yAxis = svg.querySelector(
+			'line.kntnt-gpx-blocks-elevation-axis-y'
+		)!;
+		const plotTop = Number.parseFloat( yAxis.getAttribute( 'y2' ) ?? '0' );
+		const rectY = Number.parseFloat( rect!.getAttribute( 'y' ) ?? 'NaN' );
+		// `em` is stubbed at 16 px in installSvgStubs's getComputedStyle.
+		expect( rectY ).toBeCloseTo( plotTop + 0.5 * 16, 5 );
 	} );
 } );

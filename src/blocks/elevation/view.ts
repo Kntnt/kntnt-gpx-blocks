@@ -40,15 +40,28 @@ import {
 	bindPointerHandlers,
 	bindPointerHandlersWhenVisible,
 } from './cursor-input';
-import { interpolateSample, projectCursor } from './geometry/cursor';
+import {
+	interpolateSample,
+	projectCursor,
+	type CursorSample,
+	type ProjectedCursor,
+} from './geometry/sample-interpolation';
 import { buildFillPathD, buildStrokePathD } from './geometry/curve';
 import {
 	computeMargins,
 	type Margins,
 	type MarginsInput,
 } from './geometry/margins';
-import { createTextMeasurer } from './geometry/measure';
+import { createTextMeasurer, type TextMeasurer } from './geometry/measure';
 import { computeChartScale, type ChartScale } from './geometry/scale';
+import { formatDistance, formatElevation } from './geometry/tooltip-format';
+import { computeTooltipPlacement } from './geometry/tooltip-placement';
+import {
+	applyTooltipPosition,
+	createTooltipElements,
+	hideTooltip,
+	type TooltipElements,
+} from './tooltip';
 
 /**
  * SVG namespace constant.
@@ -132,6 +145,13 @@ interface ElevationEntry {
 	readonly mapId: string;
 	scale: ChartScale;
 	readonly cursorElements: CursorElements | null;
+	readonly tooltipElements: TooltipElements | null;
+	readonly tooltipShowDistance: boolean;
+	readonly tooltipShowHeight: boolean;
+	readonly tooltipLocale: string;
+	readonly measureDistance: TextMeasurer | null;
+	readonly measureHeight: TextMeasurer | null;
+	tooltipSide: 'right' | 'left' | null;
 }
 
 /**
@@ -529,20 +549,208 @@ function readSamples( value: unknown ): ReadonlyArray< ElevationSample > {
 }
 
 /**
- * Synchronises the cursor with the current `state[ mapId ].fraction`
- * value through the entry's cached scale. Hides the cursor when the
- * fraction is null/undefined or when interpolation cannot produce a
- * sample (degenerate samples array).
+ * Translated a11y label string template. Resolved once at module load
+ * so the locale resolution can fail open without the lookup happening
+ * inside the hot per-frame update path.
  *
- * Invoked from `redraw` (so a fresh resize re-pins the cursor at the
- * new geometry) and from the watch callback (so a fraction write
- * elsewhere on the page moves the cursor).
+ * @since 1.0.0
+ */
+const A11Y_LABEL_BOTH_ROWS = 'Distance %1$s, elevation %2$s';
+const A11Y_LABEL_DISTANCE_ONLY = 'Distance %s';
+const A11Y_LABEL_HEIGHT_ONLY = 'Elevation %s';
+
+/**
+ * Builds the tooltip's `<title>` accessibility label from the two
+ * visible-row labels and the per-row visibility flags.
+ *
+ * @since 1.0.0
+ *
+ * @param distanceLabel Formatted distance string.
+ * @param heightLabel   Formatted elevation string.
+ * @param showDistance  Whether the distance row is visible.
+ * @param showHeight    Whether the elevation row is visible.
+ * @return The a11y label string.
+ */
+function buildTooltipA11yLabel(
+	distanceLabel: string,
+	heightLabel: string,
+	showDistance: boolean,
+	showHeight: boolean
+): string {
+	if ( showDistance && showHeight ) {
+		return A11Y_LABEL_BOTH_ROWS.replace( '%1$s', distanceLabel ).replace(
+			'%2$s',
+			heightLabel
+		);
+	}
+	if ( showDistance ) {
+		return A11Y_LABEL_DISTANCE_ONLY.replace( '%s', distanceLabel );
+	}
+	return A11Y_LABEL_HEIGHT_ONLY.replace( '%s', heightLabel );
+}
+
+/**
+ * Resolves the locale used for the tooltip's number formatting. Reads
+ * `<html lang>` (the WordPress frontend's standard locale attribute)
+ * and falls back to `'sv-SE'` so the editor preview and the frontend
+ * agree byte-for-byte on Swedish-installed sites.
+ *
+ * @since 1.0.0
+ *
+ * @return The resolved locale string.
+ */
+function resolveTooltipLocale(): string {
+	if ( typeof document !== 'undefined' ) {
+		const lang = document.documentElement?.lang;
+		if ( typeof lang === 'string' && lang !== '' ) {
+			return lang;
+		}
+	}
+	return 'sv-SE';
+}
+
+/**
+ * Updates the tooltip's geometry, text, and visibility from an
+ * interpolated sample and its projected cursor position.
+ *
+ * Mutates `entry.tooltipSide` after the placement is computed so the
+ * next call's hysteresis test sees the committed side. Returns
+ * silently when `entry.tooltipElements` is `null` — either both row
+ * toggles were off at mount or the cursor master is off.
+ *
+ * @since 1.0.0
+ *
+ * @param entry     The wrapper's lifecycle state.
+ * @param sample    The interpolated sample (distance + elevation).
+ * @param projected The SVG-space cursor coordinate.
+ */
+function applyTooltipFromSample(
+	entry: ElevationEntry,
+	sample: CursorSample,
+	projected: ProjectedCursor
+): void {
+	// Returns silently when the tooltip is not mounted for this block
+	// (both row toggles off at mount time, or the cursor master off).
+	if ( ! entry.tooltipElements ) {
+		return;
+	}
+
+	// Format the labels for the visible rows. The two rows are formatted
+	// independently — line 1 may flip m → km on long tracks, line 2 is
+	// always metres (see geometry/tooltip-format.ts module header).
+	const distanceLabel = entry.tooltipShowDistance
+		? formatDistance( sample.distance, entry.tooltipLocale )
+		: '';
+	const heightLabel = entry.tooltipShowHeight
+		? formatElevation( sample.elevation, entry.tooltipLocale )
+		: '';
+
+	// Measure each visible row under its class-scoped typography so the
+	// rect dimensions match the rendered text exactly. The measurers
+	// share their hidden `<text>` node infrastructure with the tick-
+	// label measurer; the className parameter (Step 7's extension to
+	// `createTextMeasurer`) wires the row's CSS custom properties into
+	// the measurement.
+	const distanceBBox =
+		entry.tooltipShowDistance && entry.measureDistance !== null
+			? entry.measureDistance( distanceLabel )
+			: null;
+	const heightBBox =
+		entry.tooltipShowHeight && entry.measureHeight !== null
+			? entry.measureHeight( heightLabel )
+			: null;
+
+	// Padding + line-gap constants. 0.5em padding on every side gives
+	// the rows visual breathing room; 0.25em between the two rows keeps
+	// the tooltip compact.
+	const em = entry.scale.em;
+	const padX = 0.5 * em;
+	const padY = 0.5 * em;
+	const lineGap = 0.25 * em;
+
+	// Rect dimensions follow from the bboxes plus padding/lineGap.
+	const distH = distanceBBox?.height ?? 0;
+	const heightH = heightBBox?.height ?? 0;
+	const distW = distanceBBox?.width ?? 0;
+	const heightW = heightBBox?.width ?? 0;
+	const rowsHeight =
+		distH +
+		heightH +
+		( distanceBBox !== null && heightBBox !== null ? lineGap : 0 );
+	const rectWidth = Math.max( distW, heightW ) + 2 * padX;
+	const rectHeight = rowsHeight + 2 * padY;
+
+	// Side and corner via the pure placement helper. The previous side
+	// drives the hysteresis test so wiggling at the boundary does not
+	// flicker between left and right.
+	const plotRect = {
+		x: entry.scale.plotLeft,
+		y: entry.scale.plotTop,
+		w: entry.scale.plotRight - entry.scale.plotLeft,
+		h: entry.scale.plotBottom - entry.scale.plotTop,
+	};
+	const placement = computeTooltipPlacement( {
+		cursor: { cx: projected.cx },
+		plotRect,
+		tooltipBox: { w: rectWidth, h: rectHeight },
+		em,
+		previousSide: entry.tooltipSide,
+	} );
+	entry.tooltipSide = placement.side;
+
+	// Baseline positions for the two rows. Two-row stacking puts row 1
+	// at `padY + distH` below the rect top, row 2 a `lineGap + heightH`
+	// further down; a single visible row centres vertically in the
+	// shorter rect.
+	let distanceTextY: number;
+	let heightTextY: number;
+	if ( distanceBBox !== null && heightBBox !== null ) {
+		distanceTextY = placement.y + padY + distH;
+		heightTextY = distanceTextY + lineGap + heightH;
+	} else if ( distanceBBox !== null ) {
+		distanceTextY = placement.y + rectHeight / 2 + distH / 2;
+		heightTextY = 0;
+	} else {
+		heightTextY = placement.y + rectHeight / 2 + heightH / 2;
+		distanceTextY = 0;
+	}
+
+	applyTooltipPosition( entry.tooltipElements, {
+		rectX: placement.x,
+		rectY: placement.y,
+		rectWidth,
+		rectHeight,
+		distanceTextX: placement.x + padX,
+		distanceTextY,
+		heightTextX: placement.x + padX,
+		heightTextY,
+		distanceLabel,
+		heightLabel,
+		a11yLabel: buildTooltipA11yLabel(
+			distanceLabel,
+			heightLabel,
+			entry.tooltipShowDistance,
+			entry.tooltipShowHeight
+		),
+	} );
+}
+
+/**
+ * Synchronises the cursor *and* the tooltip with the current
+ * `state[ mapId ].fraction` value through the entry's cached scale.
+ * Hides both when the fraction is null/undefined or when interpolation
+ * cannot produce a sample (degenerate samples array).
+ *
+ * Invoked from `redraw` (so a fresh resize re-pins the cursor + tooltip
+ * at the new geometry) and from the watch callback (so a fraction
+ * write elsewhere on the page moves them together). Driving both from
+ * the same sample snapshot — and the same projected coordinate —
+ * guarantees they never drift apart between frames.
  *
  * Returns silently when `entry.cursorElements` is `null` — the block's
  * `showCursor` toggle (issue #144) is off and there is no cursor `<g>`
- * to drive. This branch is reached during a watch fire on a
- * cursor-disabled Elevation block when a sibling Map block writes the
- * shared fraction.
+ * to drive (and consequently no tooltip either, by Step 7's
+ * hide-on-master-off coupling).
  *
  * @since 1.0.0
  *
@@ -558,6 +766,9 @@ function syncCursor(
 	}
 	if ( fraction === null || fraction === undefined ) {
 		hideCursor( entry.cursorElements );
+		if ( entry.tooltipElements ) {
+			hideTooltip( entry.tooltipElements );
+		}
 		return;
 	}
 	const sample = interpolateSample(
@@ -566,10 +777,14 @@ function syncCursor(
 	);
 	if ( ! sample ) {
 		hideCursor( entry.cursorElements );
+		if ( entry.tooltipElements ) {
+			hideTooltip( entry.tooltipElements );
+		}
 		return;
 	}
 	const projected = projectCursor( sample, entry.scale );
 	applyCursorPosition( entry.cursorElements, projected, entry.scale );
+	applyTooltipFromSample( entry, sample, projected );
 }
 
 /**
@@ -633,6 +848,8 @@ store( 'kntnt-gpx-blocks', {
 			const ctx = getContext<
 				{
 					readonly mapId?: string;
+					readonly tooltipShowDistance?: boolean;
+					readonly tooltipShowHeight?: boolean;
 				} & CursorContextShape
 			>();
 			const mapId = typeof ctx?.mapId === 'string' ? ctx.mapId : '';
@@ -641,6 +858,14 @@ store( 'kntnt-gpx-blocks', {
 			}
 			const cursorSettings = readCursorSettingsFromContext( ctx );
 			const { showCursor } = cursorSettings;
+			const tooltipShowDistance =
+				typeof ctx?.tooltipShowDistance === 'boolean'
+					? ctx.tooltipShowDistance
+					: true;
+			const tooltipShowHeight =
+				typeof ctx?.tooltipShowHeight === 'boolean'
+					? ctx.tooltipShowHeight
+					: true;
 			const stateRecord = getStateRecord();
 			const slice = stateRecord[ mapId ];
 			const data = statisticsToMarginsInput( slice?.statistics );
@@ -692,6 +917,8 @@ store( 'kntnt-gpx-blocks', {
 			const wrapper = ref as HTMLElement;
 			let entry: ElevationEntry | null = null;
 
+			const tooltipLocale = resolveTooltipLocale();
+
 			const redraw = (): void => {
 				const { w, h } = readSize( svg );
 				if ( w === 0 || h === 0 ) {
@@ -714,12 +941,44 @@ store( 'kntnt-gpx-blocks', {
 				// and the pointer handlers are never bound. The
 				// per-guide toggles further gate each guide's `<line>`
 				// inside `createCursorElements`.
+				//
+				// Step 7 layers the tooltip on top: when the cursor is
+				// enabled AND at least one row toggle is on, a sibling
+				// `<g class="kntnt-gpx-blocks-elevation-tooltip">` is
+				// appended after the cursor group. The tooltip lifecycle
+				// is identical to the cursor's — created once on the
+				// first redraw, repositioned forever — but the tooltip
+				// reads its own row-toggle pair `(tooltipShowDistance,
+				// tooltipShowHeight)` from `data-wp-context`.
 				if ( ! entry ) {
 					const cursorElements = buildCursorElementsForLifecycle(
 						cursorSettings,
 						svg,
 						scale
 					);
+					const tooltipMountable =
+						showCursor &&
+						( tooltipShowDistance || tooltipShowHeight );
+					const tooltipElements = tooltipMountable
+						? createTooltipElements( svg, {
+								showDistance: tooltipShowDistance,
+								showHeight: tooltipShowHeight,
+						  } )
+						: null;
+					const measureDistance =
+						tooltipMountable && tooltipShowDistance
+							? createTextMeasurer(
+									svg,
+									'kntnt-gpx-blocks-elevation-tooltip-distance'
+							  )
+							: null;
+					const measureHeight =
+						tooltipMountable && tooltipShowHeight
+							? createTextMeasurer(
+									svg,
+									'kntnt-gpx-blocks-elevation-tooltip-height'
+							  )
+							: null;
 					entry = {
 						svg,
 						wrapper,
@@ -728,6 +987,13 @@ store( 'kntnt-gpx-blocks', {
 						mapId,
 						scale,
 						cursorElements,
+						tooltipElements,
+						tooltipShowDistance,
+						tooltipShowHeight,
+						tooltipLocale,
+						measureDistance,
+						measureHeight,
+						tooltipSide: null,
 					};
 					mountedElevations.set( ref, entry );
 				} else {
@@ -737,9 +1003,9 @@ store( 'kntnt-gpx-blocks', {
 					entry.scale = scale;
 				}
 
-				// Re-pin the cursor at the current fraction; null hides.
-				// `syncCursor` returns silently when the cursor was gated
-				// off, so the lookup itself is harmless.
+				// Re-pin the cursor and tooltip at the current fraction;
+				// null hides both. `syncCursor` returns silently when the
+				// cursor was gated off, so the lookup itself is harmless.
 				const currentFraction = getStateRecord()[ mapId ]?.fraction;
 				syncCursor( entry, currentFraction );
 			};

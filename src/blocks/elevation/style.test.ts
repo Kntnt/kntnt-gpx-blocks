@@ -148,4 +148,76 @@ describe( 'elevation style.scss', () => {
 			expect( SCSS ).toMatch( re );
 		}
 	} );
+
+	it( 'declares the Step 7 tooltip colour defaults on the wrapper', () => {
+		// Tooltip colour defaults mirror Map's tooltip-bg / name-color /
+		// desc-color so two synced tooltips read as visually consistent
+		// without any inspector configuration.
+		expect( SCSS ).toMatch(
+			/--kntnt-gpx-blocks-elevation-tooltip-background:\s*#000000cc/
+		);
+		expect( SCSS ).toMatch(
+			/--kntnt-gpx-blocks-elevation-tooltip-distance:\s*#ffffff/
+		);
+		expect( SCSS ).toMatch(
+			/--kntnt-gpx-blocks-elevation-tooltip-height:\s*#dddddd/
+		);
+	} );
+
+	it( 'gives the tooltip group pointer-events: none (Step 7)', () => {
+		// The tooltip lives inside the SVG as a sibling of the cursor
+		// group; without `pointer-events: none` it would intercept
+		// hit-rect events and break the cursor scrub.
+		expect( SCSS ).toMatch(
+			/\.kntnt-gpx-blocks-elevation-tooltip[^-{][^{]*\{[\s\S]*?pointer-events:\s*none/
+		);
+	} );
+
+	it( 'maps the tooltip background <rect> fill to the colour custom property', () => {
+		expect( SCSS ).toMatch(
+			/\.kntnt-gpx-blocks-elevation-tooltip-bg[^{]*\{[\s\S]*?fill:\s*var\(\s*--kntnt-gpx-blocks-elevation-tooltip-background\s*\)/
+		);
+	} );
+
+	it( 'exposes the eight Tooltip distance typography custom properties with inherit fallback', () => {
+		// Each of the eight CSS properties resolves through a per-row
+		// custom property on the wrapper, with `inherit` as the fallback
+		// so an unset Typography control falls through to the wrapper's
+		// resolved typography.
+		const props = [
+			'font-family',
+			'font-size',
+			'font-weight',
+			'font-style',
+			'line-height',
+			'letter-spacing',
+			'text-transform',
+			'text-decoration',
+		];
+		for ( const prop of props ) {
+			const re = new RegExp(
+				`\\.kntnt-gpx-blocks-elevation-tooltip-distance[^{]*\\{[\\s\\S]*?${ prop }:\\s*var\\(\\s*--kntnt-gpx-blocks-elevation-tooltip-distance-${ prop }\\s*,\\s*inherit\\s*\\)`
+			);
+			expect( SCSS ).toMatch( re );
+		}
+	} );
+
+	it( 'exposes the eight Tooltip height typography custom properties with inherit fallback', () => {
+		const props = [
+			'font-family',
+			'font-size',
+			'font-weight',
+			'font-style',
+			'line-height',
+			'letter-spacing',
+			'text-transform',
+			'text-decoration',
+		];
+		for ( const prop of props ) {
+			const re = new RegExp(
+				`\\.kntnt-gpx-blocks-elevation-tooltip-height[^{]*\\{[\\s\\S]*?${ prop }:\\s*var\\(\\s*--kntnt-gpx-blocks-elevation-tooltip-height-${ prop }\\s*,\\s*inherit\\s*\\)`
+			);
+			expect( SCSS ).toMatch( re );
+		}
+	} );
 } );

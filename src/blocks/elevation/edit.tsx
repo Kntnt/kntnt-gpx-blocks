@@ -128,7 +128,8 @@ function readTickLabelTypography(
 }
 
 /**
- * Cursor & guides toggle bundle threaded into the healthy `PreviewState`.
+ * Cursor & guides + Tooltip info toggle bundle threaded into the
+ * healthy `PreviewState`.
  *
  * @since 1.0.0
  */
@@ -136,6 +137,8 @@ interface CursorToggleBundle {
 	readonly showCursor: boolean;
 	readonly showVerticalGuide: boolean;
 	readonly showHorizontalGuide: boolean;
+	readonly tooltipShowDistance: boolean;
+	readonly tooltipShowHeight: boolean;
 }
 
 /**
@@ -264,6 +267,8 @@ function resolveBinding(
 			showCursor: cursorToggles.showCursor,
 			showVerticalGuide: cursorToggles.showVerticalGuide,
 			showHorizontalGuide: cursorToggles.showHorizontalGuide,
+			tooltipShowDistance: cursorToggles.tooltipShowDistance,
+			tooltipShowHeight: cursorToggles.tooltipShowHeight,
 		},
 		bindingBroken: false,
 	};
@@ -326,6 +331,24 @@ export function ElevationEdit( {
 		'cursorColor',
 		''
 	);
+	const tooltipBackground = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'tooltipBackgroundColor',
+		''
+	);
+	const tooltipDistance = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'tooltipDistanceColor',
+		''
+	);
+	const tooltipHeight = usefulValue< string >(
+		attributes,
+		setAttributes,
+		'tooltipHeightColor',
+		''
+	);
 	const inlineStyle: Record< string, string > = {};
 	if ( bg.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-background' ] = bg.resolved;
@@ -348,6 +371,18 @@ export function ElevationEdit( {
 	}
 	if ( cursor.resolved !== '' ) {
 		inlineStyle[ '--kntnt-gpx-blocks-elevation-cursor' ] = cursor.resolved;
+	}
+	if ( tooltipBackground.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-tooltip-background' ] =
+			tooltipBackground.resolved;
+	}
+	if ( tooltipDistance.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-tooltip-distance' ] =
+			tooltipDistance.resolved;
+	}
+	if ( tooltipHeight.resolved !== '' ) {
+		inlineStyle[ '--kntnt-gpx-blocks-elevation-tooltip-height' ] =
+			tooltipHeight.resolved;
 	}
 
 	// Tick-labels typography. Mirrors Render_Elevation::build_inline_style
@@ -375,6 +410,54 @@ export function ElevationEdit( {
 			inlineStyle[
 				`--kntnt-gpx-blocks-elevation-tick-label-${ cssSuffix }`
 			] = value;
+		}
+	}
+
+	// Tooltip distance and tooltip height typography (Step 7). Two
+	// parallel 8-row maps with the same shape as the tick-label loop
+	// above; sanitisation is delegated to PHP via Typography_Sanitizer
+	// the same way.
+	const tooltipTypographyMaps: ReadonlyArray<
+		readonly [
+			'distance' | 'height',
+			ReadonlyArray< readonly [ string, string ] >,
+		]
+	> = [
+		[
+			'distance',
+			[
+				[ 'tooltipDistanceFontFamily', 'font-family' ],
+				[ 'tooltipDistanceFontSize', 'font-size' ],
+				[ 'tooltipDistanceFontWeight', 'font-weight' ],
+				[ 'tooltipDistanceFontStyle', 'font-style' ],
+				[ 'tooltipDistanceLineHeight', 'line-height' ],
+				[ 'tooltipDistanceLetterSpacing', 'letter-spacing' ],
+				[ 'tooltipDistanceTextTransform', 'text-transform' ],
+				[ 'tooltipDistanceTextDecoration', 'text-decoration' ],
+			],
+		],
+		[
+			'height',
+			[
+				[ 'tooltipHeightFontFamily', 'font-family' ],
+				[ 'tooltipHeightFontSize', 'font-size' ],
+				[ 'tooltipHeightFontWeight', 'font-weight' ],
+				[ 'tooltipHeightFontStyle', 'font-style' ],
+				[ 'tooltipHeightLineHeight', 'line-height' ],
+				[ 'tooltipHeightLetterSpacing', 'letter-spacing' ],
+				[ 'tooltipHeightTextTransform', 'text-transform' ],
+				[ 'tooltipHeightTextDecoration', 'text-decoration' ],
+			],
+		],
+	];
+	for ( const [ row, entries ] of tooltipTypographyMaps ) {
+		for ( const [ attrKey, cssSuffix ] of entries ) {
+			const value = readString( attributes, attrKey );
+			if ( value !== '' ) {
+				inlineStyle[
+					`--kntnt-gpx-blocks-elevation-tooltip-${ row }-${ cssSuffix }`
+				] = value;
+			}
 		}
 	}
 
@@ -454,7 +537,13 @@ export function ElevationEdit( {
 		isLoading,
 		error,
 		typography,
-		{ showCursor, showVerticalGuide, showHorizontalGuide }
+		{
+			showCursor,
+			showVerticalGuide,
+			showHorizontalGuide,
+			tooltipShowDistance,
+			tooltipShowHeight,
+		}
 	);
 
 	const showPanel = shouldShowDataSourcePanel(
@@ -514,22 +603,26 @@ export function ElevationEdit( {
 						</>
 					) }
 				</PanelBody>
-				<PanelBody title={ __( 'Tooltip info', 'kntnt-gpx-blocks' ) }>
-					<ToggleControl
-						label={ __( 'Distance', 'kntnt-gpx-blocks' ) }
-						checked={ tooltipShowDistance }
-						onChange={ ( value: boolean ) =>
-							setAttributes( { tooltipShowDistance: value } )
-						}
-					/>
-					<ToggleControl
-						label={ __( 'Height', 'kntnt-gpx-blocks' ) }
-						checked={ tooltipShowHeight }
-						onChange={ ( value: boolean ) =>
-							setAttributes( { tooltipShowHeight: value } )
-						}
-					/>
-				</PanelBody>
+				{ showCursor && (
+					<PanelBody
+						title={ __( 'Tooltip info', 'kntnt-gpx-blocks' ) }
+					>
+						<ToggleControl
+							label={ __( 'Distance', 'kntnt-gpx-blocks' ) }
+							checked={ tooltipShowDistance }
+							onChange={ ( value: boolean ) =>
+								setAttributes( { tooltipShowDistance: value } )
+							}
+						/>
+						<ToggleControl
+							label={ __( 'Height', 'kntnt-gpx-blocks' ) }
+							checked={ tooltipShowHeight }
+							onChange={ ( value: boolean ) =>
+								setAttributes( { tooltipShowHeight: value } )
+							}
+						/>
+					</PanelBody>
+				) }
 			</InspectorControls>
 			<InspectorControls group="styles">
 				<InspectorColorPanel
@@ -552,7 +645,7 @@ export function ElevationEdit( {
 						panelId={ `${ clientId }-tick-label` }
 					/>
 				</PanelBody>
-				{ tooltipShowDistance && (
+				{ showCursor && tooltipShowDistance && (
 					<PanelBody
 						title={ __( 'Tooltip distance', 'kntnt-gpx-blocks' ) }
 						initialOpen={ false }
@@ -570,7 +663,7 @@ export function ElevationEdit( {
 						/>
 					</PanelBody>
 				) }
-				{ tooltipShowHeight && (
+				{ showCursor && tooltipShowHeight && (
 					<PanelBody
 						title={ __( 'Tooltip height', 'kntnt-gpx-blocks' ) }
 						initialOpen={ false }

@@ -113,14 +113,29 @@ const FALLBACK_FONT_SIZE_PX = 16;
  * a fresh hidden `<text>` node, measures it, and removes it. The
  * host SVG is never permanently mutated.
  *
+ * When `className` is supplied, the hidden `<text>` node carries that
+ * class so SCSS rules scoped to the class apply during measurement.
+ * Step 7 of `docs/elevation-rebuild.md` uses this to measure the
+ * tooltip's two rows under their class-scoped typography custom
+ * properties (`…-tooltip-distance` / `…-tooltip-height`) rather than
+ * under the SVG host's inherited tick-label typography. Existing
+ * tick-label call sites pass no class and are unchanged in behaviour.
+ *
  * @since 1.0.0
  *
- * @param svg Host SVG element. The measurement node is inserted here
- *            so it inherits the same typography pipeline the visible
- *            tick `<text>` labels render under.
+ * @param svg       Host SVG element. The measurement node is inserted
+ *                  here so it inherits the same typography pipeline the
+ *                  visible `<text>` labels render under.
+ * @param className Optional class name applied to the hidden `<text>`
+ *                  node so class-scoped SCSS rules apply during
+ *                  measurement. Omit to inherit the SVG host's
+ *                  typography (the existing tick-label path).
  * @return Synchronous measurement callback.
  */
-export function createTextMeasurer( svg: SVGSVGElement ): TextMeasurer {
+export function createTextMeasurer(
+	svg: SVGSVGElement,
+	className?: string
+): TextMeasurer {
 	return ( text: string ): TextMeasurement => {
 		// Build a hidden, off-screen <text> node as a direct SVG
 		// child. Negative coordinates keep it visually out of the
@@ -134,6 +149,9 @@ export function createTextMeasurer( svg: SVGSVGElement ): TextMeasurer {
 		node.setAttribute( 'x', '-10000' );
 		node.setAttribute( 'y', '-10000' );
 		node.setAttribute( 'aria-hidden', 'true' );
+		if ( typeof className === 'string' && className !== '' ) {
+			node.setAttribute( 'class', className );
+		}
 		node.textContent = text;
 		svg.appendChild( node );
 

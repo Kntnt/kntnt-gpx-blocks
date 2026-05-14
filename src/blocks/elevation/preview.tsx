@@ -76,6 +76,8 @@ export type PreviewState =
 			readonly showCursor: boolean;
 			readonly showVerticalGuide: boolean;
 			readonly showHorizontalGuide: boolean;
+			readonly tooltipShowDistance: boolean;
+			readonly tooltipShowHeight: boolean;
 	  };
 
 /**
@@ -181,6 +183,8 @@ export function ElevationPreview( {
 					showCursor={ state.showCursor }
 					showVerticalGuide={ state.showVerticalGuide }
 					showHorizontalGuide={ state.showHorizontalGuide }
+					tooltipShowDistance={ state.tooltipShowDistance }
+					tooltipShowHeight={ state.tooltipShowHeight }
 				/>
 			);
 	}

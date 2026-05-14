@@ -111,6 +111,12 @@ export function elevationColorRows(): readonly ColorRow[] {
  * hidden when `showCursor` is off, since the cursor never enters the
  * SVG in that state and the colour has no visible effect.
  *
+ * Step 7 extends the symmetry to the tooltip: when `showCursor` is off
+ * the tooltip never renders either, so the three tooltip rows
+ * (`tooltipBackgroundColor`, `tooltipDistanceColor`,
+ * `tooltipHeightColor`) hide too. The two row-toggle gates above still
+ * apply when `showCursor` is on.
+ *
  * Exported for direct testing against the acceptance-criteria tables
  * in issues #143 and #144; the caller in {@link InspectorColorPanel}
  * consumes the resulting set to filter {@link elevationColorRows}.
@@ -140,6 +146,9 @@ export function hiddenElevationColorAttributes(
 	}
 	if ( ! showCursor ) {
 		hidden.add( 'cursorColor' );
+		hidden.add( 'tooltipBackgroundColor' );
+		hidden.add( 'tooltipDistanceColor' );
+		hidden.add( 'tooltipHeightColor' );
 	}
 	return hidden;
 }

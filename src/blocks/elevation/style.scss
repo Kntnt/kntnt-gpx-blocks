@@ -86,6 +86,18 @@
 	// point on the track without any inspector configuration.
 	--kntnt-gpx-blocks-elevation-cursor: #d63638;
 
+	// Step 7 tooltip colour defaults. The tooltip's <rect> background
+	// and two <text> rows reference these custom properties via their
+	// `fill` attribute. Defaults mirror Map's tooltip-bg / name-color /
+	// desc-color so two synced tooltips would read as visually
+	// consistent. The 16 typography custom properties below default to
+	// `inherit` so an unset Typography control falls through to the
+	// wrapper's resolved typography (which itself flows through the
+	// block-supports cascade and the user's theme).
+	--kntnt-gpx-blocks-elevation-tooltip-background: #000000cc;
+	--kntnt-gpx-blocks-elevation-tooltip-distance: #ffffff;
+	--kntnt-gpx-blocks-elevation-tooltip-height: #dddddd;
+
 	// Step 6 hit-rect affordances. `touch-action: none` keeps the
 	// browser from scrolling the page during a touch-drag inside the
 	// plot rectangle (margin areas outside the rect remain scrollable
@@ -174,5 +186,43 @@
 		letter-spacing: var(--kntnt-gpx-blocks-elevation-tick-label-letter-spacing, inherit);
 		text-transform: var(--kntnt-gpx-blocks-elevation-tick-label-text-transform, inherit);
 		text-decoration: var(--kntnt-gpx-blocks-elevation-tick-label-text-decoration, inherit);
+	}
+
+	// Step 7 tooltip surface. `pointer-events: none` on the <g> keeps
+	// the tooltip from blocking the hit-rect that drives the cursor
+	// scrub; the <rect>'s `fill` maps to the background colour custom
+	// property; the two <text> rows each map their eight typography
+	// properties to their per-row custom properties so the inspector's
+	// per-row Typography panels reach the rendered output through the
+	// same wrapper-CSS-variable → SVG-host-CSS-rule chain Step 4 pl.7
+	// established for tick labels.
+	.kntnt-gpx-blocks-elevation-tooltip {
+		pointer-events: none;
+	}
+
+	.kntnt-gpx-blocks-elevation-tooltip-bg {
+		fill: var(--kntnt-gpx-blocks-elevation-tooltip-background);
+	}
+
+	.kntnt-gpx-blocks-elevation-tooltip-distance {
+		font-family: var(--kntnt-gpx-blocks-elevation-tooltip-distance-font-family, inherit);
+		font-size: var(--kntnt-gpx-blocks-elevation-tooltip-distance-font-size, inherit);
+		font-weight: var(--kntnt-gpx-blocks-elevation-tooltip-distance-font-weight, inherit);
+		font-style: var(--kntnt-gpx-blocks-elevation-tooltip-distance-font-style, inherit);
+		line-height: var(--kntnt-gpx-blocks-elevation-tooltip-distance-line-height, inherit);
+		letter-spacing: var(--kntnt-gpx-blocks-elevation-tooltip-distance-letter-spacing, inherit);
+		text-transform: var(--kntnt-gpx-blocks-elevation-tooltip-distance-text-transform, inherit);
+		text-decoration: var(--kntnt-gpx-blocks-elevation-tooltip-distance-text-decoration, inherit);
+	}
+
+	.kntnt-gpx-blocks-elevation-tooltip-height {
+		font-family: var(--kntnt-gpx-blocks-elevation-tooltip-height-font-family, inherit);
+		font-size: var(--kntnt-gpx-blocks-elevation-tooltip-height-font-size, inherit);
+		font-weight: var(--kntnt-gpx-blocks-elevation-tooltip-height-font-weight, inherit);
+		font-style: var(--kntnt-gpx-blocks-elevation-tooltip-height-font-style, inherit);
+		line-height: var(--kntnt-gpx-blocks-elevation-tooltip-height-line-height, inherit);
+		letter-spacing: var(--kntnt-gpx-blocks-elevation-tooltip-height-letter-spacing, inherit);
+		text-transform: var(--kntnt-gpx-blocks-elevation-tooltip-height-text-transform, inherit);
+		text-decoration: var(--kntnt-gpx-blocks-elevation-tooltip-height-text-decoration, inherit);
 	}
 }

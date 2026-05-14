@@ -215,12 +215,13 @@ final class Render_Elevation {
 	 *   - `role="img"`
 	 *   - localised `aria-label`
 	 *   - `data-wp-interactive='{"namespace":"kntnt-gpx-blocks"}'`
-	 *   - `data-wp-context='{"mapId":"…","showCursor":…,"showVerticalGuide":…,"showHorizontalGuide":…}'`
-	 *     The three booleans carry the issue #144 Cursor & guides
-	 *     toggles into the JS view module without bloating the shared
-	 *     `state[ mapId ]` slice. The per-block context is the right
-	 *     scope: two Elevation blocks bound to the same Map may
-	 *     legitimately disagree about cursor visibility.
+	 *   - `data-wp-context='{"mapId":"…","showCursor":…,"showVerticalGuide":…,"showHorizontalGuide":…,"tooltipShowDistance":…,"tooltipShowHeight":…}'`
+	 *     The five booleans carry the issue #144 Cursor & guides
+	 *     toggles and the Step 7 Tooltip info toggles into the JS view
+	 *     module without bloating the shared `state[ mapId ]` slice. The
+	 *     per-block context is the right scope: two Elevation blocks
+	 *     bound to the same Map may legitimately disagree about cursor
+	 *     visibility or which tooltip rows render.
 	 *   - `data-wp-init="callbacks.initElevation"`
 	 *   - `data-wp-watch--cursor="callbacks.onElevationCursorChange"`
 	 *     (Step 6 — fires on every change to `state[ mapId ].fraction`,
@@ -252,18 +253,26 @@ final class Render_Elevation {
 		// phpcs:ignore Generic.Files.LineLength.TooLong -- Translator strings must be a single literal per WordPress.WP.I18n.
 		$noscript_text = esc_html__( 'This elevation profile requires JavaScript to display. The track is recorded in the GPX file referenced by this block.', 'kntnt-gpx-blocks' );
 
-		// Mirror the three Cursor & guides toggles (issue #144) into the
-		// per-block Interactivity context. Defaults match block.json:
-		// cursor on, vertical guide on, horizontal guide off.
-		$show_cursor = isset( $attributes['showCursor'] ) ? (bool) $attributes['showCursor'] : true;
-		$show_vertical_guide = isset( $attributes['showVerticalGuide'] ) ? (bool) $attributes['showVerticalGuide'] : true;
-		$show_horizontal_guide = isset( $attributes['showHorizontalGuide'] ) ? (bool) $attributes['showHorizontalGuide'] : false;
+		// Mirror the three Cursor & guides toggles (issue #144) plus the
+		// two Tooltip info toggles (Step 7) into the per-block
+		// Interactivity context. Defaults match block.json: cursor on,
+		// vertical guide on, horizontal guide off, tooltip distance on,
+		// tooltip height on. Two Elevation blocks bound to the same Map
+		// may legitimately disagree about which tooltip rows their
+		// tooltips show — the per-block context is the right scope.
+		$show_cursor             = isset( $attributes['showCursor'] ) ? (bool) $attributes['showCursor'] : true;
+		$show_vertical_guide     = isset( $attributes['showVerticalGuide'] ) ? (bool) $attributes['showVerticalGuide'] : true;
+		$show_horizontal_guide   = isset( $attributes['showHorizontalGuide'] ) ? (bool) $attributes['showHorizontalGuide'] : false;
+		$tooltip_show_distance   = isset( $attributes['tooltipShowDistance'] ) ? (bool) $attributes['tooltipShowDistance'] : true;
+		$tooltip_show_height     = isset( $attributes['tooltipShowHeight'] ) ? (bool) $attributes['tooltipShowHeight'] : true;
 
 		$context = wp_json_encode( [
-			'mapId' => $map_id,
-			'showCursor' => $show_cursor,
-			'showVerticalGuide' => $show_vertical_guide,
+			'mapId'               => $map_id,
+			'showCursor'          => $show_cursor,
+			'showVerticalGuide'   => $show_vertical_guide,
 			'showHorizontalGuide' => $show_horizontal_guide,
+			'tooltipShowDistance' => $tooltip_show_distance,
+			'tooltipShowHeight'   => $tooltip_show_height,
 		] );
 
 		return sprintf(
@@ -314,15 +323,16 @@ final class Render_Elevation {
 	 * Builds the wrapper's inline style string from the block's
 	 * sanitised colour and typography attributes.
 	 *
-	 * Five colour custom properties (Steps 3 and 5) drive the chart's
-	 * stroke and fill surfaces; eight tick-label typography custom
-	 * properties (this step) feed into a SCSS rule on the chart SVG
-	 * that turns them into actual `font-*` declarations. Both the
-	 * visible tick `<text>` labels and the measurer's hidden
-	 * measurement `<text>` nodes inherit the resulting typography
-	 * through standard CSS inheritance, which is what guarantees that
-	 * the margin algorithm measures under exactly the typography the
-	 * user will see rendered.
+	 * Step 7 expands the surface to nine colour custom properties (six
+	 * chart surfaces plus the three tooltip rows) and twenty-four
+	 * typography custom properties (eight per row × three rows: tick
+	 * labels, tooltip distance, tooltip height). Each typography
+	 * attribute flows through the matching {@see Typography_Sanitizer}
+	 * method; values that fail the allow-list are dropped and the
+	 * corresponding custom property is omitted, so the SCSS rule falls
+	 * back to `inherit` from the wrapper's resolved typography.
+	 *
+	 * Colours:
 	 *
 	 *   - `--kntnt-gpx-blocks-elevation-background`         ← `backgroundColor`
 	 *   - `--kntnt-gpx-blocks-elevation-axis`               ← `axisColor`
@@ -330,19 +340,17 @@ final class Render_Elevation {
 	 *   - `--kntnt-gpx-blocks-elevation-plot-line`          ← `plotLineColor`
 	 *   - `--kntnt-gpx-blocks-elevation-plot-fill`          ← `plotFillColor`
 	 *   - `--kntnt-gpx-blocks-elevation-cursor`             ← `cursorColor`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-family`     ← `tickLabelFontFamily`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-size`       ← `tickLabelFontSize`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-weight`     ← `tickLabelFontWeight`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-font-style`      ← `tickLabelFontStyle`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-line-height`     ← `tickLabelLineHeight`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-letter-spacing`  ← `tickLabelLetterSpacing`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-text-transform`  ← `tickLabelTextTransform`
-	 *   - `--kntnt-gpx-blocks-elevation-tick-label-text-decoration` ← `tickLabelTextDecoration`
+	 *   - `--kntnt-gpx-blocks-elevation-tooltip-background` ← `tooltipBackgroundColor`
+	 *   - `--kntnt-gpx-blocks-elevation-tooltip-distance`   ← `tooltipDistanceColor`
+	 *   - `--kntnt-gpx-blocks-elevation-tooltip-height`     ← `tooltipHeightColor`
 	 *
-	 * Each typography attribute is run through {@see Typography_Sanitizer};
-	 * values that fail the per-property allow-list are dropped and the
-	 * corresponding custom property is omitted, so the SCSS rule falls
-	 * back to `inherit` from the wrapper's resolved typography.
+	 * Typography: each row has eight properties
+	 * (`font-family`, `font-size`, `font-weight`, `font-style`,
+	 * `line-height`, `letter-spacing`, `text-transform`,
+	 * `text-decoration`), each sourced from a `Pascal` attribute named
+	 * `<row>Font…` / `<row>LineHeight` / `<row>LetterSpacing` /
+	 * `<row>Text…`. The CSS prefix is `tick-label`, `tooltip-distance`,
+	 * or `tooltip-height`.
 	 *
 	 * @since 1.0.0
 	 *
@@ -396,6 +404,31 @@ final class Render_Elevation {
 			$parts[] = '--kntnt-gpx-blocks-elevation-cursor: ' . esc_attr( $cursor );
 		}
 
+		// Tooltip colour custom properties (Step 7). Three rows; the
+		// same sanitiser path as the colours above, with the same
+		// empty-value semantics — an empty result drops the custom
+		// property entirely so the SCSS default kicks in.
+		$tooltip_background = Color_Sanitizer::sanitize(
+			is_string( $attributes['tooltipBackgroundColor'] ?? null ) ? (string) $attributes['tooltipBackgroundColor'] : ''
+		);
+		if ( '' !== $tooltip_background ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-tooltip-background: ' . esc_attr( $tooltip_background );
+		}
+
+		$tooltip_distance_color = Color_Sanitizer::sanitize(
+			is_string( $attributes['tooltipDistanceColor'] ?? null ) ? (string) $attributes['tooltipDistanceColor'] : ''
+		);
+		if ( '' !== $tooltip_distance_color ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-tooltip-distance: ' . esc_attr( $tooltip_distance_color );
+		}
+
+		$tooltip_height_color = Color_Sanitizer::sanitize(
+			is_string( $attributes['tooltipHeightColor'] ?? null ) ? (string) $attributes['tooltipHeightColor'] : ''
+		);
+		if ( '' !== $tooltip_height_color ) {
+			$parts[] = '--kntnt-gpx-blocks-elevation-tooltip-height: ' . esc_attr( $tooltip_height_color );
+		}
+
 		// Tick-label typography. Each row pairs the attribute key with
 		// the corresponding Typography_Sanitizer callable (first-class
 		// callable syntax keeps the dispatch statically verifiable) and
@@ -418,6 +451,40 @@ final class Render_Elevation {
 					$css_suffix,
 					esc_attr( $value )
 				);
+			}
+		}
+
+		// Tooltip distance / Tooltip height typography (Step 7). Two
+		// parallel 8-row maps, written through the same sanitiser
+		// family. Iterated together so the two rows share one code path
+		// and the per-row CSS custom-property prefix (`tooltip-distance`
+		// or `tooltip-height`) is the only differentiator.
+		$tooltip_typography_groups = [
+			[ 'tooltipDistance', 'tooltip-distance' ],
+			[ 'tooltipHeight',   'tooltip-height' ],
+		];
+		$tooltip_typography_props = [
+			[ 'FontFamily',     Typography_Sanitizer::font_family(...),     'font-family' ],
+			[ 'FontSize',       Typography_Sanitizer::font_size(...),       'font-size' ],
+			[ 'FontWeight',     Typography_Sanitizer::font_weight(...),     'font-weight' ],
+			[ 'FontStyle',      Typography_Sanitizer::font_style(...),      'font-style' ],
+			[ 'LineHeight',     Typography_Sanitizer::line_height(...),     'line-height' ],
+			[ 'LetterSpacing',  Typography_Sanitizer::letter_spacing(...),  'letter-spacing' ],
+			[ 'TextTransform',  Typography_Sanitizer::text_transform(...),  'text-transform' ],
+			[ 'TextDecoration', Typography_Sanitizer::text_decoration(...), 'text-decoration' ],
+		];
+		foreach ( $tooltip_typography_groups as [ $attr_prefix, $css_prefix ] ) {
+			foreach ( $tooltip_typography_props as [ $attr_suffix, $sanitize, $css_suffix ] ) {
+				$attr_key = $attr_prefix . $attr_suffix;
+				$value = $sanitize( $attributes[ $attr_key ] ?? '' );
+				if ( '' !== $value ) {
+					$parts[] = sprintf(
+						'--kntnt-gpx-blocks-elevation-%s-%s: %s',
+						$css_prefix,
+						$css_suffix,
+						esc_attr( $value )
+					);
+				}
 			}
 		}
 

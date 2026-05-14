@@ -356,3 +356,47 @@ describe( 'ElevationEdit typography PanelBody visibility (issue #143)', () => {
 		expect( wipes ).toEqual( [] );
 	} );
 } );
+
+describe( 'ElevationEdit Step 7 hide-on-master-off', () => {
+	it( 'hides the Tooltip info PanelBody when showCursor is off', () => {
+		renderAndCapture( { showCursor: false } );
+
+		expect( capturedPanelBodyTitles ).not.toContain( 'Tooltip info' );
+		// The Distance / Height toggles disappear with the PanelBody.
+		expect( capturedToggleLabels ).not.toContain( 'Distance' );
+		expect( capturedToggleLabels ).not.toContain( 'Height' );
+	} );
+
+	it( 'hides BOTH typography PanelBodies when showCursor is off', () => {
+		renderAndCapture( {
+			showCursor: false,
+			tooltipShowDistance: true,
+			tooltipShowHeight: true,
+		} );
+
+		expect( capturedPanelBodyTitles ).not.toContain( 'Tooltip distance' );
+		expect( capturedPanelBodyTitles ).not.toContain( 'Tooltip height' );
+	} );
+
+	it( 'restores the Tooltip info PanelBody when showCursor is re-enabled', () => {
+		// First hide everything.
+		renderAndCapture( {
+			showCursor: false,
+			tooltipShowDistance: true,
+			tooltipShowHeight: true,
+		} );
+		expect( capturedPanelBodyTitles ).not.toContain( 'Tooltip info' );
+
+		// Then re-enable the master — the Tooltip info PanelBody and
+		// both Typography panels reappear with their saved row-toggle
+		// values intact.
+		renderAndCapture( {
+			showCursor: true,
+			tooltipShowDistance: true,
+			tooltipShowHeight: true,
+		} );
+		expect( capturedPanelBodyTitles ).toContain( 'Tooltip info' );
+		expect( capturedPanelBodyTitles ).toContain( 'Tooltip distance' );
+		expect( capturedPanelBodyTitles ).toContain( 'Tooltip height' );
+	} );
+} );

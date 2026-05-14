@@ -33,7 +33,7 @@
  * @since 1.0.0
  */
 import type { ChartScale } from './geometry/scale';
-import type { ProjectedCursor } from './geometry/cursor';
+import type { ProjectedCursor } from './geometry/sample-interpolation';
 
 /**
  * SVG namespace constant.

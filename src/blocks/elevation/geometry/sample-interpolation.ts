@@ -1,5 +1,6 @@
 /**
- * Pure cursor math for the elevation chart.
+ * Pure sample-interpolation and projection helpers for the elevation
+ * chart's cursor and tooltip.
  *
  * Two helpers, both DOM-free:
  *
@@ -10,12 +11,13 @@
  *     `samples.length < 2` case so callers can short-circuit cleanly.
  *   - {@link projectCursor} — composes the supplied {@link ChartScale}'s
  *     projection callbacks into the `(cx, cy)` SVG-space coordinate the
- *     cursor's circle and L-shape guide lines anchor on.
+ *     cursor's circle and the tooltip's anchor read from.
  *
- * Both helpers are consumed by `view.ts`'s frontend Interactivity host
- * and `chart.tsx`'s React editor preview, so the cursor anchors at
- * exactly the same point as the rendered elevation curve in both
- * surfaces.
+ * Step 6 placed these helpers in `geometry/cursor.ts` because the cursor
+ * was their only consumer. Step 7 of `docs/elevation-rebuild.md` adds the
+ * tooltip as a second consumer, so the helpers move into their own
+ * SRP-clean module under `geometry/`. Behaviour is identical; only the
+ * module location changes.
  *
  * @since 1.0.0
  */
@@ -53,7 +55,7 @@ export interface ProjectedCursor {
  *
  * Returns `null` when fewer than two samples are available — the chart
  * still draws axes and ticks but emits no curve and therefore has no
- * meaningful place to anchor a cursor.
+ * meaningful place to anchor a cursor or tooltip.
  *
  * @since 1.0.0
  *
