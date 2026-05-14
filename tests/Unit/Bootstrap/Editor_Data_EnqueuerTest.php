@@ -38,14 +38,21 @@ beforeEach( function (): void {
 		static fn ( mixed $v ): string|false => json_encode( $v )
 	);
 
-	// Option store for the per-base-provider tile API keys (issue #149).
-	// Defaults to empty; tests that exercise the option-layer flow set
-	// $GLOBALS['kntnt_ede_test_tile_keys'] before invoking enqueue().
-	$GLOBALS['kntnt_ede_test_tile_keys'] = [];
+	// Option stores for the per-base-provider tile API keys (issue
+	// #149) and the parallel per-overlay-provider keys (issue #150).
+	// Both default to empty; tests that exercise either option-layer
+	// flow set the corresponding `$GLOBALS` entry before invoking
+	// enqueue().
+	$GLOBALS['kntnt_ede_test_tile_keys']         = [];
+	$GLOBALS['kntnt_ede_test_tile_overlay_keys'] = [];
 	Functions\when( 'get_option' )->alias(
 		static function ( string $name, mixed $default = false ): mixed {
 			if ( $name === 'kntnt_gpx_blocks_tile_provider_keys' ) {
 				$store = $GLOBALS['kntnt_ede_test_tile_keys'] ?? [];
+				return is_array( $store ) ? $store : [];
+			}
+			if ( $name === 'kntnt_gpx_blocks_tile_overlay_keys' ) {
+				$store = $GLOBALS['kntnt_ede_test_tile_overlay_keys'] ?? [];
 				return is_array( $store ) ? $store : [];
 			}
 			return $default;

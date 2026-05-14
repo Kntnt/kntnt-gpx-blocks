@@ -244,7 +244,6 @@ function buildAttributes(
 		tileProvider: 'openstreetmap',
 		tileStyle: 'mapnik',
 		tileOverlays: [ { provider: 'opensea', layer: 'seamarks' } ],
-		tileOverlayApiKeys: {},
 		...overrides,
 	};
 }
@@ -303,10 +302,10 @@ describe( 'MapEdit provider/overlays memoization (issue #130)', () => {
 
 		// First render: baseline attributes. The preview captures the
 		// initial `provider` reference. The base payload is reused across
-		// both renders so nested maps (tileOverlays, tileOverlayApiKeys)
-		// keep their references — mirroring how Gutenberg's Redux store
-		// shallow-merges incoming setAttributes payloads and leaves every
-		// unchanged sub-object intact.
+		// both renders so nested maps (tileOverlays) keep their references
+		// — mirroring how Gutenberg's Redux store shallow-merges incoming
+		// setAttributes payloads and leaves every unchanged sub-object
+		// intact.
 		const base = buildAttributes();
 		flushSync( () => {
 			root.render(

@@ -178,10 +178,6 @@
 			"items": {
 				"type": "object"
 			}
-		},
-		"tileOverlayApiKeys": {
-			"type": "object",
-			"default": {}
 		}
 	}
 }

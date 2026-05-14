@@ -321,7 +321,6 @@ function buildAttributes(
 		tileProvider: 'openstreetmap',
 		tileStyle: 'mapnik',
 		tileOverlays: [],
-		tileOverlayApiKeys: {},
 		...overrides,
 	};
 }

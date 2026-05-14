@@ -14,9 +14,9 @@
  * deliberately excluded from the payload as raw values: base-provider
  * keys are read from the site-wide `kntnt_gpx_blocks_tile_provider_keys`
  * option (issue #149) and substituted into `{KEY}` server-side before
- * the URL reaches the editor; overlay-provider keys are still per-block
- * (`attributes.tileOverlayApiKeys`) and substituted client-side (the
- * overlay option-layer flow ships in #150); PHP-supplied keys (engaged
+ * the URL reaches the editor; overlay-provider keys are read from the
+ * parallel `kntnt_gpx_blocks_tile_overlay_keys` option (issue #150) and
+ * substituted into `{KEY}` server-side too; PHP-supplied keys (engaged
  * via the optional `apiKey` field on a `kntnt_gpx_blocks_tile_providers`
  * or `kntnt_gpx_blocks_tile_overlays` callback) are substituted
  * server-side before the URL reaches the editor — the editor receives a
@@ -129,6 +129,7 @@ final class Editor_Data_Enqueuer {
 				false,
 				'tile-overlay provider',
 				'drop its layers (base map and other overlays still render)',
+				Settings_Page::get_stored_overlay_keys(),
 			),
 			'settingsUrl'       => self::resolve_settings_url(),
 			'canManageSettings' => function_exists( 'current_user_can' ) && current_user_can( 'manage_options' ),
@@ -227,10 +228,10 @@ final class Editor_Data_Enqueuer {
 	 *
 	 * @param array<string, string>                $option_keys         Per-provider option-layer keys keyed by provider id.
 	 *                                                                  An entry pre-substitutes `{KEY}` server-side from the
-	 *                                                                  site-wide option (issue #149) for providers where the
-	 *                                                                  PHP path is *not* engaged. Pass the empty array for
-	 *                                                                  collections without an option-layer source (overlays
-	 *                                                                  still use the per-block attribute path in this slice).
+	 *                                                                  site-wide option (issue #149 for base providers, #150
+	 *                                                                  for overlay providers) for providers where the PHP
+	 *                                                                  path is *not* engaged. Pass the empty array to render
+	 *                                                                  no option-layer substitution at all.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */

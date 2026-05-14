@@ -199,16 +199,23 @@ beforeEach( function (): void {
 	Functions\when( 'current_user_can' )->justReturn( false );
 	Functions\when( 'is_admin' )->justReturn( false );
 
-	// Default get_option returns the test-supplied tile-provider key
-	// option or an empty array when the test did not configure one. The
-	// $GLOBALS['kntnt_map_test_tile_keys'] entry mirrors what
-	// `Settings_Page::sanitize_keys()` would persist; tests that want
-	// to exercise the option-layer path set this to a populated map.
-	$GLOBALS['kntnt_map_test_tile_keys'] = [];
+	// Default get_option returns the test-supplied tile-provider /
+	// tile-overlay key option, or an empty array when the test did not
+	// configure one. The $GLOBALS entries mirror what
+	// `Settings_Page::sanitize_keys()` /
+	// `Settings_Page::sanitize_overlay_keys()` would persist; tests
+	// that want to exercise either option-layer path set the
+	// corresponding entry to a populated map.
+	$GLOBALS['kntnt_map_test_tile_keys']         = [];
+	$GLOBALS['kntnt_map_test_tile_overlay_keys'] = [];
 	Functions\when( 'get_option' )->alias(
 		static function ( string $name, mixed $default = false ): mixed {
 			if ( $name === 'kntnt_gpx_blocks_tile_provider_keys' ) {
 				$store = $GLOBALS['kntnt_map_test_tile_keys'] ?? [];
+				return is_array( $store ) ? $store : [];
+			}
+			if ( $name === 'kntnt_gpx_blocks_tile_overlay_keys' ) {
+				$store = $GLOBALS['kntnt_map_test_tile_overlay_keys'] ?? [];
 				return is_array( $store ) ? $store : [];
 			}
 			return $default;
@@ -2248,7 +2255,9 @@ test( 'unknown overlay pairs in attributes are silently dropped from state', fun
 
 } );
 
-test( 'wp_interactivity_state substitutes the per-overlay-provider tileOverlayApiKeys entry into {KEY}', function (): void {
+test( 'wp_interactivity_state substitutes the per-overlay-provider option-layer key into {KEY} (issue #150)', function (): void {
+
+	$GLOBALS['kntnt_map_test_tile_overlay_keys'] = [ 'openweathermap' => 'OWM-XYZ' ];
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 220, $coords );
@@ -2266,15 +2275,14 @@ test( 'wp_interactivity_state substitutes the per-overlay-provider tileOverlayAp
 
 	Render_Map::render(
 		[
-			'attachmentId'       => 220,
-			'mapId'              => 'map-overlay-key-sub',
-			'tileOverlays'       => [
+			'attachmentId' => 220,
+			'mapId'        => 'map-overlay-key-sub',
+			'tileOverlays' => [
 				[
 					'provider' => 'openweathermap',
 					'layer'    => 'clouds',
 				],
 			],
-			'tileOverlayApiKeys' => [ 'openweathermap' => 'OWM-XYZ' ],
 		],
 		'',
 		map_fake_block(),
@@ -2288,7 +2296,7 @@ test( 'wp_interactivity_state substitutes the per-overlay-provider tileOverlayAp
 
 } );
 
-test( 'wp_interactivity_state drops the overlay pair when the key-required provider has no key', function (): void {
+test( 'wp_interactivity_state drops the overlay pair when the key-required provider has no option-layer key', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 221, $coords );
@@ -2306,9 +2314,9 @@ test( 'wp_interactivity_state drops the overlay pair when the key-required provi
 
 	Render_Map::render(
 		[
-			'attachmentId'       => 221,
-			'mapId'              => 'map-overlay-no-key',
-			'tileOverlays'       => [
+			'attachmentId' => 221,
+			'mapId'        => 'map-overlay-no-key',
+			'tileOverlays' => [
 				[
 					'provider' => 'openweathermap',
 					'layer'    => 'clouds',
@@ -2318,7 +2326,6 @@ test( 'wp_interactivity_state drops the overlay pair when the key-required provi
 					'layer'    => 'hiking',
 				],
 			],
-			'tileOverlayApiKeys' => [],
 		],
 		'',
 		map_fake_block(),

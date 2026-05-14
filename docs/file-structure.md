@@ -25,7 +25,7 @@ PHP classes under the `\Kntnt\Gpx_Blocks` namespace, mapped one-to-one to filena
 
 | Folder | Sub-namespace | Concern |
 |---|---|---|
-| `Admin/` | `\Kntnt\Gpx_Blocks\Admin` | `Settings_Page`. Registers the *Settings → Kntnt GPX Blocks* admin page and the `kntnt_gpx_blocks_tile_provider_keys` option (issue #149). |
+| `Admin/` | `\Kntnt\Gpx_Blocks\Admin` | `Settings_Page`. Registers the *Settings → Kntnt GPX Blocks* admin page and the `kntnt_gpx_blocks_tile_provider_keys` (issue #149) and `kntnt_gpx_blocks_tile_overlay_keys` (issue #150) options. |
 | `Bootstrap/` | `\Kntnt\Gpx_Blocks\Bootstrap` | `Block_Registrar`, `Conversion_Hooks`, `Editor_Data_Enqueuer`, `Mime_Registrar`, `Theme_Json_Aspect_Ratios`, `Theme_Json_Border_Optin`, `Upload_Guard`, `Variation_Registrar`. Wires WordPress hooks at startup. |
 | `Cache/` | `\Kntnt\Gpx_Blocks\Cache` | `Attachment_Cache`, `Cache_Version`. Reads and writes the post-meta cache; carries the `CURRENT` typed-int constant for cache invalidation. |
 | `Cli/` | `\Kntnt\Gpx_Blocks\Cli` | `Regenerate_Command`. The `wp kntnt-gpx regenerate` WP-CLI command. |

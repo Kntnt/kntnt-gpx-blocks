@@ -43,16 +43,21 @@ beforeEach( function (): void {
 		}
 	);
 
-	// Default get_option returns the per-test option-layer map for
-	// `kntnt_gpx_blocks_tile_provider_keys`, or the supplied default for
-	// every other option name. Tests that exercise the option-layer
-	// flow set $GLOBALS['kntnt_tlr_test_tile_keys'] before constructing
-	// the registry.
-	$GLOBALS['kntnt_tlr_test_tile_keys'] = [];
+	// Default get_option returns the per-test option-layer map for the
+	// base-provider and overlay-provider key options, or the supplied
+	// default for every other option name. Tests that exercise either
+	// option-layer flow set the corresponding `$GLOBALS` entry before
+	// constructing the registry.
+	$GLOBALS['kntnt_tlr_test_tile_keys']         = [];
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [];
 	Functions\when( 'get_option' )->alias(
 		static function ( string $name, mixed $default = false ): mixed {
 			if ( $name === 'kntnt_gpx_blocks_tile_provider_keys' ) {
 				$store = $GLOBALS['kntnt_tlr_test_tile_keys'] ?? [];
+				return is_array( $store ) ? $store : [];
+			}
+			if ( $name === 'kntnt_gpx_blocks_tile_overlay_keys' ) {
+				$store = $GLOBALS['kntnt_tlr_test_tile_overlay_keys'] ?? [];
 				return is_array( $store ) ? $store : [];
 			}
 			return $default;
@@ -906,8 +911,7 @@ test( 'resolve_overlays returns the requested (provider, layer) record for known
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ],
-		[]
+		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -925,8 +929,7 @@ test( 'resolve_overlays preserves editor-configured pair order', function (): vo
 			[ 'provider' => 'waymarked-trails', 'layer' => 'cycling' ],
 			[ 'provider' => 'opensnowmap', 'layer' => 'pistes' ],
 			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
-		],
-		[]
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 3 );
@@ -943,8 +946,7 @@ test( 'resolve_overlays drops a pair when the provider is unknown', function ():
 		[
 			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
 			[ 'provider' => 'does-not-exist', 'layer' => 'whatever' ],
-		],
-		[]
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -959,8 +961,7 @@ test( 'resolve_overlays drops a pair when the layer is unknown within a known pr
 		[
 			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
 			[ 'provider' => 'waymarked-trails', 'layer' => 'no-such-layer' ],
-		],
-		[]
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -968,12 +969,13 @@ test( 'resolve_overlays drops a pair when the layer is unknown within a known pr
 
 } );
 
-test( 'resolve_overlays substitutes the API key into {KEY} for key-required overlay providers', function (): void {
+test( 'resolve_overlays substitutes the option-layer key into {KEY} for key-required overlay providers', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'openweathermap' => 'OWM-TOKEN' ];
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
-		[ 'openweathermap' => 'OWM-TOKEN' ]
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -989,8 +991,7 @@ test( 'resolve_overlays drops the pair when a key-required overlay provider has 
 		[
 			[ 'provider' => 'openweathermap', 'layer' => 'clouds' ],
 			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
-		],
-		[]
+		]
 	);
 
 	// The openweathermap pair is silently dropped; waymarked-trails survives so
@@ -1000,24 +1001,26 @@ test( 'resolve_overlays drops the pair when a key-required overlay provider has 
 
 } );
 
-test( 'resolve_overlays drops the pair when the key is whitespace-only', function (): void {
+test( 'resolve_overlays drops the pair when the option-layer key is whitespace-only', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'openweathermap' => "  \t\n  " ];
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
-		[ 'openweathermap' => "  \t\n  " ]
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
 	);
 
 	expect( $resolved )->toBe( [] );
 
 } );
 
-test( 'resolve_overlays trims surrounding whitespace before substituting the API key', function (): void {
+test( 'resolve_overlays trims surrounding whitespace before substituting the option-layer key', function (): void {
+
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'openweathermap' => '  OWM-TOKEN  ' ];
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
-		[ 'openweathermap' => '  OWM-TOKEN  ' ]
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
 	);
 
 	// The trim must apply to the substitution itself, not just the
@@ -1034,10 +1037,11 @@ test( 'resolve_overlays trims surrounding whitespace before substituting the API
 
 test( 'resolve_overlays does not substitute the key for a key-less overlay provider', function (): void {
 
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'waymarked-trails' => 'spurious-key' ];
+
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'waymarked-trails', 'layer' => 'mtb' ] ],
-		[ 'waymarked-trails' => 'spurious-key' ]
+		[ [ 'provider' => 'waymarked-trails', 'layer' => 'mtb' ] ]
 	);
 
 	expect( $resolved[0]['url'] )->not->toContain( 'spurious-key' );
@@ -1048,8 +1052,7 @@ test( 'resolve_overlays returns slim records (no id, no label, no requiresKey)',
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'opensnowmap', 'layer' => 'pistes' ] ],
-		[]
+		[ [ 'provider' => 'opensnowmap', 'layer' => 'pistes' ] ]
 	);
 
 	expect( $resolved[0] )->toHaveKey( 'url' );
@@ -1077,8 +1080,7 @@ test( 'resolve_overlays drops malformed pair entries (non-array, missing keys, n
 			[ 'provider' => 'waymarked-trails', 'layer' => '' ],
 			null,
 			0,
-		],
-		[]
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -1115,8 +1117,7 @@ test( 'resolve_overlays inherits provider-level subdomains into the resolved rec
 	);
 
 	$resolved = ( new Tile_Layer_Registry() )->resolve_overlays(
-		[ [ 'provider' => 'with-subs', 'layer' => 'main' ] ],
-		[]
+		[ [ 'provider' => 'with-subs', 'layer' => 'main' ] ]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -1129,8 +1130,7 @@ test( 'resolve_overlays omits subdomains when the overlay provider has none', fu
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ],
-		[]
+		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ]
 	);
 
 	expect( $resolved[0] )->not->toHaveKey( 'subdomains' );
@@ -2075,7 +2075,7 @@ test( 'overlay validator drops non-string apiKey silently (treated as absent)', 
 
 } );
 
-test( 'resolve_overlays uses the PHP-supplied apiKey and ignores the attribute-path map when engaged', function (): void {
+test( 'resolve_overlays uses the PHP-supplied apiKey and ignores the option-layer when engaged (issue #150)', function (): void {
 
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_overlays',
@@ -2094,32 +2094,34 @@ test( 'resolve_overlays uses the PHP-supplied apiKey and ignores the attribute-p
 		]
 	);
 
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'OPTION-OVERLAY-KEY-IGNORED' ];
+
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-		[ 'paid-overlay' => 'ATTRIBUTE-OVERLAY-KEY-IGNORED' ]
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
 	expect( $resolved[0]['url'] )->toContain( 'key=PHP-OVERLAY-WINS' );
-	expect( $resolved[0]['url'] )->not->toContain( 'ATTRIBUTE-OVERLAY-KEY-IGNORED' );
+	expect( $resolved[0]['url'] )->not->toContain( 'OPTION-OVERLAY-KEY-IGNORED' );
 	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
 
 } );
 
-test( 'resolve_overlays falls through to the attribute-path map when the PHP path is not engaged', function (): void {
+test( 'resolve_overlays falls through to the option-layer map when the PHP path is not engaged (issue #150)', function (): void {
 
 	// Default registry — no PHP path engagement on the shipped
-	// OpenWeatherMap overlay provider. The attribute-path key
+	// OpenWeatherMap overlay provider. The option-layer key
 	// substitutes into `{KEY}` as before.
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'openweathermap' => 'OPTION-OWM' ];
+
 	$registry = ( new Tile_Layer_Registry() );
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ],
-		[ 'openweathermap' => 'ATTRIBUTE-OWM' ]
+		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
-	expect( $resolved[0]['url'] )->toContain( 'appid=ATTRIBUTE-OWM' );
+	expect( $resolved[0]['url'] )->toContain( 'appid=OPTION-OWM' );
 	expect( $resolved[0]['url'] )->not->toContain( '{KEY}' );
 
 } );
@@ -2151,13 +2153,14 @@ test( 'resolve_overlays drops the layer when the PHP-supplied apiKey is empty (f
 		]
 	);
 
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'IGNORED-OPTION-KEY' ];
+
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
 		[
 			[ 'provider' => 'paid-overlay', 'layer' => 'main' ],
 			[ 'provider' => 'free-overlay-survives', 'layer' => 'free' ],
-		],
-		[ 'paid-overlay' => 'IGNORED-ATTRIBUTE-KEY' ]
+		]
 	);
 
 	// The paid-overlay layer is dropped (empty PHP key, asymmetric
@@ -2190,8 +2193,7 @@ test( 'resolve_overlays logs a warning naming the (provider, layer) ids on empty
 	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
 		$registry->resolve_overlays(
-			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-			[]
+			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 		);
 	} );
 
@@ -2208,8 +2210,8 @@ test( 'no PHP-supplied overlay apiKey value ever appears in the warning log (no-
 	$sentinel = 'S3CR3T-OVERLAY-DO-NOT-LEAK';
 	// Whitespace-padded value the validator trims to a non-empty
 	// string; the resolver's success branch substitutes it silently
-	// without logging. Combine with an attribute-path sentinel to also
-	// assert that the attribute-path value never leaks into the log.
+	// without logging. Combine with an option-layer sentinel to also
+	// assert that the option-layer value never leaks into the log.
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_overlays',
 		[
@@ -2227,22 +2229,23 @@ test( 'no PHP-supplied overlay apiKey value ever appears in the warning log (no-
 		]
 	);
 
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'OPTION-SENTINEL' ];
+
 	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
 		$registry->resolve_overlays(
-			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-			[ 'paid-overlay' => 'ATTRIBUTE-SENTINEL' ]
+			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 		);
 	} );
 
 	expect( $logged )->not->toContain( $sentinel );
-	expect( $logged )->not->toContain( 'ATTRIBUTE-SENTINEL' );
+	expect( $logged )->not->toContain( 'OPTION-SENTINEL' );
 
 } );
 
 test( 'overlay fail-closed warning log never contains the attempted PHP-supplied key (whitespace-only input)', function (): void {
 
-	$attribute_sentinel = 'OVERLAY-ATTR-SENTINEL-DO-NOT-LEAK';
+	$option_sentinel = 'OVERLAY-OPT-SENTINEL-DO-NOT-LEAK';
 	// Whitespace-only input — the validator trims to '' and the
 	// resolver fires the fail-closed log branch. The log line carries
 	// the provider and layer ids only; the raw input never leaks.
@@ -2263,22 +2266,23 @@ test( 'overlay fail-closed warning log never contains the attempted PHP-supplied
 		]
 	);
 
-	$logged = tlr_capture_warning_log( static function () use ( $attribute_sentinel ): void {
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => $option_sentinel ];
+
+	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
 		$registry->resolve_overlays(
-			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-			[ 'paid-overlay' => $attribute_sentinel ]
+			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 		);
 	} );
 
-	expect( $logged )->not->toContain( $attribute_sentinel );
+	expect( $logged )->not->toContain( $option_sentinel );
 	expect( $logged )->not->toContain( "\t" );
 	expect( $logged )->toContain( 'paid-overlay' );
 	expect( $logged )->toContain( 'main' );
 
 } );
 
-test( 'overlay attribute-bypass: PHP path engagement makes the attribute-path map irrelevant', function (): void {
+test( 'overlay option-bypass: PHP path engagement makes the option-layer map irrelevant (issue #150)', function (): void {
 
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_overlays',
@@ -2299,18 +2303,18 @@ test( 'overlay attribute-bypass: PHP path engagement makes the attribute-path ma
 
 	$registry = new Tile_Layer_Registry();
 
-	// Three different attribute-path values, identical resolved URL.
+	// Three different option-layer values, identical resolved URL.
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [];
 	$a = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-		[]
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 	);
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'something-else' ];
 	$b = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-		[ 'paid-overlay' => 'something-else' ]
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 	);
+	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'yet-another' ];
 	$c = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ],
-		[ 'paid-overlay' => 'yet-another' ]
+		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
 	);
 
 	expect( $a[0]['url'] )->toBe( $b[0]['url'] );

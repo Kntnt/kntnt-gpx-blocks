@@ -1,20 +1,19 @@
 /**
  * Inspector-shape test for the GPX Map Edit component's Overlays panels
- * (issues #106 + #112 — overlay provider/layer hierarchy with per-provider
- * API keys, one collapsible PanelBody per provider, key positioned below
- * the layer list).
+ * (issues #106 + #112 — overlay provider/layer hierarchy, one collapsible
+ * PanelBody per provider, key-required Notice positioned below the layer
+ * list — and issue #150 which moved the per-block API-key TextControl
+ * out of this surface and into the site-wide settings page).
  *
- * The Overlays surface now renders one collapsible `<PanelBody>` per
- * overlay provider — titled with the provider label — and inside each
- * panel the layer toggles render first, then the conditional API-key
- * TextControl + signup ExternalLink for `requiresKey === true`
- * providers. The list-then-key order reflects the relative interaction
- * frequency: the editor toggles layers often and configures the key
- * once. Toggling adds or removes a `{provider, layer}` pair from
- * `attributes.tileOverlays`, preserving stacking order. The single API
- * key per provider is shared across every layer of that provider the
- * editor enables and lives in
- * `attributes.tileOverlayApiKeys[ providerId ]`.
+ * The Overlays surface renders one collapsible `<PanelBody>` per overlay
+ * provider — titled with the provider label — and inside each panel the
+ * layer toggles render first, then a conditional `Notice` pointing the
+ * user at the site-wide settings page for `requiresKey === true`
+ * providers that are not PHP-engaged. Toggling adds or removes a
+ * `{provider, layer}` pair from `attributes.tileOverlays`, preserving
+ * stacking order. Per-overlay-provider API keys live in the
+ * `kntnt_gpx_blocks_tile_overlay_keys` option, administered through
+ * *Settings → Kntnt GPX Blocks* (issue #150).
  *
  * This file mounts `MapEdit` with the Overlays-panel controls captured
  * via mocks, then asserts the matrix of behaviours documented in the
@@ -39,15 +38,16 @@ type CapturedToggle = {
 };
 
 /**
- * Captured `TextControl` props payload. Each entry corresponds to one
- * rendered API-key field in the Overlays panel.
+ * Captured `Notice` props payload. Each entry corresponds to one
+ * rendered Notice in the inspector. The `className` is captured so
+ * cross-panel tests can filter to the overlay-only key-required
+ * notices.
  *
  * @since 1.0.0
  */
-type CapturedTextControl = {
-	label: string;
-	value: string;
-	onChange: ( next: string ) => void;
+type CapturedNotice = {
+	className: string | undefined;
+	children: React.ReactNode;
 };
 
 /**
@@ -67,7 +67,7 @@ type CapturedPanel = {
 };
 
 const capturedToggles: CapturedToggle[] = [];
-const capturedTextControls: CapturedTextControl[] = [];
+const capturedNotices: CapturedNotice[] = [];
 const capturedPanels: CapturedPanel[] = [];
 
 // Mock @wordpress/block-editor — collapses every surface MapEdit reaches.
@@ -103,7 +103,7 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Mock @wordpress/components — capture ToggleControl + TextControl props.
+// Mock @wordpress/components — capture ToggleControl + Notice + PanelBody props.
 jest.mock(
 	'@wordpress/components',
 	() => ( {
@@ -139,16 +139,17 @@ jest.mock(
 		ToolbarButton: () => null,
 		FontSizePicker: () => null,
 		SelectControl: () => null,
-		TextControl: ( props: CapturedTextControl ) => {
-			capturedTextControls.push( {
-				label: props.label,
-				value: props.value,
-				onChange: props.onChange,
+		ExternalLink: () => null,
+		Notice: ( props: {
+			className?: string;
+			children?: React.ReactNode;
+		} ) => {
+			capturedNotices.push( {
+				className: props.className,
+				children: props.children,
 			} );
 			return null;
 		},
-		ExternalLink: () => null,
-		Notice: () => null,
 		__experimentalToolsPanel: () => null,
 		__experimentalToolsPanelItem: () => null,
 	} ),
@@ -193,10 +194,9 @@ jest.mock(
 	{ virtual: true }
 );
 
-// Capture every props payload `MapEditorPreview` receives so the PHP-supplied
-// overlay-apiKey tests can assert against the resolved `overlays` array
-// (in particular: the empty-PHP-key branch must drop the layer entirely,
-// so the resolved array must not contain a record for that layer).
+// Capture every props payload `MapEditorPreview` receives so the PHP-
+// supplied / option-layer pre-substitution tests can assert against the
+// resolved `overlays` array.
 const capturedPreviewProps: Array< Record< string, unknown > > = [];
 
 jest.mock(
@@ -218,12 +218,20 @@ jest.mock(
 );
 
 // Editor data globals — two free overlay providers (one multi-layer, one
-// single-layer) and one paid overlay provider with multiple layers, so the
-// test fixture covers the conditional API-key field, key sharing across
-// layers, and a free provider's lack of API-key UI.
+// single-layer) and one paid overlay provider with multiple layers, so
+// the test fixture covers the conditional key-required Notice, the
+// notice's absence on free providers, and the per-provider PanelBody
+// structure. The site-wide settings URL is included so the link branch
+// of the Notice is exercised; the `canManageSettings` flag controls
+// whether it renders as an anchor.
 (
 	globalThis as {
-		kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+		kntntGpxBlocks?: {
+			providers: unknown;
+			overlays: unknown;
+			settingsUrl?: string;
+			canManageSettings?: boolean;
+		};
 	}
  ).kntntGpxBlocks = {
 	providers: {
@@ -305,6 +313,9 @@ jest.mock(
 			},
 		},
 	},
+	settingsUrl:
+		'https://example.test/wp-admin/options-general.php?page=kntnt-gpx-blocks',
+	canManageSettings: true,
 };
 
 // Import AFTER mocks are registered.
@@ -358,14 +369,12 @@ function buildAttributes(
 		tileProvider: 'openstreetmap',
 		tileStyle: 'mapnik',
 		tileOverlays: [],
-		tileOverlayApiKeys: {},
 		...overrides,
 	};
 }
 
 /**
- * Mounts MapEdit and returns captured toggles, text controls, panels,
- * and writes.
+ * Mounts MapEdit and returns captured toggles, notices, panels, and writes.
  *
  * @param attributes Attribute payload to feed into MapEdit.
  *
@@ -373,13 +382,13 @@ function buildAttributes(
  */
 function mountAndCapture( attributes: Record< string, unknown > ): {
 	toggles: CapturedToggle[];
-	texts: CapturedTextControl[];
+	notices: CapturedNotice[];
 	panels: CapturedPanel[];
 	writes: Array< Record< string, unknown > >;
 	previewProps: Array< Record< string, unknown > >;
 } {
 	capturedToggles.length = 0;
-	capturedTextControls.length = 0;
+	capturedNotices.length = 0;
 	capturedPanels.length = 0;
 	capturedPreviewProps.length = 0;
 	const writes: Array< Record< string, unknown > > = [];
@@ -401,7 +410,7 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 	root.unmount();
 	return {
 		toggles: [ ...capturedToggles ],
-		texts: [ ...capturedTextControls ],
+		notices: [ ...capturedNotices ],
 		panels: [ ...capturedPanels ],
 		writes,
 		previewProps: [ ...capturedPreviewProps ],
@@ -410,27 +419,27 @@ function mountAndCapture( attributes: Record< string, unknown > ): {
 
 /**
  * Re-renders a single captured PanelBody's children into an isolated
- * React root so the resulting `capturedToggles` / `capturedTextControls`
+ * React root so the resulting `capturedToggles` / `capturedNotices`
  * arrays contain only that panel's controls, in DOM order.
  *
  * The MapEdit top-level mount yields a flat capture of every toggle and
- * text-control across the inspector — useful for cross-panel assertions
- * but unable to verify *within-panel* ordering. Mounting one panel at a
+ * notice across the inspector — useful for cross-panel assertions but
+ * unable to verify *within-panel* ordering. Mounting one panel at a
  * time gives us that ordering on a clean slate.
  *
  * @since 1.0.0
  *
  * @param panel Captured PanelBody record from a previous mount.
  *
- * @return The toggles and texts rendered by this panel only, in
+ * @return The toggles and notices rendered by this panel only, in
  *         document order.
  */
 function captureSinglePanel( panel: CapturedPanel ): {
 	toggles: CapturedToggle[];
-	texts: CapturedTextControl[];
+	notices: CapturedNotice[];
 } {
 	capturedToggles.length = 0;
-	capturedTextControls.length = 0;
+	capturedNotices.length = 0;
 	const container = document.createElement( 'div' );
 	const root = createRoot( container );
 	flushSync( () => {
@@ -439,7 +448,7 @@ function captureSinglePanel( panel: CapturedPanel ): {
 	root.unmount();
 	return {
 		toggles: [ ...capturedToggles ],
-		texts: [ ...capturedTextControls ],
+		notices: [ ...capturedNotices ],
 	};
 }
 
@@ -501,28 +510,6 @@ describe( 'MapEdit Overlays panel — provider/layer hierarchy (issue #106)', ()
 			'Precipitation',
 			'Temperature',
 		] );
-	} );
-
-	it( 'renders the API-key TextControl only for the requiresKey overlay provider', () => {
-		const { texts } = mountAndCapture( buildAttributes() );
-
-		// One key field for openweathermap; waymarked-trails and openseamap are
-		// free and therefore produce no TextControl.
-		const apiKeyFields = texts.filter( ( t ) => t.label === 'API key' );
-		expect( apiKeyFields ).toHaveLength( 1 );
-		expect( apiKeyFields[ 0 ].value ).toBe( '' );
-	} );
-
-	it( 'reads the API-key value from tileOverlayApiKeys[ providerId ]', () => {
-		const { texts } = mountAndCapture(
-			buildAttributes( {
-				tileOverlayApiKeys: { openweathermap: 'OWM-KEY' },
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		expect( apiKeyField?.value ).toBe( 'OWM-KEY' );
 	} );
 
 	it( 'reflects checked state from the saved tileOverlays pair list', () => {
@@ -590,11 +577,10 @@ describe( 'MapEdit Overlays panel — provider/layer hierarchy (issue #106)', ()
 		] );
 	} );
 
-	it( 'enabling a key-required layer still saves even when the key is empty (toggle state independent of key)', () => {
+	it( 'enabling a key-required layer still saves the toggle (the runtime drop happens later)', () => {
 		const { toggles, writes } = mountAndCapture(
 			buildAttributes( {
 				tileOverlays: [],
-				tileOverlayApiKeys: {},
 			} )
 		);
 
@@ -603,70 +589,13 @@ describe( 'MapEdit Overlays panel — provider/layer hierarchy (issue #106)', ()
 		expect( cloudsToggle ).toBeDefined();
 		cloudsToggle?.onChange( true );
 
-		// The toggle write goes through; the editor preview suppresses just
-		// that layer (PHP-side), not the base map or other overlays.
+		// The toggle write goes through; the editor preview suppresses
+		// just that layer when no usable option-layer key is configured.
+		// Other overlays (and the base map) still mount.
 		expect( writes ).toEqual( [
 			{
 				tileOverlays: [
 					{ provider: 'openweathermap', layer: 'clouds' },
-				],
-			},
-		] );
-	} );
-
-	it( 'writing the API key for one overlay provider merges the value into tileOverlayApiKeys, preserving other providers entries', () => {
-		const { texts, writes } = mountAndCapture(
-			buildAttributes( {
-				tileOverlayApiKeys: {
-					openweathermap: 'OLD_OWM',
-					'some-other-provider': 'OTHER_KEY',
-				},
-			} )
-		);
-
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		apiKeyField?.onChange( 'NEW_OWM' );
-
-		expect( writes ).toEqual( [
-			{
-				tileOverlayApiKeys: {
-					openweathermap: 'NEW_OWM',
-					'some-other-provider': 'OTHER_KEY',
-				},
-			},
-		] );
-	} );
-
-	it( 'enabling two layers of the same key-required provider shares the single API key (no per-layer key UI)', () => {
-		const { toggles, texts, writes } = mountAndCapture(
-			buildAttributes( {
-				tileOverlays: [
-					{ provider: 'openweathermap', layer: 'clouds' },
-				],
-				tileOverlayApiKeys: { openweathermap: 'OWM' },
-			} )
-		);
-
-		// Exactly one API-key TextControl exists, regardless of how many
-		// openweathermap layers are enabled. The TilesPanel's base
-		// provider is openstreetmap (free), so it produces no API-key
-		// TextControl — the single match must be the overlay one.
-		const apiKeyFields = texts.filter( ( t ) => t.label === 'API key' );
-		expect( apiKeyFields ).toHaveLength( 1 );
-
-		// Enabling a second openweathermap layer does not introduce a second
-		// key field — the key is provider-level.
-		const overlay = overlayToggles( toggles );
-		const precipToggle = overlay.find(
-			( t ) => t.label === 'Precipitation'
-		);
-		precipToggle?.onChange( true );
-
-		expect( writes ).toEqual( [
-			{
-				tileOverlays: [
-					{ provider: 'openweathermap', layer: 'clouds' },
-					{ provider: 'openweathermap', layer: 'precipitation' },
 				],
 			},
 		] );
@@ -748,36 +677,17 @@ describe( 'MapEdit Overlays panel — per-provider PanelBody (issue #112)', () =
 		}
 	} );
 
-	it( 'inside a key-required provider panel, the layer toggles render before the API-key TextControl', () => {
-		const { panels } = mountAndCapture( buildAttributes() );
-
-		const owmPanel = panels.find( ( p ) => p.title === 'OpenWeatherMap' );
-		expect( owmPanel ).toBeDefined();
-
-		const { toggles, texts } = captureSinglePanel(
-			owmPanel as CapturedPanel
-		);
-
-		// Three layer toggles, one API-key TextControl, list-then-key.
-		expect( toggles.map( ( t ) => t.label ) ).toEqual( [
-			'Clouds',
-			'Precipitation',
-			'Temperature',
-		] );
-		expect( texts.map( ( t ) => t.label ) ).toEqual( [ 'API key' ] );
-	} );
-
-	it( 'inside a free provider panel, no API-key TextControl is rendered', () => {
+	it( 'inside a free provider panel, no key-required Notice is rendered (issue #150)', () => {
 		const { panels } = mountAndCapture( buildAttributes() );
 
 		const seamapPanel = panels.find( ( p ) => p.title === 'OpenSeaMap' );
 		expect( seamapPanel ).toBeDefined();
 
-		const { toggles, texts } = captureSinglePanel(
+		const { toggles, notices } = captureSinglePanel(
 			seamapPanel as CapturedPanel
 		);
 		expect( toggles.map( ( t ) => t.label ) ).toEqual( [ 'Sea marks' ] );
-		expect( texts ).toEqual( [] );
+		expect( notices ).toEqual( [] );
 	} );
 
 	it( 'renders no overlay PanelBody at all when the overlay registry is empty', () => {
@@ -785,12 +695,16 @@ describe( 'MapEdit Overlays panel — per-provider PanelBody (issue #112)', () =
 			.kntntGpxBlocks as {
 			providers: unknown;
 			overlays: Record< string, unknown >;
+			settingsUrl?: string;
+			canManageSettings?: boolean;
 		};
 
 		try {
 			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks = {
 				providers: original.providers,
 				overlays: {},
+				settingsUrl: original.settingsUrl,
+				canManageSettings: original.canManageSettings,
 			};
 			const { panels } = mountAndCapture( buildAttributes() );
 			const overlayPanels = panels.filter( ( p ) =>
@@ -799,43 +713,6 @@ describe( 'MapEdit Overlays panel — per-provider PanelBody (issue #112)', () =
 				)
 			);
 			expect( overlayPanels ).toEqual( [] );
-		} finally {
-			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks =
-				original;
-		}
-	} );
-
-	it( 'gracefully handles an overlay provider that declares no layers — panel renders with only the API-key field', () => {
-		const original = ( globalThis as { kntntGpxBlocks?: unknown } )
-			.kntntGpxBlocks as {
-			providers: unknown;
-			overlays: Record< string, unknown >;
-		};
-
-		try {
-			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks = {
-				providers: original.providers,
-				overlays: {
-					'empty-paid-provider': {
-						label: 'Empty Paid Provider',
-						requiresKey: true,
-						signupUrl: 'https://example.test/signup',
-						layers: {},
-					},
-				},
-			};
-			const { panels } = mountAndCapture( buildAttributes() );
-			const overlayPanels = panels.filter( ( p ) =>
-				( p.className ?? '' ).includes(
-					'kntnt-gpx-blocks-overlay-provider'
-				)
-			);
-			expect( overlayPanels ).toHaveLength( 1 );
-			expect( overlayPanels[ 0 ].title ).toBe( 'Empty Paid Provider' );
-
-			const { toggles, texts } = captureSinglePanel( overlayPanels[ 0 ] );
-			expect( toggles ).toEqual( [] );
-			expect( texts.map( ( t ) => t.label ) ).toEqual( [ 'API key' ] );
 		} finally {
 			( globalThis as { kntntGpxBlocks?: unknown } ).kntntGpxBlocks =
 				original;
@@ -871,36 +748,83 @@ describe( 'MapEdit Overlays panel — per-provider PanelBody (issue #112)', () =
 	} );
 } );
 
-// PHP-supplied overlay API key (issue #114). When the editor-data
-// registry marks an overlay provider with `apiKeyManagedExternally:
-// true`, the per-provider API-key TextControl is hidden — the site
-// builder owns the key in PHP and the editor must not surface it. The
-// flag is presence-based (engagement is driven by the existence of
-// the `apiKey` field on the `kntnt_gpx_blocks_tile_overlays` filter
-// callback's record, not its value), so the editor never sees the key
-// value itself: only the URL the server pre-substituted, and the
-// boolean flag. The fail-closed asymmetry: an empty PHP key leaves
-// `{KEY}` intact in the URL, and the preview drops *only* that
-// layer from the resolved overlay stack (base map + other overlays
-// still render).
-describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
+// Key-required Notice (issue #150). The per-block API-key TextControl
+// has been replaced by a Notice pointing the editor at *Settings →
+// Kntnt GPX Blocks* where the per-overlay-provider key lives in the
+// `kntnt_gpx_blocks_tile_overlay_keys` option. The Notice fires only
+// for `requiresKey === true` overlay providers that are not
+// PHP-engaged (`apiKeyManagedExternally !== true`); PHP-engaged
+// providers behave identically to free providers in the UI by design.
+describe( 'MapEdit Overlays panel — key-required Notice (issue #150)', () => {
+	it( 'renders a key-required Notice in the paid overlay-provider panel', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const owmPanel = panels.find( ( p ) => p.title === 'OpenWeatherMap' );
+		expect( owmPanel ).toBeDefined();
+
+		const { notices } = captureSinglePanel( owmPanel as CapturedPanel );
+
+		// One Notice with the canonical tile-key className surfaces the
+		// settings-page link.
+		const keyNotices = notices.filter( ( n ) =>
+			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
+		);
+		expect( keyNotices ).toHaveLength( 1 );
+	} );
+
+	it( 'renders no key-required Notice in free overlay-provider panels', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
+
+		const wmtPanel = panels.find( ( p ) => p.title === 'Waymarked Trails' );
+		expect( wmtPanel ).toBeDefined();
+
+		const { notices } = captureSinglePanel( wmtPanel as CapturedPanel );
+		const keyNotices = notices.filter( ( n ) =>
+			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
+		);
+		expect( keyNotices ).toEqual( [] );
+	} );
+} );
+
+// PHP-supplied overlay API key (issue #114) + option-layer pre-
+// substitution (issue #150). When the editor-data registry marks an
+// overlay provider with `apiKeyManagedExternally: true`, the
+// key-required Notice is hidden — the site builder owns the key in
+// PHP and the editor stays out of the way. The fail-closed
+// asymmetry: an empty PHP key leaves `{KEY}` intact in the URL, and
+// the preview drops *only* that layer from the resolved overlay
+// stack (base map + other overlays still render). With option-layer
+// pre-substitution (#150), residual `{KEY}` on a non-PHP-engaged
+// provider triggers the same drop branch (no usable option-layer
+// key was configured), giving the option-layer path symmetric
+// runtime behaviour.
+describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114) + option-layer pre-substitution (issue #150)', () => {
 	const originalRegistry = (
 		globalThis as {
-			kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+			kntntGpxBlocks?: {
+				providers: unknown;
+				overlays: unknown;
+				settingsUrl?: string;
+				canManageSettings?: boolean;
+			};
 		}
 	 ).kntntGpxBlocks;
 
 	beforeAll( () => {
-		// Add two overlay providers to the editor-data registry,
-		// mirroring what `Editor_Data_Enqueuer::shape_overlays()` would
-		// emit when the PHP path is engaged: `apiKeyManagedExternally:
-		// true`, with `{KEY}` either already substituted server-side
-		// (the resolved key was non-empty) or still present (the
-		// resolved key was empty, signalling fail-closed / drop-the-
-		// layer).
+		// Add overlay providers mirroring what `Editor_Data_Enqueuer::
+		// shape_collection()` would emit: PHP-engaged with a non-empty
+		// key (URL pre-substituted), PHP-engaged with an empty key
+		// (`{KEY}` survives), and a non-PHP-engaged paid provider whose
+		// option-layer URL was pre-substituted server-side (URL clean
+		// of `{KEY}` already).
 		(
 			globalThis as {
-				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+				kntntGpxBlocks?: {
+					providers: unknown;
+					overlays: unknown;
+					settingsUrl?: string;
+					canManageSettings?: boolean;
+				};
 			}
 		 ).kntntGpxBlocks = {
 			providers: ( originalRegistry as { providers: object } ).providers,
@@ -940,19 +864,43 @@ describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
 						},
 					},
 				},
+				owmOptionEngaged: {
+					label: 'OpenWeatherMap (option key)',
+					requiresKey: true,
+					apiKeyManagedExternally: false,
+					signupUrl: 'https://openweathermap.org/',
+					layers: {
+						clouds: {
+							label: 'Clouds (option)',
+							url: 'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=OPTION-OWM-SUBSTITUTED',
+							attribution: 'OWM',
+							maxZoom: 19,
+						},
+					},
+				},
 			},
+			settingsUrl: ( originalRegistry as { settingsUrl?: string } )
+				.settingsUrl,
+			canManageSettings: (
+				originalRegistry as { canManageSettings?: boolean }
+			 ).canManageSettings,
 		};
 	} );
 
 	afterAll( () => {
 		(
 			globalThis as {
-				kntntGpxBlocks?: { providers: unknown; overlays: unknown };
+				kntntGpxBlocks?: {
+					providers: unknown;
+					overlays: unknown;
+					settingsUrl?: string;
+					canManageSettings?: boolean;
+				};
 			}
 		 ).kntntGpxBlocks = originalRegistry;
 	} );
 
-	it( 'hides the API-key TextControl for an overlay provider whose apiKey is managed externally', () => {
+	it( 'hides the key-required Notice for an overlay provider whose apiKey is managed externally', () => {
 		const { panels } = mountAndCapture( buildAttributes() );
 
 		const owmExternalPanel = panels.find(
@@ -960,14 +908,16 @@ describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
 		);
 		expect( owmExternalPanel ).toBeDefined();
 
-		const { texts } = captureSinglePanel(
+		const { notices } = captureSinglePanel(
 			owmExternalPanel as CapturedPanel
 		);
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeUndefined();
+		const keyNotices = notices.filter( ( n ) =>
+			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
+		);
+		expect( keyNotices ).toEqual( [] );
 	} );
 
-	it( 'still hides the API-key TextControl when the PHP-supplied key is empty (the drop-the-layer branch)', () => {
+	it( 'still hides the key-required Notice when the PHP-supplied key is empty (the drop-the-layer branch)', () => {
 		const { panels } = mountAndCapture( buildAttributes() );
 
 		const owmEmptyPanel = panels.find(
@@ -977,41 +927,36 @@ describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
 
 		// The `apiKeyManagedExternally` flag remains `true` regardless
 		// of whether the resolved PHP key was empty — engagement is
-		// presence-based. The user must not see a TextControl that
-		// would tempt them into supplying an attribute-path key the
-		// renderer would never read.
-		const { texts } = captureSinglePanel( owmEmptyPanel as CapturedPanel );
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeUndefined();
+		// presence-based.
+		const { notices } = captureSinglePanel(
+			owmEmptyPanel as CapturedPanel
+		);
+		const keyNotices = notices.filter( ( n ) =>
+			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
+		);
+		expect( keyNotices ).toEqual( [] );
 	} );
 
-	it( 'still renders the API-key TextControl for paid overlay providers whose apiKey is not managed externally (attribute-path unchanged)', () => {
-		const { panels } = mountAndCapture(
-			buildAttributes( {
-				tileOverlayApiKeys: { openweathermap: 'ATTR_OWM' },
-			} )
-		);
+	it( 'renders the key-required Notice for paid overlay providers whose apiKey is not managed externally (option-layer path)', () => {
+		const { panels } = mountAndCapture( buildAttributes() );
 
 		const owmPanel = panels.find( ( p ) => p.title === 'OpenWeatherMap' );
 		expect( owmPanel ).toBeDefined();
 
-		const { texts } = captureSinglePanel( owmPanel as CapturedPanel );
-		const apiKeyField = texts.find( ( t ) => t.label === 'API key' );
-		expect( apiKeyField ).toBeDefined();
-		expect( apiKeyField?.value ).toBe( 'ATTR_OWM' );
+		const { notices } = captureSinglePanel( owmPanel as CapturedPanel );
+		const keyNotices = notices.filter( ( n ) =>
+			( n.className ?? '' ).includes( 'kntnt-gpx-blocks-tile-key-notice' )
+		);
+		expect( keyNotices ).toHaveLength( 1 );
 	} );
 
 	it( 'forwards the pre-substituted URL to MapEditorPreview when the PHP key is non-empty (no client substitution)', () => {
 		// Engaged-with-non-empty-key path: the server-side URL has
 		// already had `{KEY}` replaced, so the preview receives that
-		// URL verbatim — no `{KEY}` placeholder and no attribute-path
-		// substitution.
+		// URL verbatim — no `{KEY}` placeholder reaches the browser.
 		const { previewProps } = mountAndCapture(
 			buildAttributes( {
 				tileOverlays: [ { provider: 'owmExternal', layer: 'clouds' } ],
-				tileOverlayApiKeys: {
-					owmExternal: 'this-attribute-overlay-key-is-ignored',
-				},
 			} )
 		);
 
@@ -1028,11 +973,29 @@ describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
 			'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=PHP-OWM-SUBSTITUTED'
 		);
 		expect( attributes.overlays[ 0 ].url ).not.toContain( '{KEY}' );
-		// Attribute-path key never reaches the URL — PHP path engagement
-		// is binary.
-		expect( attributes.overlays[ 0 ].url ).not.toContain(
-			'this-attribute-overlay-key-is-ignored'
+	} );
+
+	it( 'forwards the pre-substituted URL to MapEditorPreview when the option-layer key is non-empty (no client substitution)', () => {
+		// Non-PHP-engaged path with a non-empty option-layer key: the
+		// server-side enqueuer pre-substituted `{KEY}` from the option,
+		// so the preview again receives a substituted URL verbatim.
+		const { previewProps } = mountAndCapture(
+			buildAttributes( {
+				tileOverlays: [
+					{ provider: 'owmOptionEngaged', layer: 'clouds' },
+				],
+			} )
 		);
+
+		const lastProps = previewProps[ previewProps.length - 1 ];
+		const attributes = lastProps?.attributes as {
+			overlays: ReadonlyArray< { url: string } >;
+		};
+		expect( attributes.overlays ).toHaveLength( 1 );
+		expect( attributes.overlays[ 0 ].url ).toBe(
+			'https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=OPTION-OWM-SUBSTITUTED'
+		);
+		expect( attributes.overlays[ 0 ].url ).not.toContain( '{KEY}' );
 	} );
 
 	it( 'drops just the affected layer when the PHP key is empty and the URL still contains {KEY}; base map and other overlays still mount', () => {
@@ -1045,7 +1008,6 @@ describe( 'MapEdit Overlays panel — PHP-supplied apiKey (issue #114)', () => {
 					{ provider: 'owmExternalEmpty', layer: 'clouds' },
 					{ provider: 'openseamap', layer: 'seamarks' },
 				],
-				tileOverlayApiKeys: {},
 			} )
 		);
 

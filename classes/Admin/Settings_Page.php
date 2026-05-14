@@ -14,10 +14,11 @@
  * entry per provider instead of editing every GPX Map block on the site
  * in turn — the central motivation for issue #149.
  *
- * The page is currently structured around base providers only; the
- * overlay-provider half (#150) will plug in a second sub-section through
- * the same `add_settings_section()` mechanism without restructuring this
- * class.
+ * The page also surfaces a parallel "Overlay providers" sub-section
+ * (#150) registered through the same `add_settings_section()` mechanism;
+ * its option `kntnt_gpx_blocks_tile_overlay_keys` is keyed by
+ * overlay-provider id and uses the same trim+drop sanitize semantics
+ * as the base-provider option.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0
@@ -58,6 +59,20 @@ final class Settings_Page {
 	public const OPTION_NAME = 'kntnt_gpx_blocks_tile_provider_keys';
 
 	/**
+	 * Option name where the per-overlay-provider API-key map is stored.
+	 *
+	 * Shape: `array<string, string>` keyed by overlay-provider id, with
+	 * the same trim+drop sanitize semantics as the base-provider option
+	 * above: trimmed empty strings are stored as absence, and keys not
+	 * in the validated overlay registry are dropped so a removed
+	 * provider does not leave dead data behind.
+	 *
+	 * @since 1.0.0
+	 * @var string
+	 */
+	public const OPTION_NAME_OVERLAYS = 'kntnt_gpx_blocks_tile_overlay_keys';
+
+	/**
 	 * Option-group name passed to `register_setting()`.
 	 *
 	 * WordPress core's `options.php` handler authenticates the form POST
@@ -85,14 +100,28 @@ final class Settings_Page {
 	/**
 	 * Settings-section slug for the "Base providers" sub-section.
 	 *
-	 * The overlay-provider half (#150) will add a parallel section
-	 * under a different slug; keeping this one base-only keeps the
-	 * symmetry obvious without forcing it.
+	 * The overlay-provider sub-section sits below this one under a
+	 * parallel slug so each half can be re-emitted independently if
+	 * the page's structure ever needs to fork.
 	 *
 	 * @since 1.0.0
 	 * @var string
 	 */
 	private const SECTION_BASE_PROVIDERS = 'kntnt_gpx_blocks_base_providers';
+
+	/**
+	 * Settings-section slug for the "Overlay providers" sub-section.
+	 *
+	 * Parallel to `SECTION_BASE_PROVIDERS`; the page renders both
+	 * sections under the same "Tile API Keys" heading via
+	 * `do_settings_sections()`. Section order is registration order,
+	 * so the base sub-section is emitted first to mirror the order
+	 * users encounter the two halves in the Map block's Inspector.
+	 *
+	 * @since 1.0.0
+	 * @var string
+	 */
+	private const SECTION_OVERLAY_PROVIDERS = 'kntnt_gpx_blocks_overlay_providers';
 
 	/**
 	 * Constructs the settings page with an injectable registry.
@@ -138,7 +167,10 @@ final class Settings_Page {
 	 * the supplied sanitize callback; `add_settings_section()` creates
 	 * the "Base providers" heading; `add_settings_field()` emits one
 	 * labelled input per base provider whose `requiresKey === true`,
-	 * in registry order.
+	 * in registry order. The overlay-provider sub-section is registered
+	 * identically (issue #150) and uses a parallel option and section
+	 * slug; both halves live in the same option group so a single form
+	 * POST round-trips both.
 	 *
 	 * Free providers (`requiresKey === false`) get no field — they have
 	 * no key to configure. PHP-engaged providers (validated record
@@ -150,10 +182,10 @@ final class Settings_Page {
 	 */
 	public function register_settings(): void {
 
-		// Register the option with WordPress core. The sanitize callback
-		// is the one place all writes flow through; non-array input
-		// reverts to an empty map, non-string entries are dropped, and
-		// values are trimmed before storage.
+		// Register the base-provider option with WordPress core. The
+		// sanitize callback is the one place all writes flow through;
+		// non-array input reverts to an empty map, non-string entries
+		// are dropped, and values are trimmed before storage.
 		register_setting(
 			self::OPTION_GROUP,
 			self::OPTION_NAME,
@@ -166,12 +198,37 @@ final class Settings_Page {
 			],
 		);
 
+		// Register the parallel overlay-provider option. Same group, so
+		// a single `settings_fields()` POST round-trips both halves;
+		// same trim+drop sanitize semantics, parametrised on the
+		// overlay registry.
+		register_setting(
+			self::OPTION_GROUP,
+			self::OPTION_NAME_OVERLAYS,
+			[
+				'type'              => 'object',
+				'description'       => __( 'Per-overlay-provider tile API keys, keyed by provider id.', 'kntnt-gpx-blocks' ),
+				'sanitize_callback' => [ self::class, 'sanitize_overlay_keys' ],
+				'default'           => [],
+				'show_in_rest'      => false,
+			],
+		);
+
 		// Build the "Base providers" sub-section under the Tile API
 		// Keys heading rendered by render_page().
 		add_settings_section(
 			self::SECTION_BASE_PROVIDERS,
 			__( 'Base providers', 'kntnt-gpx-blocks' ),
 			[ $this, 'render_base_section_intro' ],
+			self::MENU_SLUG,
+		);
+
+		// Build the parallel "Overlay providers" sub-section below the
+		// base-provider one.
+		add_settings_section(
+			self::SECTION_OVERLAY_PROVIDERS,
+			__( 'Overlay providers', 'kntnt-gpx-blocks' ),
+			[ $this, 'render_overlay_section_intro' ],
 			self::MENU_SLUG,
 		);
 
@@ -190,6 +247,29 @@ final class Settings_Page {
 				[ $this, 'render_provider_field' ],
 				self::MENU_SLUG,
 				self::SECTION_BASE_PROVIDERS,
+				[
+					'provider_id' => $provider_id,
+					'record'      => $record,
+				],
+			);
+		}
+
+		// Emit one field per key-required overlay provider in registry
+		// order, mirroring the base-provider loop above. Free overlay
+		// providers (`requiresKey === false`) get nothing — they have
+		// no key to configure. PHP-engaged overlay providers (validated
+		// record carries `apiKey`) get the disabled-with-notice
+		// treatment, identical to the base side.
+		foreach ( $registry->get_overlays() as $provider_id => $record ) {
+			if ( $record['requiresKey'] !== true ) {
+				continue;
+			}
+			add_settings_field(
+				self::OPTION_NAME_OVERLAYS . '_' . $provider_id,
+				$record['label'],
+				[ $this, 'render_overlay_provider_field' ],
+				self::MENU_SLUG,
+				self::SECTION_OVERLAY_PROVIDERS,
 				[
 					'provider_id' => $provider_id,
 					'record'      => $record,
@@ -257,6 +337,55 @@ final class Settings_Page {
 	}
 
 	/**
+	 * Sanitizes the submitted overlay-key option value.
+	 *
+	 * Mirrors `sanitize_keys()` verbatim, parametrised on the validated
+	 * overlay-provider registry instead of the base-provider one:
+	 * rejects non-array input, drops non-string entries, trims string
+	 * values, drops entries that trim to the empty string, and drops
+	 * entries whose key is not a known overlay-provider id. The result
+	 * is the map persisted to the overlay-keys option.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param mixed $input Raw POSTed value from `options.php`.
+	 *
+	 * @return array<string, string> Sanitized map ready to persist.
+	 */
+	public static function sanitize_overlay_keys( mixed $input ): array {
+
+		if ( ! is_array( $input ) ) {
+			return [];
+		}
+
+		// Resolve the validated overlay registry once so the prune runs
+		// against the current filter state, not the page's
+		// constructor-time instance.
+		$valid_overlay_ids = array_keys( ( new Tile_Layer_Registry() )->get_overlays() );
+
+		// Same accept-rules as the base side: known overlay-provider id,
+		// string value, non-empty after trimming. Empty-after-trim is
+		// dropped so absence is the canonical "no key" state.
+		$out = [];
+		foreach ( $input as $key => $value ) {
+			if ( ! is_string( $key ) || ! in_array( $key, $valid_overlay_ids, true ) ) {
+				continue;
+			}
+			if ( ! is_string( $value ) ) {
+				continue;
+			}
+			$trimmed = trim( $value );
+			if ( $trimmed === '' ) {
+				continue;
+			}
+			$out[ $key ] = $trimmed;
+		}
+
+		return $out;
+
+	}
+
+	/**
 	 * Renders the wrapping settings page.
 	 *
 	 * Emits the WP-conventional `wrap > h1 > form` shell with the page
@@ -301,6 +430,26 @@ final class Settings_Page {
 		echo '<p>';
 		echo esc_html__(
 			'Configure one API key per base-tile provider. The same key is used by every GPX Map block on the site that selects this provider.',
+			'kntnt-gpx-blocks',
+		);
+		echo '</p>';
+	}
+
+	/**
+	 * Renders the "Overlay providers" section introduction.
+	 *
+	 * Symmetric with `render_base_section_intro()` — one paragraph
+	 * above the per-overlay-provider fields explaining the shared-key
+	 * semantics: the single per-provider key is used by every layer of
+	 * that overlay-provider the editor enables, on every GPX Map block
+	 * on the site.
+	 *
+	 * @since 1.0.0
+	 */
+	public function render_overlay_section_intro(): void {
+		echo '<p>';
+		echo esc_html__(
+			'Configure one API key per overlay-tile provider. The same key is shared across every layer of that overlay provider on every GPX Map block on the site.',
 			'kntnt-gpx-blocks',
 		);
 		echo '</p>';
@@ -376,6 +525,63 @@ final class Settings_Page {
 	}
 
 	/**
+	 * Renders a single per-overlay-provider input field.
+	 *
+	 * Symmetric with `render_provider_field()` for the overlay half:
+	 * the field is named under the parallel `OPTION_NAME_OVERLAYS`
+	 * option, the current value comes from `get_stored_overlay_keys()`,
+	 * and the PHP-engaged + signup-URL branches follow the base side
+	 * verbatim. Kept as a sibling method (rather than a parametrised
+	 * shared one) so the rendered field names match the option names
+	 * directly and the call sites stay readable.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array{provider_id: string, record: array<string, mixed>} $args
+	 *        Arguments forwarded by `add_settings_field()`. `provider_id`
+	 *        is the registry key; `record` is the validated overlay-
+	 *        provider record (used here for `signupUrl` and `apiKey`
+	 *        engagement).
+	 */
+	public function render_overlay_provider_field( array $args ): void {
+
+		$provider_id  = $args['provider_id'];
+		$record       = $args['record'];
+		$option_value = self::get_stored_overlay_keys();
+		$current      = $option_value[ $provider_id ] ?? '';
+
+		// `isset($record['apiKey'])` is the canonical PHP-path-engaged
+		// signal across the codebase; mirrors the base-side check.
+		$php_engaged = isset( $record['apiKey'] );
+
+		$field_name = self::OPTION_NAME_OVERLAYS . '[' . $provider_id . ']';
+		$field_id   = self::OPTION_NAME_OVERLAYS . '_' . $provider_id;
+
+		printf(
+			'<input type="text" id="%1$s" name="%2$s" value="%3$s" class="regular-text"%4$s />',
+			esc_attr( $field_id ),
+			esc_attr( $field_name ),
+			esc_attr( $php_engaged ? '' : $current ),
+			$php_engaged ? ' disabled="disabled"' : '',
+		);
+
+		if ( $php_engaged ) {
+			echo ' <span class="description">';
+			echo esc_html__( 'Supplied by code; this field is read-only.', 'kntnt-gpx-blocks' );
+			echo '</span>';
+		}
+
+		if ( isset( $record['signupUrl'] ) && is_string( $record['signupUrl'] ) && $record['signupUrl'] !== '' ) {
+			printf(
+				'<p class="description"><a href="%1$s" target="_blank" rel="noopener noreferrer">%2$s</a></p>',
+				esc_url( $record['signupUrl'] ),
+				esc_html__( 'Get an API key', 'kntnt-gpx-blocks' ),
+			);
+		}
+
+	}
+
+	/**
 	 * Returns the persisted per-base-provider key map.
 	 *
 	 * Central read accessor so the rest of the plugin reaches the
@@ -401,6 +607,38 @@ final class Settings_Page {
 		// drops non-string entries on the write path, but the option
 		// table could have been edited directly (WP-CLI, SQL, a
 		// migration) so the read path re-validates.
+		$out = [];
+		foreach ( $raw as $key => $value ) {
+			if ( is_string( $key ) && is_string( $value ) ) {
+				$out[ $key ] = $value;
+			}
+		}
+
+		return $out;
+
+	}
+
+	/**
+	 * Returns the persisted per-overlay-provider key map.
+	 *
+	 * Symmetric with `get_stored_keys()` for the overlay half — same
+	 * defensive shape coercion, same `array<string, string>` return
+	 * contract. The rest of the plugin (the editor enqueuer's overlay
+	 * shaping path; the field renderer above) reaches the overlay
+	 * option through this single accessor so the option name lives in
+	 * one place.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return array<string, string> Keyed by overlay-provider id; never null.
+	 */
+	public static function get_stored_overlay_keys(): array {
+
+		$raw = get_option( self::OPTION_NAME_OVERLAYS, [] );
+		if ( ! is_array( $raw ) ) {
+			return [];
+		}
+
 		$out = [];
 		foreach ( $raw as $key => $value ) {
 			if ( is_string( $key ) && is_string( $value ) ) {

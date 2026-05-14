@@ -508,6 +508,53 @@ final class Tile_Layer_Registry {
 	}
 
 	/**
+	 * Returns the site-wide tile API key for an overlay provider from the
+	 * `kntnt_gpx_blocks_tile_overlay_keys` option.
+	 *
+	 * Issue #150 centralised per-overlay-provider tile API keys in a
+	 * single WP option, symmetric with the base-provider option from
+	 * #149; this helper is the only place the overlay option name lives.
+	 * The raw read goes through `get_option()` with a default of `[]`,
+	 * is coerced defensively to `array<string, string>` (the option's
+	 * sanitize callback enforces this on write, but a direct DB edit
+	 * could store a non-array shape), and a missing entry is reported
+	 * as the empty string. Trimming and the empty-after-trim decision
+	 * live in the caller (`resolve_overlays`) so the asymmetric
+	 * fail-closed contract documented on the class — drop the layer
+	 * rather than substitute whitespace — applies verbatim.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $provider_id Overlay-provider id (the `provider` field
+	 *                            of a saved `tileOverlays` pair).
+	 *
+	 * @return string The option-layer key, or `''` when the option lacks
+	 *                an entry for this overlay provider.
+	 */
+	private static function option_key_for_overlay( string $provider_id ): string {
+
+		// `function_exists` guards against environments that load
+		// Tile_Layer_Registry outside the WordPress runtime (such as
+		// the Pest tests' Brain Monkey stubs, which only override
+		// `get_option` when the test explicitly arranges it). When no
+		// option API is available, the option is treated as missing
+		// and the key falls back to `''` — the same fail-closed
+		// outcome the resolver already handles.
+		if ( ! function_exists( 'get_option' ) ) {
+			return '';
+		}
+
+		$raw = get_option( 'kntnt_gpx_blocks_tile_overlay_keys', [] );
+		if ( ! is_array( $raw ) ) {
+			return '';
+		}
+
+		$value = $raw[ $provider_id ] ?? '';
+		return is_string( $value ) ? $value : '';
+
+	}
+
+	/**
 	 * Resolves a list of saved (provider, layer) pairs to runtime tile-layer records.
 	 *
 	 * Walks the input pairs in order, looking each (provider, layer) up in
@@ -526,13 +573,14 @@ final class Tile_Layer_Registry {
 	 *
 	 * - **PHP-supplied key** (`isset( $record['apiKey'] )` on the resolved
 	 *   overlay-provider record): the PHP-supplied value is used and the
-	 *   attribute-path `$api_keys[ providerId ]` entry is ignored. An
+	 *   option-layer entry for that overlay-provider id is ignored. An
 	 *   empty or whitespace-only PHP value drops the affected layer with
 	 *   one `Plugin::warning()` log naming the provider + layer ids (never
 	 *   the key value). Other overlays and the base map continue to render.
-	 * - **Attribute path** (otherwise): the `$api_keys[ providerId ]` entry
-	 *   is substituted into `{KEY}` as before; missing or empty entries
-	 *   drop the layer with the existing warning.
+	 * - **Option layer** (otherwise): the entry for `$provider_id` in the
+	 *   site-wide `kntnt_gpx_blocks_tile_overlay_keys` option (issue
+	 *   #150) is substituted into `{KEY}`; missing or empty entries drop
+	 *   the layer with the existing warning.
 	 *
 	 * The resolved record carries only the four Leaflet-facing fields
 	 * (`url`, `attribution`, `maxZoom`, optional `subdomains`) — slim and
@@ -542,28 +590,15 @@ final class Tile_Layer_Registry {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array<int, mixed>          $pairs    Overlay pairs from saved
-	 *                                             block attributes. Each
-	 *                                             entry should be an array
-	 *                                             with `provider` and
-	 *                                             `layer` string keys;
-	 *                                             malformed entries are
-	 *                                             coerced and dropped.
-	 * @param array<string, string|mixed> $api_keys Per-overlay-provider API
-	 *                                              keys from the attribute
-	 *                                              path, keyed by provider
-	 *                                              id. Entries for providers
-	 *                                              that do not require a key
-	 *                                              are ignored. Entries for
-	 *                                              providers whose resolved
-	 *                                              record carries an
-	 *                                              `apiKey` field are
-	 *                                              ignored too — see the
-	 *                                              method docblock.
+	 * @param array<int, mixed> $pairs Overlay pairs from saved block
+	 *                                 attributes. Each entry should be
+	 *                                 an array with `provider` and
+	 *                                 `layer` string keys; malformed
+	 *                                 entries are coerced and dropped.
 	 *
 	 * @return list<ResolvedOverlay>
 	 */
-	public function resolve_overlays( array $pairs, array $api_keys ): array {
+	public function resolve_overlays( array $pairs ): array {
 
 		$overlays = $this->get_overlays();
 		$out      = [];
@@ -615,12 +650,16 @@ final class Tile_Layer_Registry {
 			// missing-key overlay simply does not render. Other overlays
 			// continue to render on top of the base layer. The
 			// PHP-supplied key path (provider record carries `apiKey`)
-			// supersedes the attribute-path `$api_keys[ providerId ]`
-			// entry: when engaged with a non-empty key, the PHP value
-			// substitutes into `{KEY}`; when engaged with an empty or
-			// whitespace-only key, the layer is dropped with a warning
-			// (the asymmetric fail-closed outcome documented on the
-			// class — no polyline-only equivalent exists for overlays).
+			// supersedes the option-layer entry: when engaged with a
+			// non-empty key, the PHP value substitutes into `{KEY}`; when
+			// engaged with an empty or whitespace-only key, the layer is
+			// dropped with a warning (the asymmetric fail-closed outcome
+			// documented on the class — no polyline-only equivalent
+			// exists for overlays). The option-layer key is trimmed
+			// before both the emptiness decision and the substitution so
+			// a whitespace-only entry is treated identically to `''`
+			// (fail-closed) and a value with stray whitespace around it
+			// does not leak that whitespace into the tile URL.
 			$url = $layer['url'];
 			if ( $provider['requiresKey'] ) {
 				if ( isset( $provider['apiKey'] ) ) {
@@ -637,9 +676,9 @@ final class Tile_Layer_Registry {
 					}
 					$url = str_replace( '{KEY}', $php_key, $url );
 				} else {
-					$raw_key = $api_keys[ $provider_id ] ?? '';
-					$api_key = is_string( $raw_key ) ? trim( $raw_key ) : '';
-					if ( '' === $api_key ) {
+					$option_key  = self::option_key_for_overlay( $provider_id );
+					$trimmed_key = trim( $option_key );
+					if ( '' === $trimmed_key ) {
 						Plugin::warning(
 							sprintf(
 								'Tile_Layer_Registry: tile-overlay layer "%s" within provider "%s" requires an API key but none is configured; dropping.',
@@ -649,7 +688,7 @@ final class Tile_Layer_Registry {
 						);
 						continue;
 					}
-					$url = str_replace( '{KEY}', $api_key, $url );
+					$url = str_replace( '{KEY}', $trimmed_key, $url );
 				}
 			}
 

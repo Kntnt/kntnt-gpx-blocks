@@ -175,7 +175,9 @@ If you do not need consent gating — for example you self-host tiles, your juri
 
 If you use a paid tile provider (Thunderforest, Mapbox, MapTiler, Jawg Maps, Stadia Maps), you supply the API key once for the whole site through **Settings → Kntnt GPX Blocks** in the WordPress admin. The page lists every base-tile provider that needs a key and stores the entries in the single option `kntnt_gpx_blocks_tile_provider_keys`. Rotating a key on a site with N Map blocks is one edit, not N. The same key is used by every Map block that selects that provider; site editors (authors, contributors, freelancers) do not need to know or paste the key — they choose the provider in the Map block's Inspector and the plugin substitutes the configured key at render time.
 
-Only users with `manage_options` (typically administrators) can read or write the option through the WordPress admin. Editors with `edit_posts` see a Notice in the Map block's Inspector pointing them at the settings page, but cannot follow the link unless they hold `manage_options`. The link is rendered as plain text for `edit_posts`-only users.
+The same settings page also lists every **overlay-tile provider** that needs a key (OpenWeatherMap is the only paid overlay shipped by default) under a parallel "Overlay providers" sub-section. Overlay keys are stored in the parallel option `kntnt_gpx_blocks_tile_overlay_keys` and the same key is shared across every layer of that overlay provider that the editor enables, on every GPX Map block. The Overlays panel in the Inspector surfaces a Notice pointing the editor at the settings page rather than a per-block API-key field.
+
+Only users with `manage_options` (typically administrators) can read or write the options through the WordPress admin. Editors with `edit_posts` see a Notice in the Map block's Inspector pointing them at the settings page, but cannot follow the link unless they hold `manage_options`. The link is rendered as plain text for `edit_posts`-only users.
 
 ### Protect your API key from other administrators
 

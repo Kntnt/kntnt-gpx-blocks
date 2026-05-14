@@ -181,13 +181,17 @@ final class Render_Map {
 			? $attributes['tileStyle']
 			: '';
 
-		// Read the saved overlay (provider, layer) pair list and the
-		// per-overlay-provider API-key map. Each pair is validated and
-		// resolved against the overlay-provider registry; unknown
-		// providers, unknown layers, and missing-key drops happen inside
-		// the resolver with a per-drop warning. Malformed list entries
-		// (non-array, missing keys, non-string keys) are coerced out here
-		// so the resolver only ever sees the documented shape.
+		// Read the saved overlay (provider, layer) pair list. Each pair
+		// is validated and resolved against the overlay-provider
+		// registry; unknown providers, unknown layers, and missing-key
+		// drops happen inside the resolver with a per-drop warning.
+		// Malformed list entries (non-array, missing keys, non-string
+		// keys) are coerced out here so the resolver only ever sees
+		// the documented shape. Per-overlay-provider tile API keys
+		// live in a site-wide WP option
+		// (`kntnt_gpx_blocks_tile_overlay_keys`, issue #150) read by
+		// the registry itself; this render path no longer reads any
+		// overlay key from block attributes.
 		$tile_overlay_pairs = [];
 		if ( isset( $attributes['tileOverlays'] ) && is_array( $attributes['tileOverlays'] ) ) {
 			foreach ( $attributes['tileOverlays'] as $pair ) {
@@ -204,15 +208,6 @@ final class Render_Map {
 					'provider' => $provider_id,
 					'layer'    => $layer_id,
 				];
-			}
-		}
-		$raw_overlay_api_keys  = $attributes['tileOverlayApiKeys'] ?? [];
-		$tile_overlay_api_keys = [];
-		if ( is_array( $raw_overlay_api_keys ) ) {
-			foreach ( $raw_overlay_api_keys as $provider_id => $api_key ) {
-				if ( is_string( $provider_id ) && '' !== $provider_id ) {
-					$tile_overlay_api_keys[ $provider_id ] = $api_key;
-				}
 			}
 		}
 
@@ -288,16 +283,23 @@ final class Render_Map {
 		// disabled and any stored option entry is dead data.
 		// Overlay resolution walks each saved (provider, layer) pair down
 		// the parallel nested overlay map, substituting the per-overlay-
-		// provider key (from `tileOverlayApiKeys`) into `{KEY}` for paid
-		// overlay providers; pairs whose provider requires a key but whose
-		// entry is empty are dropped with a warning rather than rendering
-		// a polyline-only state — the base map and other overlays still
-		// render. The view module reads url/attribution/maxZoom/subdomains
-		// from these records to build its tile layer; the {KEY}-substituted
-		// URL is the only place the API key reaches the browser.
+		// provider key from the site-wide
+		// `kntnt_gpx_blocks_tile_overlay_keys` option (issue #150) into
+		// `{KEY}` for paid overlay providers; pairs whose provider
+		// requires a key but whose option entry is empty are dropped
+		// with a warning rather than rendering a polyline-only state —
+		// the base map and other overlays still render (the documented
+		// asymmetric fail-closed). When the validated overlay record
+		// carries an `apiKey` field (PHP-supplied key path, engaged via
+		// the `kntnt_gpx_blocks_tile_overlays` filter), the registry
+		// uses that value and ignores the option-layer entry for that
+		// overlay provider entirely. The view module reads
+		// url/attribution/maxZoom/subdomains from these records to
+		// build its tile layer; the {KEY}-substituted URL is the only
+		// place the API key reaches the browser.
 		$tile_registry = new Tile_Layer_Registry();
 		$tile_provider = $tile_registry->resolve_provider( $tile_provider_id, $tile_style_id );
-		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_pairs, $tile_overlay_api_keys );
+		$tile_overlays = $tile_registry->resolve_overlays( $tile_overlay_pairs );
 
 		// Polyline-only gate: when the resolved provider requires an API
 		// key and the *effective* key is empty, null out the URL so the
