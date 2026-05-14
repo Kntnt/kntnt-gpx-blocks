@@ -721,11 +721,13 @@ describe( 'MapEdit wrapper min-height default (issue #117)', () => {
 		);
 	} );
 
-	it( 'C4: omits the default when style.dimensions.aspectRatio is set, even if minHeight is blank', () => {
-		// When the user picks a non-Original aspect-ratio the container
-		// already has a definite height; adding a min-height on top
-		// would fight that constraint. The editor must therefore skip
-		// the inline injection — same condition the server-side
+	it( 'C4: injects the default when style.dimensions.aspectRatio is set and minHeight is blank (issue #146)', () => {
+		// Issue #146 simplified Map's gate to match Elevation's: the
+		// default `min-height` fires whenever `minHeight` is blank,
+		// regardless of `aspectRatio`. The user-set aspect ratio
+		// stacks alongside the floor via the normal CSS cascade
+		// rather than being fought by a hidden min-height. Same
+		// single-mechanism condition the server-side
 		// Dimensions_Defaults filter checks.
 		renderAndCapture(
 			buildAttributes( {
@@ -736,9 +738,7 @@ describe( 'MapEdit wrapper min-height default (issue #117)', () => {
 		);
 
 		expect( capturedBlockPropsStyles ).toHaveLength( 1 );
-		expect( capturedBlockPropsStyles[ 0 ] ).not.toHaveProperty(
-			'minHeight'
-		);
+		expect( capturedBlockPropsStyles[ 0 ]?.minHeight ).toBe( '30vh' );
 	} );
 
 	it( 'C6: does not call setAttributes while computing the default', () => {

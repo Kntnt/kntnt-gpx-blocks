@@ -1349,13 +1349,14 @@ export const MapEdit = ( {
 	const fontSizes = flattenPresets< FontSizePreset >( themeFontSizes );
 
 	// Resolve the plugin-defined default `min-height` for the wrapper.
-	// `getDefaultMinHeight()` returns `'30vh'` when the user has set
-	// neither minHeight nor aspectRatio on this block — the same
+	// `getDefaultMinHeight()` returns `'30vh'` when the user has not
+	// set a `minHeight` on this block — the same single-mechanism
 	// condition the server-side `Dimensions_Defaults` filter checks —
-	// and `undefined` in every other case. When the value is
-	// `undefined`, no inline minHeight is injected here and core's
-	// dimensions block-supports machinery surfaces whatever the user
-	// chose. Issue #117 centralises this rule between PHP and JS.
+	// and `undefined` otherwise. When the value is `undefined`, no
+	// inline minHeight is injected here and core's dimensions
+	// block-supports machinery surfaces whatever the user chose.
+	// Issue #117 centralised the rule between PHP and JS; issue #146
+	// simplified Map's gate to match Elevation's.
 	const defaultMinHeight = getDefaultMinHeight(
 		'kntnt-gpx-blocks/map',
 		attributes

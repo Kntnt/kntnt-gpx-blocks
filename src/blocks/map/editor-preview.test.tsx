@@ -297,16 +297,18 @@ describe( 'MapEditorPreview base-tile attach (issue #100)', () => {
 } );
 
 describe( 'MapEditorPreview host fills the wrapper independently of percentage height (issue #86)', () => {
-	it( 'positions the inner host absolutely so the Leaflet container does not collapse when the wrapper has both `aspect-ratio` and inline `min-height`', async () => {
+	it( 'positions the inner host absolutely so the Leaflet container does not collapse when the wrapper has a definite height', async () => {
 		const attributes = buildAttributes();
 
 		// Reproduce the wrapper that `useBlockProps()` produces inside
-		// `MapEdit`: the project class brings the SCSS aspect-ratio
-		// baseline; the inline `min-height` is what core's `dimensions`
-		// block supports emit when the editor sets the field. The
-		// combination is the exact shape that triggered #86 — the inner
-		// host's percentage height could resolve to zero and Leaflet
-		// rendered nothing visible.
+		// `MapEdit`: the project class brings the SCSS `min-height`
+		// baseline; the inline `min-height` here is what core's
+		// `dimensions` block supports emit when the editor sets the
+		// field (or what the `Dimensions_Defaults` filter injects when
+		// it does not). Either way the wrapper ends up with a definite
+		// height — the shape that triggered #86, where the inner host's
+		// percentage height could resolve to zero and Leaflet rendered
+		// nothing visible.
 		const wrapper = document.createElement( 'div' );
 		wrapper.className = 'kntnt-gpx-blocks-map';
 		wrapper.style.minHeight = '400px';
@@ -336,10 +338,10 @@ describe( 'MapEditorPreview host fills the wrapper independently of percentage h
 		// The Leaflet container is the element MapEditorPreview hands to
 		// `L.map()`; the mock captures it. The bug surfaces on whichever
 		// element wraps the Leaflet container — that is the element whose
-		// height percentage chain back to the wrapper is broken by the
-		// `aspect-ratio` + inline `min-height` combination, so it is the
-		// element the fix needs to anchor independently of percentage
-		// height resolution.
+		// height percentage chain back to the wrapper is broken when the
+		// wrapper's height comes from `min-height` (or any other definite
+		// source), so it is the element the fix needs to anchor
+		// independently of percentage height resolution.
 		expect( mockLeafletState.mapInstances ).toHaveLength( 1 );
 		const leafletContainer = mockLeafletState.mapInstances[ 0 ].container;
 		const innerHost = leafletContainer.parentElement;
@@ -350,13 +352,12 @@ describe( 'MapEditorPreview host fills the wrapper independently of percentage h
 		// all four sides of the wrapper so its used size is determined by
 		// the wrapper's padding-box rather than by percentage resolution
 		// against the wrapper's computed height. That makes the host's
-		// box definite even when the wrapper's height is computed from
-		// `aspect-ratio` and then clamped by an inline `min-height` — the
-		// shape that broke percentage resolution in #86. The fill-the-
-		// wrapper contract can be expressed either as the `inset`
-		// shorthand or as the four longhand sides; both are equivalent in
-		// a real browser, and JSDOM keeps shorthands and longhands as
-		// separate slots so the test accepts either form.
+		// box definite regardless of how the wrapper's height is computed
+		// — the shape that broke percentage resolution in #86. The
+		// fill-the-wrapper contract can be expressed either as the
+		// `inset` shorthand or as the four longhand sides; both are
+		// equivalent in a real browser, and JSDOM keeps shorthands and
+		// longhands as separate slots so the test accepts either form.
 		expect( innerHost!.style.position ).toBe( 'absolute' );
 		const isZeroLength = ( value: string ): boolean =>
 			value === '0' || value === '0px';

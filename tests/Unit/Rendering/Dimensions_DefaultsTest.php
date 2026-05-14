@@ -4,15 +4,14 @@
  *
  * Issue #117 — the plugin-defined default `min-height` is normalised at the
  * attribute source through a `render_block_data` filter, not per-consumer
- * inline injection in the render callbacks. Per-block rules apply:
+ * inline injection in the render callbacks.
  *
- *   - Map: gate is `minHeight` *and* `aspectRatio` both blank/missing; the
- *     injected value is `30vh`. The narrowed gate keeps an explicit user
- *     aspect-ratio from being fought by a hidden min-height.
- *   - Elevation (Step 3 of docs/elevation-rebuild.md): gate is `minHeight`
- *     blank alone; the injected value is `15vh`. The wrapper has no
- *     SCSS aspect-ratio baseline of its own, so the default acts as a
- *     harmless floor that coexists with any user-set aspect ratio.
+ * Issue #146 simplified Map's gate to match Elevation's so both blocks share
+ * the same symmetric rule: the default fires whenever
+ * `style.dimensions.minHeight` is blank, regardless of `aspectRatio`. The
+ * injected value (Map's `30vh`, Elevation's `15vh`) acts as a single height
+ * floor that any user-set `aspectRatio` stacks alongside via the normal CSS
+ * cascade.
  *
  * Both blocks have the `aspectRatio: 'auto'` keyword stripped so core does
  * not emit `min-height: unset` and override the SCSS baseline.
@@ -129,7 +128,7 @@ test( "A2c: Map with aspectRatio='auto' and explicit minHeight strips 'auto' and
 
 } );
 
-test( 'A3: Map with aspectRatio set and minHeight blank stays unchanged', function (): void {
+test( 'A3: Map with aspectRatio set and minHeight blank gets minHeight=30vh as a floor (issue #146)', function (): void {
 
 	$filter = new Dimensions_Defaults();
 
@@ -150,8 +149,53 @@ test( 'A3: Map with aspectRatio set and minHeight blank stays unchanged', functi
 
 	$result = $filter->filter( $parsed );
 
-	expect( $result['attrs']['style']['dimensions']['minHeight'] )->toBe( '' );
+	// Issue #146: Map's gate is now symmetric with Elevation's. The
+	// default `min-height: 30vh` fires whenever `minHeight` is blank,
+	// regardless of `aspectRatio`; the user's `16/9` aspect ratio
+	// coexists with the floor via the normal CSS cascade.
+	expect( $result['attrs']['style']['dimensions']['minHeight'] )->toBe( '30vh' );
 	expect( $result['attrs']['style']['dimensions']['aspectRatio'] )->toBe( '16/9' );
+
+} );
+
+test( 'A3b: Map with aspectRatio set is now symmetric with Elevation (issue #146 lock)', function (): void {
+
+	// Characterisation test for the issue #146 single-mechanism rule.
+	// Pins the new symmetric contract: with `minHeight` blank and any
+	// non-blank `aspectRatio`, Map's filter behaves like Elevation's —
+	// the 30vh floor is injected and stacks alongside the user's
+	// aspect ratio via the CSS cascade.
+	$filter = new Dimensions_Defaults();
+
+	$cases = [
+		'16/9',
+		'4/3',
+		'1',
+		'21/9',
+	];
+	foreach ( $cases as $ratio ) {
+		$parsed = [
+			'blockName'    => 'kntnt-gpx-blocks/map',
+			'attrs'        => [
+				'style' => [
+					'dimensions' => [
+						'minHeight'   => '',
+						'aspectRatio' => $ratio,
+					],
+				],
+			],
+			'innerBlocks'  => [],
+			'innerHTML'    => '',
+			'innerContent' => [],
+		];
+
+		$result = $filter->filter( $parsed );
+
+		expect( $result['attrs']['style']['dimensions']['minHeight'] )
+			->toBe( '30vh' );
+		expect( $result['attrs']['style']['dimensions']['aspectRatio'] )
+			->toBe( $ratio );
+	}
 
 } );
 

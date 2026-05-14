@@ -1,14 +1,14 @@
 /**
  * Unit tests for {@link getDefaultMinHeight}.
  *
- * Pins both per-block rules:
+ * Issue #146 simplified Map's gate to match Elevation's so both blocks
+ * share the same symmetric rule:
  *
- *   - Map: gate is `minHeight` *and* `aspectRatio` both blank/missing;
- *     value is `'30vh'`. Setting either suppresses the default.
+ *   - Map: gate is `minHeight` blank alone; value is `'30vh'`. A
+ *     user-set `aspectRatio` does not suppress the default — the floor
+ *     coexists with the ratio via the normal CSS cascade.
  *   - Elevation (Step 3 of docs/elevation-rebuild.md): gate is
- *     `minHeight` blank alone; value is `'15vh'`. A user-set
- *     `aspectRatio` does not suppress the default — the floor
- *     coexists with the ratio.
+ *     `minHeight` blank alone; value is `'15vh'`. Same shape as Map.
  *
  * @since 1.0.0
  */
@@ -16,13 +16,13 @@
 import { getDefaultMinHeight } from './dimensions-defaults';
 
 describe( 'getDefaultMinHeight (Map)', () => {
-	it( 'returns 30vh when both fields are blank/missing', () => {
+	it( 'returns 30vh when minHeight is missing', () => {
 		expect( getDefaultMinHeight( 'kntnt-gpx-blocks/map', {} ) ).toBe(
 			'30vh'
 		);
 	} );
 
-	it( 'returns 30vh when both fields are present but empty strings', () => {
+	it( 'returns 30vh when minHeight is present but an empty string', () => {
 		expect(
 			getDefaultMinHeight( 'kntnt-gpx-blocks/map', {
 				style: { dimensions: { minHeight: '', aspectRatio: '' } },
@@ -38,15 +38,18 @@ describe( 'getDefaultMinHeight (Map)', () => {
 		).toBeUndefined();
 	} );
 
-	it( 'returns undefined when aspectRatio is set (other than the auto keyword)', () => {
+	it( 'returns 30vh when minHeight is blank and aspectRatio is set (issue #146)', () => {
+		// Issue #146 lock: aspectRatio no longer suppresses the
+		// Map default. The 30vh floor stacks alongside the user's
+		// aspect ratio via the normal CSS cascade.
 		expect(
 			getDefaultMinHeight( 'kntnt-gpx-blocks/map', {
 				style: { dimensions: { aspectRatio: '16/9' } },
 			} )
-		).toBeUndefined();
+		).toBe( '30vh' );
 	} );
 
-	it( "treats aspectRatio='auto' as blank", () => {
+	it( "returns 30vh when minHeight is blank and aspectRatio='auto'", () => {
 		expect(
 			getDefaultMinHeight( 'kntnt-gpx-blocks/map', {
 				style: { dimensions: { aspectRatio: 'auto' } },

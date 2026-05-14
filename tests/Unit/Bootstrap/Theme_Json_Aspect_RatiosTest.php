@@ -10,8 +10,7 @@
  *
  * Regression coverage for issue #108: core's Dimensions → Aspect ratio
  * dropdown ships only seven defaults, none of them panorama-style; the
- * Map (SCSS baseline 3/1) and Elevation (4/1) blocks need the extended
- * list.
+ * Map and Elevation (SCSS baseline 4/1) blocks need the extended list.
  *
  * @package Kntnt\Gpx_Blocks
  * @since   1.0.0

@@ -2753,7 +2753,7 @@ test( 'B2: Render_Map no longer concatenates min-height into its own style_parts
 
 } );
 
-test( 'B3: with aspectRatio set and minHeight blank, the filter does not inject and no plugin min-height appears', function (): void {
+test( 'B3: with aspectRatio set and minHeight blank, the filter injects min-height=30vh alongside (issue #146)', function (): void {
 
 	$coords = map_synthetic_coords( 10 );
 	$store  = map_seeded_store( 720, $coords );
@@ -2763,6 +2763,13 @@ test( 'B3: with aspectRatio set and minHeight blank, the filter does not inject 
 	Functions\when( 'wp_interactivity_state' )->justReturn( null );
 	Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/track.gpx' );
 
+	// Issue #146 simplified Map's gate to match Elevation's. With
+	// `aspectRatio` set and `minHeight` blank, the filter now injects
+	// the 30vh floor at the attribute source; the user-set aspect
+	// ratio stacks alongside via the normal CSS cascade rather than
+	// being fought by a hidden min-height. Both values surface on
+	// the wrapper through the standard dimensions block-supports
+	// pipeline simulated below.
 	$filter = new \Kntnt\Gpx_Blocks\Rendering\Dimensions_Defaults();
 	$parsed = $filter->filter(
 		[
@@ -2784,7 +2791,7 @@ test( 'B3: with aspectRatio set and minHeight blank, the filter does not inject 
 	$matched = preg_match( '/<div\b[^>]*\sstyle="([^"]*)"/', $html, $style_match );
 	expect( $matched )->toBe( 1 );
 	expect( $style_match[1] )->toContain( 'aspect-ratio:16/9' );
-	expect( $style_match[1] )->not->toContain( 'min-height' );
+	expect( $style_match[1] )->toContain( 'min-height:30vh' );
 
 } );
 

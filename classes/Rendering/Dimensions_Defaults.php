@@ -14,18 +14,11 @@
  * `useBlockProps()` style merge — sees a concrete value through the same
  * path that an explicit user value would take.
  *
- * Map's gate is narrow on purpose: the default is applied only when
- * both `minHeight` *and* `aspectRatio` are blank or missing. When the
- * user has picked a non-Original aspect-ratio, the container has a
- * definite height from that, and adding a min-height would fight the
- * aspect-ratio constraint.
- *
- * Elevation's gate is broader: the default applies whenever
- * `minHeight` is blank, regardless of `aspectRatio`. The Step 3
- * wrapper-sizing decision in `docs/elevation-rebuild.md` removed
- * Elevation's SCSS aspect-ratio baseline, so the `15vh` default is a
- * harmless floor that coexists with any user-set aspect ratio (CSS
- * cascade picks whichever is larger at any given width).
+ * Both blocks share the same symmetric gate (issue #146 simplified Map's
+ * legacy dual-mechanism gate to match Elevation's): the default applies
+ * whenever `style.dimensions.minHeight` is blank, regardless of
+ * `aspectRatio`. The injected value acts as a single height floor that
+ * any user-set `aspectRatio` stacks alongside via the normal CSS cascade.
  *
  * The filter still recognises both blocks for the
  * `aspectRatio: 'auto'` strip — without that strip core would emit
@@ -46,9 +39,8 @@ namespace Kntnt\Gpx_Blocks\Rendering;
 
 /**
  * Filter callback for `render_block_data` that injects the plugin's
- * default `min-height` onto a Map or Elevation block when both
- * `style.dimensions.minHeight` and `style.dimensions.aspectRatio` are
- * blank or missing.
+ * default `min-height` onto a Map or Elevation block whenever
+ * `style.dimensions.minHeight` is blank or missing.
  *
  * Hooked to `render_block_data` (priority 10, three parameters).
  *
@@ -61,30 +53,19 @@ final class Dimensions_Defaults {
 	 * Per-block default `min-height` configuration.
 	 *
 	 * Each entry carries the CSS value injected onto
-	 * `style.dimensions.minHeight` and a `require_blank_aspect_ratio`
-	 * flag controlling the gate. When the flag is `true`, the default
-	 * is applied only when both `minHeight` *and* `aspectRatio` are
-	 * blank — Map's legacy condition that protects against fighting
-	 * an explicit aspect ratio. When `false`, the default is applied
-	 * whenever `minHeight` is blank, regardless of `aspectRatio` —
-	 * Elevation's Step 3 rule (`docs/elevation-rebuild.md`), where the
-	 * wrapper has no aspect-ratio baseline and the default acts as a
-	 * harmless floor.
-	 *
-	 * Kept in lock-step with `src/blocks/shared/dimensions-defaults.ts`
-	 * on the editor side.
+	 * `style.dimensions.minHeight` whenever that attribute is blank or
+	 * missing on the parsed block. Kept in lock-step with
+	 * `src/blocks/shared/dimensions-defaults.ts` on the editor side.
 	 *
 	 * @since 1.0.0
-	 * @var array<string,array{value:string,require_blank_aspect_ratio:bool}>
+	 * @var array<string,array{value:string}>
 	 */
 	private const DEFAULTS = [
 		'kntnt-gpx-blocks/map' => [
 			'value' => '30vh',
-			'require_blank_aspect_ratio' => true,
 		],
 		'kntnt-gpx-blocks/elevation' => [
 			'value' => '15vh',
-			'require_blank_aspect_ratio' => false,
 		],
 	];
 
@@ -109,8 +90,7 @@ final class Dimensions_Defaults {
 	 *
 	 * Returns the parsed block array unchanged for every block that is
 	 * not one of the plugin's two blocks, and for blocks where the user
-	 * has already set `style.dimensions.minHeight` or
-	 * `style.dimensions.aspectRatio`. Otherwise rewrites
+	 * has already set `style.dimensions.minHeight`. Otherwise rewrites
 	 * `attrs.style.dimensions.minHeight` to the per-block default.
 	 *
 	 * The mutation is applied through local-array reassignment so PHPStan
@@ -165,29 +145,19 @@ final class Dimensions_Defaults {
 			unset( $dimensions['aspectRatio'] );
 		}
 
-		// Inject the per-block `min-height` default when the block's
-		// gate condition holds. Map's gate requires both `minHeight`
-		// *and* `aspectRatio` to be blank so an explicit user
-		// aspect-ratio is not fought by a hidden min-height. Elevation's
-		// gate requires only `minHeight` blank — Step 3 of
-		// `docs/elevation-rebuild.md` removed Elevation's SCSS
-		// aspect-ratio baseline, so the `15vh` default coexists
-		// harmlessly with any user-set aspect ratio (CSS cascade picks
-		// the larger).
+		// Inject the per-block `min-height` default whenever the user has
+		// not set their own minimum height. The 30vh / 15vh value acts as
+		// a single height floor that coexists harmlessly with any user-set
+		// aspect ratio via the normal CSS cascade.
 		//
 		// $block_name is guaranteed to be a key of DEFAULTS at this
 		// point — `RECOGNISED_BLOCKS` and `DEFAULTS` carry the same
 		// two block names, and the in_array() narrowing above filtered
 		// out anything else.
-		$default_entry = self::DEFAULTS[ $block_name ];
 		$inject_default = false;
 		if ( $min_height_blank ) {
-			$gate_ok = $default_entry['require_blank_aspect_ratio'] === false
-				|| $aspect_ratio_blank;
-			if ( $gate_ok ) {
-				$dimensions['minHeight'] = $default_entry['value'];
-				$inject_default          = true;
-			}
+			$dimensions['minHeight'] = self::DEFAULTS[ $block_name ]['value'];
+			$inject_default          = true;
 		}
 
 		// Skip the write-back when neither mutation applied. Pass through
@@ -233,7 +203,7 @@ final class Dimensions_Defaults {
 	 * "Original" option in the aspect-ratio dropdown after having selected
 	 * another ratio first. Semantically `'auto'` means "no aspect-ratio
 	 * constraint" — the same end-state as a blank or missing value — so
-	 * the per-block default `min-height` should still apply.
+	 * the key is stripped to keep core from emitting `min-height: unset`.
 	 *
 	 * @since 1.0.0
 	 *
