@@ -42,8 +42,16 @@ use Kntnt\Gpx_Blocks\Rendering\Tile_Layer_Registry;
  * the global is set up on every editor request — post, site, widgets, and
  * navigation — before the GPX Map block's editor script reads from it.
  *
+ * The two record shapes below are named aliases rather than inline shapes
+ * spelled out at the `@param` that uses them: PHPCS's function-comment sniff
+ * cannot parse a multi-line PHPStan array shape, and inlining one on a single
+ * line would run past 300 characters.
+ *
  * @package Kntnt\Gpx_Blocks
  * @since 1.0.0
+ *
+ * @phpstan-type Tile_Child_Record array{label:string,url:string,attribution:string,maxZoom:int}
+ * @phpstan-type Tile_Provider_Record array{label:string,requiresKey:bool,default?:string,styles?:array<string,Tile_Child_Record>,layers?:array<string,Tile_Child_Record>,signupUrl?:string,subdomains?:list<string>,apiKey?:string}
  */
 final class Editor_Data_Enqueuer {
 
@@ -192,46 +200,27 @@ final class Editor_Data_Enqueuer {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array<string, array{
-	 *     label: string,
-	 *     requiresKey: bool,
-	 *     default?: string,
-	 *     styles?: array<string, array{
-	 *         label: string,
-	 *         url: string,
-	 *         attribution: string,
-	 *         maxZoom: int,
-	 *     }>,
-	 *     layers?: array<string, array{
-	 *         label: string,
-	 *         url: string,
-	 *         attribution: string,
-	 *         maxZoom: int,
-	 *     }>,
-	 *     signupUrl?: string,
-	 *     subdomains?: list<string>,
-	 *     apiKey?: string,
-	 * }>                                          $records             Validated provider/overlay records keyed by id.
-	 * @param 'styles'|'layers'                    $nested_key          Key under which the child collection lives on each
-	 *                                                                  record (`styles` for base providers, `layers` for
-	 *                                                                  overlay providers).
-	 * @param bool                                 $has_default         Whether records carry a `default` field that must
-	 *                                                                  be forwarded into the editor payload (true for base
-	 *                                                                  providers, false for overlay providers).
-	 * @param string                               $kind_for_warning    Human-readable record-kind label spliced into the
-	 *                                                                  fail-closed warning (`'tile provider'` or
-	 *                                                                  `'tile-overlay provider'`).
-	 * @param string                               $consequence_phrase  Trailing phrase spliced into the fail-closed warning
-	 *                                                                  describing the editor-preview consequence
-	 *                                                                  (`'fail closed (polyline-only)'` or
-	 *                                                                  `'drop its layers (base map and other overlays still render)'`).
+	 * @param array<string,Tile_Provider_Record> $records Validated provider/overlay records keyed by id.
+	 * @param 'styles'|'layers'                  $nested_key          Key under which the child collection lives on each
+	 *                                                                record (`styles` for base providers, `layers` for
+	 *                                                                overlay providers).
+	 * @param bool                               $has_default         Whether records carry a `default` field that must
+	 *                                                                be forwarded into the editor payload (true for base
+	 *                                                                providers, false for overlay providers).
+	 * @param string                             $kind_for_warning    Human-readable record-kind label spliced into the
+	 *                                                                fail-closed warning (`'tile provider'` or
+	 *                                                                `'tile-overlay provider'`).
+	 * @param string                             $consequence_phrase  Trailing phrase spliced into the fail-closed warning
+	 *                                                                describing the editor-preview consequence
+	 *                                                                (`'fail closed (polyline-only)'` or
+	 *                                                                `'drop its layers (base map and other overlays still render)'`).
 	 *
-	 * @param array<string, string>                $option_keys         Per-provider option-layer keys keyed by provider id.
-	 *                                                                  An entry pre-substitutes `{KEY}` server-side from the
-	 *                                                                  site-wide option (issue #149 for base providers, #150
-	 *                                                                  for overlay providers) for providers where the PHP
-	 *                                                                  path is *not* engaged. Pass the empty array to render
-	 *                                                                  no option-layer substitution at all.
+	 * @param array<string, string>              $option_keys         Per-provider option-layer keys keyed by provider id.
+	 *                                                                An entry pre-substitutes `{KEY}` server-side from the
+	 *                                                                site-wide option (issue #149 for base providers, #150
+	 *                                                                for overlay providers) for providers where the PHP
+	 *                                                                path is *not* engaged. Pass the empty array to render
+	 *                                                                no option-layer substitution at all.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */

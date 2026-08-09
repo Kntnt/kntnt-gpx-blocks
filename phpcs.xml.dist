@@ -158,6 +158,16 @@
 		</properties>
 	</rule>
 
+	<!--
+		Warnings report but do not fail the build; errors do. The line-length
+		warnings are dominated by the tile registry's attribution strings and
+		provider URLs — single string literals that cannot be wrapped without
+		splicing them into concatenations that read worse than the long line.
+		CI therefore gates on errors, and the warning count stays visible in
+		the run log as a ratchet to pull down over time.
+	-->
+	<config name="ignore_warnings_on_exit" value="1"/>
+
 	<!-- Minimum PHP version for compatibility sniffs. -->
 	<config name="minimum_supported_wp_version" value="6.5"/>
 	<config name="testVersion" value="8.4-"/>

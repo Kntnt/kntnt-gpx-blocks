@@ -32,7 +32,11 @@ function map_block_json_decoded(): array {
 	$decoded = json_decode( (string) $json, true );
 	expect( $decoded )->toBeArray();
 
-	/** @var array<string, mixed> $decoded */
+	/**
+	 * Narrows the decoded payload for static analysis.
+	 *
+	 * @var array<string, mixed> $decoded
+	 */
 	return $decoded;
 }
 

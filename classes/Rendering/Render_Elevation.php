@@ -433,13 +433,13 @@ final class Render_Elevation {
 		// callable syntax keeps the dispatch statically verifiable) and
 		// the CSS custom-property suffix.
 		$typography_map = [
-			[ 'tickLabelFontFamily',     Typography_Sanitizer::font_family(...),     'font-family' ],
-			[ 'tickLabelFontSize',       Typography_Sanitizer::font_size(...),       'font-size' ],
-			[ 'tickLabelFontWeight',     Typography_Sanitizer::font_weight(...),     'font-weight' ],
-			[ 'tickLabelFontStyle',      Typography_Sanitizer::font_style(...),      'font-style' ],
-			[ 'tickLabelLineHeight',     Typography_Sanitizer::line_height(...),     'line-height' ],
-			[ 'tickLabelLetterSpacing',  Typography_Sanitizer::letter_spacing(...),  'letter-spacing' ],
-			[ 'tickLabelTextTransform',  Typography_Sanitizer::text_transform(...),  'text-transform' ],
+			[ 'tickLabelFontFamily', Typography_Sanitizer::font_family(...), 'font-family' ],
+			[ 'tickLabelFontSize', Typography_Sanitizer::font_size(...), 'font-size' ],
+			[ 'tickLabelFontWeight', Typography_Sanitizer::font_weight(...), 'font-weight' ],
+			[ 'tickLabelFontStyle', Typography_Sanitizer::font_style(...), 'font-style' ],
+			[ 'tickLabelLineHeight', Typography_Sanitizer::line_height(...), 'line-height' ],
+			[ 'tickLabelLetterSpacing', Typography_Sanitizer::letter_spacing(...), 'letter-spacing' ],
+			[ 'tickLabelTextTransform', Typography_Sanitizer::text_transform(...), 'text-transform' ],
 			[ 'tickLabelTextDecoration', Typography_Sanitizer::text_decoration(...), 'text-decoration' ],
 		];
 		foreach ( $typography_map as [ $attr_key, $sanitize, $css_suffix ] ) {
@@ -460,16 +460,16 @@ final class Render_Elevation {
 		// or `tooltip-height`) is the only differentiator.
 		$tooltip_typography_groups = [
 			[ 'tooltipDistance', 'tooltip-distance' ],
-			[ 'tooltipHeight',   'tooltip-height' ],
+			[ 'tooltipHeight', 'tooltip-height' ],
 		];
 		$tooltip_typography_props = [
-			[ 'FontFamily',     Typography_Sanitizer::font_family(...),     'font-family' ],
-			[ 'FontSize',       Typography_Sanitizer::font_size(...),       'font-size' ],
-			[ 'FontWeight',     Typography_Sanitizer::font_weight(...),     'font-weight' ],
-			[ 'FontStyle',      Typography_Sanitizer::font_style(...),      'font-style' ],
-			[ 'LineHeight',     Typography_Sanitizer::line_height(...),     'line-height' ],
-			[ 'LetterSpacing',  Typography_Sanitizer::letter_spacing(...),  'letter-spacing' ],
-			[ 'TextTransform',  Typography_Sanitizer::text_transform(...),  'text-transform' ],
+			[ 'FontFamily', Typography_Sanitizer::font_family(...), 'font-family' ],
+			[ 'FontSize', Typography_Sanitizer::font_size(...), 'font-size' ],
+			[ 'FontWeight', Typography_Sanitizer::font_weight(...), 'font-weight' ],
+			[ 'FontStyle', Typography_Sanitizer::font_style(...), 'font-style' ],
+			[ 'LineHeight', Typography_Sanitizer::line_height(...), 'line-height' ],
+			[ 'LetterSpacing', Typography_Sanitizer::letter_spacing(...), 'letter-spacing' ],
+			[ 'TextTransform', Typography_Sanitizer::text_transform(...), 'text-transform' ],
 			[ 'TextDecoration', Typography_Sanitizer::text_decoration(...), 'text-decoration' ],
 		];
 		foreach ( $tooltip_typography_groups as [ $attr_prefix, $css_prefix ] ) {

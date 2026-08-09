@@ -1092,8 +1092,8 @@ test( 'wp_interactivity_state propagates enableTrackPositionCursor when set to f
 
 	Render_Map::render(
 		[
-			'attachmentId'    => 86,
-			'mapId'           => 'map-cursor-off',
+			'attachmentId'              => 86,
+			'mapId'                     => 'map-cursor-off',
 			'enableTrackPositionCursor' => false,
 		],
 		'',

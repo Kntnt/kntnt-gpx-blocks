@@ -23,7 +23,6 @@
  */
 
 ( function () {
-
 	'use strict';
 
 	const { registerBlockVariation } = window.wp.blocks;
@@ -65,7 +64,9 @@
 		createElement( 'path', { d: 'M6 14 V10' } ),
 		createElement( 'path', { d: 'M12 14 V4' } ),
 		createElement( 'path', { d: 'M18 14 V7' } ),
-		createElement( 'path', { d: 'M3 20 C6.5 18.5 9.5 21 13 19 C16 17.5 18.5 19.5 21 18.5' } )
+		createElement( 'path', {
+			d: 'M3 20 C6.5 18.5 9.5 21 13 19 C16 17.5 18.5 19.5 21 18.5',
+		} )
 	);
 
 	/**
@@ -92,10 +93,13 @@
 	 * @return {Array} A nested innerBlocks tuple suitable for variation.innerBlocks.
 	 */
 	function row( englishName, translatedLabel, shortcodeKey, columnSpan ) {
-
 		const paragraphAttrs = {
 			content:
-				'<strong>' + translatedLabel + ':</strong> [kntnt-gpx ' + shortcodeKey + ']',
+				'<strong>' +
+				translatedLabel +
+				':</strong> [kntnt-gpx ' +
+				shortcodeKey +
+				']',
 			metadata: { name: englishName },
 		};
 
@@ -104,7 +108,6 @@
 		}
 
 		return [ 'core/paragraph', paragraphAttrs ];
-
 	}
 
 	registerBlockVariation( 'core/group', {
@@ -117,7 +120,14 @@
 		category: 'kntnt',
 		icon: statisticsIcon,
 		scope: [ 'inserter' ],
-		keywords: [ 'gpx', 'statistics', 'distance', 'elevation', 'ascent', 'descent' ],
+		keywords: [
+			'gpx',
+			'statistics',
+			'distance',
+			'elevation',
+			'ascent',
+			'descent',
+		],
 		attributes: {
 			metadata: { name: 'GPX Statistics' },
 			style: {
@@ -126,12 +136,36 @@
 			layout: { type: 'grid', columnCount: 2, minimumColumnWidth: null },
 		},
 		innerBlocks: [
-			row( 'Total length',      __( 'Total length',     'kntnt-gpx-blocks' ), 'distance',      true  ),
-			row( 'Lowest elevation',  __( 'Lowest elevation', 'kntnt-gpx-blocks' ), 'min-elevation', false ),
-			row( 'Highest elevation', __( 'Highest elevation','kntnt-gpx-blocks' ), 'max-elevation', false ),
-			row( 'Total ascent',      __( 'Total ascent',     'kntnt-gpx-blocks' ), 'ascent',        false ),
-			row( 'Total descent',     __( 'Total descent',    'kntnt-gpx-blocks' ), 'descent',       false ),
+			row(
+				'Total length',
+				__( 'Total length', 'kntnt-gpx-blocks' ),
+				'distance',
+				true
+			),
+			row(
+				'Lowest elevation',
+				__( 'Lowest elevation', 'kntnt-gpx-blocks' ),
+				'min-elevation',
+				false
+			),
+			row(
+				'Highest elevation',
+				__( 'Highest elevation', 'kntnt-gpx-blocks' ),
+				'max-elevation',
+				false
+			),
+			row(
+				'Total ascent',
+				__( 'Total ascent', 'kntnt-gpx-blocks' ),
+				'ascent',
+				false
+			),
+			row(
+				'Total descent',
+				__( 'Total descent', 'kntnt-gpx-blocks' ),
+				'descent',
+				false
+			),
 		],
 	} );
-
 } )();

@@ -41,10 +41,7 @@
 	// Background fallback. The wrapper's background colour falls
 	// through to `transparent` so the theme's content background
 	// shows through unless the editor sets a colour on this block.
-	background-color: var(
-		--kntnt-gpx-blocks-elevation-background,
-		transparent
-	);
+	background-color: var(--kntnt-gpx-blocks-elevation-background, transparent);
 
 	// Axis stroke colour default. The two `<line>` elements drawn by
 	// view.ts and chart.tsx reference this custom property directly
@@ -93,9 +90,9 @@
 	// `inherit` so an unset Typography control falls through to the
 	// wrapper's resolved typography (which itself flows through the
 	// block-supports cascade and the user's theme).
-	--kntnt-gpx-blocks-elevation-tooltip-background: #000000cc;
-	--kntnt-gpx-blocks-elevation-tooltip-distance: #ffffff;
-	--kntnt-gpx-blocks-elevation-tooltip-height: #dddddd;
+	--kntnt-gpx-blocks-elevation-tooltip-background: #000c;
+	--kntnt-gpx-blocks-elevation-tooltip-distance: #fff;
+	--kntnt-gpx-blocks-elevation-tooltip-height: #ddd;
 
 	// Step 6 hit-rect affordances. `touch-action: none` keeps the
 	// browser from scrolling the page during a touch-drag inside the

@@ -90,7 +90,11 @@ test( 'enqueues window.kntntGpxBlocks as a before inline script on the map edito
 	$captured_position = null;
 
 	Functions\when( 'wp_add_inline_script' )->alias(
-		static function ( string $handle, string $data, string $position = 'after' ) use (
+		static function (
+			string $handle,
+			string $data,
+			string $position = 'after'
+		) use (
 			&$captured_handle,
 			&$captured_inline,
 			&$captured_position
@@ -426,6 +430,8 @@ test( 'accepts a constructor-injected registry without touching the default filt
  * @param callable $callback Block of code to run with log capture engaged.
  *
  * @return string Concatenated contents the test code wrote to error_log().
+ *
+ * @throws RuntimeException When tempnam() cannot create the capture file.
  */
 function ede_capture_warning_log( callable $callback ): string {
 

@@ -61,7 +61,7 @@ final class Dimensions_Defaults {
 	 * @var array<string,array{value:string}>
 	 */
 	private const DEFAULTS = [
-		'kntnt-gpx-blocks/map' => [
+		'kntnt-gpx-blocks/map'       => [
 			'value' => '30vh',
 		],
 		'kntnt-gpx-blocks/elevation' => [

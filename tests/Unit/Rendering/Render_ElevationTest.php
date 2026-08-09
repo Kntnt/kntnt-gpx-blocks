@@ -143,7 +143,10 @@ test( 'render dispatches to the no-map warning when no Map block is on the host 
 		]
 	);
 
-	$attributes = [ 'mapId' => 'auto', 'backgroundColor' => '' ];
+	$attributes = [
+		'mapId'           => 'auto',
+		'backgroundColor' => '',
+	];
 	$block      = new stdClass();
 	$html       = Render_Elevation::render( $attributes, '', $block );
 
@@ -163,14 +166,20 @@ test( 'render dispatches to bound-deleted when the explicit mapId does not match
 		static fn ( string $content ): array => [
 			[
 				'blockName'   => 'kntnt-gpx-blocks/map',
-				'attrs'       => [ 'attachmentId' => 99, 'mapId' => 'map-aaa' ],
+				'attrs'       => [
+					'attachmentId' => 99,
+					'mapId'        => 'map-aaa',
+				],
 				'innerBlocks' => [],
 				'innerHTML'   => '',
 			],
 		]
 	);
 
-	$attributes = [ 'mapId' => 'map-zzz', 'backgroundColor' => '' ];
+	$attributes = [
+		'mapId'           => 'map-zzz',
+		'backgroundColor' => '',
+	];
 	$block      = new stdClass();
 	$html       = Render_Elevation::render( $attributes, '', $block );
 
@@ -206,7 +215,10 @@ test( 'render emits the samples key in wp_interactivity_state in the healthy sta
 		static fn ( string $content ): array => [
 			[
 				'blockName'   => 'kntnt-gpx-blocks/map',
-				'attrs'       => [ 'attachmentId' => 99, 'mapId' => 'map-aaa' ],
+				'attrs'       => [
+					'attachmentId' => 99,
+					'mapId'        => 'map-aaa',
+				],
 				'innerBlocks' => [],
 				'innerHTML'   => '',
 			],
@@ -285,7 +297,10 @@ test( 'render emits the samples key in wp_interactivity_state in the healthy sta
 // ---------------------------------------------------------------------------
 
 test( 'render_chart_wrapper carries the documented Interactivity directives', function (): void {
-	$attributes = [ 'backgroundColor' => '', 'axisColor' => '' ];
+	$attributes = [
+		'backgroundColor' => '',
+		'axisColor'       => '',
+	];
 	$html       = Render_Elevation::render_chart_wrapper( $attributes, 'map-abc123' );
 
 	expect( $html )->toContain( 'role="img"' );
@@ -334,7 +349,10 @@ test( 'wrap_warning does NOT carry data-wp-watch--cursor — warning states have
 } );
 
 test( 'render_chart_wrapper emits the noscript fallback', function (): void {
-	$attributes = [ 'backgroundColor' => '', 'axisColor' => '' ];
+	$attributes = [
+		'backgroundColor' => '',
+		'axisColor'       => '',
+	];
 	$html       = Render_Elevation::render_chart_wrapper( $attributes, 'map-x' );
 
 	expect( $html )->toContain( '<noscript>' );

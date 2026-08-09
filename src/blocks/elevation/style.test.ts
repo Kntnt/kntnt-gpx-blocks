@@ -153,14 +153,19 @@ describe( 'elevation style.scss', () => {
 		// Tooltip colour defaults mirror Map's tooltip-bg / name-color /
 		// desc-color so two synced tooltips read as visually consistent
 		// without any inspector configuration.
+		//
+		// Each colour is matched in both its long and its shorthand hex form:
+		// the two are the same colour, and stylelint's `color-hex-length`
+		// rule normalises the source to whichever it prefers. Pinning the
+		// literal spelling would make the assertion a formatting test.
 		expect( SCSS ).toMatch(
-			/--kntnt-gpx-blocks-elevation-tooltip-background:\s*#000000cc/
+			/--kntnt-gpx-blocks-elevation-tooltip-background:\s*(#000000cc|#000c)/
 		);
 		expect( SCSS ).toMatch(
-			/--kntnt-gpx-blocks-elevation-tooltip-distance:\s*#ffffff/
+			/--kntnt-gpx-blocks-elevation-tooltip-distance:\s*(#ffffff|#fff)/
 		);
 		expect( SCSS ).toMatch(
-			/--kntnt-gpx-blocks-elevation-tooltip-height:\s*#dddddd/
+			/--kntnt-gpx-blocks-elevation-tooltip-height:\s*(#dddddd|#ddd)/
 		);
 	} );
 

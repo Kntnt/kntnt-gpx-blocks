@@ -827,7 +827,7 @@ final class Tile_Layer_Registry {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string                  $id     Provider id (already shape-validated).
+	 * @param string                   $id     Provider id (already shape-validated).
 	 * @param array<int|string, mixed> $record Record to validate.
 	 *
 	 * @return ProviderRecord|null
@@ -975,11 +975,11 @@ final class Tile_Layer_Registry {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string                       $provider_id           Containing provider id (for warning context).
-	 * @param string                       $style_id              Style id (already shape-validated).
-	 * @param array<int|string, mixed>     $record                Style record to validate.
-	 * @param bool                         $provider_requires_key Provider-level `requiresKey` flag.
-	 * @param list<string>|null            $provider_subdomains   Provider-level `subdomains`, if declared.
+	 * @param string                   $provider_id           Containing provider id (for warning context).
+	 * @param string                   $style_id              Style id (already shape-validated).
+	 * @param array<int|string, mixed> $record                Style record to validate.
+	 * @param bool                     $provider_requires_key Provider-level `requiresKey` flag.
+	 * @param list<string>|null        $provider_subdomains   Provider-level `subdomains`, if declared.
 	 *
 	 * @return StyleRecord|null
 	 */
@@ -1070,7 +1070,7 @@ final class Tile_Layer_Registry {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string                  $id     Overlay-provider id (already shape-validated).
+	 * @param string                   $id     Overlay-provider id (already shape-validated).
 	 * @param array<int|string, mixed> $record Record to validate.
 	 *
 	 * @return OverlayProviderRecord|null
@@ -1201,11 +1201,11 @@ final class Tile_Layer_Registry {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param string                       $provider_id           Containing provider id (for warning context).
-	 * @param string                       $layer_id              Layer id (already shape-validated).
-	 * @param array<int|string, mixed>     $record                Layer record to validate.
-	 * @param bool                         $provider_requires_key Provider-level `requiresKey` flag.
-	 * @param list<string>|null            $provider_subdomains   Provider-level `subdomains`, if declared.
+	 * @param string                   $provider_id           Containing provider id (for warning context).
+	 * @param string                   $layer_id              Layer id (already shape-validated).
+	 * @param array<int|string, mixed> $record                Layer record to validate.
+	 * @param bool                     $provider_requires_key Provider-level `requiresKey` flag.
+	 * @param list<string>|null        $provider_subdomains   Provider-level `subdomains`, if declared.
 	 *
 	 * @return OverlayLayerRecord|null
 	 */

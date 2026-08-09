@@ -502,7 +502,10 @@ test( 'five inline shortcodes per inserted variation hit the cache exactly once'
 				return $stats;
 			}
 			return match ( $key ) {
-				'_kntnt_gpx_blocks_geojson'     => json_encode( [ 'type' => 'FeatureCollection', 'features' => [] ] ),
+				'_kntnt_gpx_blocks_geojson'     => json_encode( [
+					'type'     => 'FeatureCollection',
+					'features' => [],
+				] ),
 				'_kntnt_gpx_blocks_version'     => Cache_Version::CURRENT,
 				'_kntnt_gpx_blocks_source_hash' => $hash,
 				default                         => '',

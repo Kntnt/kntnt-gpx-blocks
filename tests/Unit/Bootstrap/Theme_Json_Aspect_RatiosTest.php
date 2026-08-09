@@ -41,12 +41,36 @@ test( 'filter injects six panorama presets for both kntnt blocks', function (): 
 	expect( $data['settings'] )->toHaveKey( 'blocks' );
 
 	$expected = [
-		[ 'slug' => 'kntnt-5-4',   'ratio' => '5/4',   'name' => 'Photo – 5:4' ],
-		[ 'slug' => 'kntnt-16-10', 'ratio' => '16/10', 'name' => 'Widescreen – 16:10' ],
-		[ 'slug' => 'kntnt-21-9',  'ratio' => '21/9',  'name' => 'Ultrawide – 21:9' ],
-		[ 'slug' => 'kntnt-2-1',   'ratio' => '2/1',   'name' => 'Panorama – 2:1' ],
-		[ 'slug' => 'kntnt-3-1',   'ratio' => '3/1',   'name' => 'Wide panorama – 3:1' ],
-		[ 'slug' => 'kntnt-4-1',   'ratio' => '4/1',   'name' => 'Extra wide panorama – 4:1' ],
+		[
+			'slug'  => 'kntnt-5-4',
+			'ratio' => '5/4',
+			'name'  => 'Photo – 5:4',
+		],
+		[
+			'slug'  => 'kntnt-16-10',
+			'ratio' => '16/10',
+			'name'  => 'Widescreen – 16:10',
+		],
+		[
+			'slug'  => 'kntnt-21-9',
+			'ratio' => '21/9',
+			'name'  => 'Ultrawide – 21:9',
+		],
+		[
+			'slug'  => 'kntnt-2-1',
+			'ratio' => '2/1',
+			'name'  => 'Panorama – 2:1',
+		],
+		[
+			'slug'  => 'kntnt-3-1',
+			'ratio' => '3/1',
+			'name'  => 'Wide panorama – 3:1',
+		],
+		[
+			'slug'  => 'kntnt-4-1',
+			'ratio' => '4/1',
+			'name'  => 'Extra wide panorama – 4:1',
+		],
 	];
 
 	foreach ( [ 'kntnt-gpx-blocks/map', 'kntnt-gpx-blocks/elevation' ] as $block ) {

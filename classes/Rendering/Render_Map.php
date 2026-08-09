@@ -105,14 +105,14 @@ final class Render_Map {
 		// mechanisms behind one switch:
 		//
 		// - Pan gates `map.dragging`, the wheel handler's `'pan'` branch
-		//   (trackpad two-finger pan), and the arrow keys via the
-		//   capture-phase key filter in `keyboard.ts`.
+		// (trackpad two-finger pan), and the arrow keys via the
+		// capture-phase key filter in `keyboard.ts`.
 		// - Zoom gates `map.touchZoom`, `map.doubleClickZoom`, the wheel
-		//   handler's `'zoom'` branch (Cmd/Ctrl + wheel and trackpad pinch
-		//   via `ctrlKey:true`), the `+` / `-` / `=` keys via the same key
-		//   filter, and the modifier-key hint-overlay suppression (issue
-		//   #139). Box-zoom is intentionally absent — the view module drops
-		//   it altogether at construction time.
+		// handler's `'zoom'` branch (Cmd/Ctrl + wheel and trackpad pinch
+		// via `ctrlKey:true`), the `+` / `-` / `=` keys via the same key
+		// filter, and the modifier-key hint-overlay suppression (issue
+		// #139). Box-zoom is intentionally absent — the view module drops
+		// it altogether at construction time.
 		$enable_pan  = isset( $attributes['enablePan'] ) ? (bool) $attributes['enablePan'] : true;
 		$enable_zoom = isset( $attributes['enableZoom'] ) ? (bool) $attributes['enableZoom'] : true;
 

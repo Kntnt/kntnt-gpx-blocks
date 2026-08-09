@@ -473,10 +473,10 @@ final class Settings_Page {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array{provider_id: string, record: array<string, mixed>} $args
-	 *        Arguments forwarded by `add_settings_field()`. `provider_id`
-	 *        is the registry key; `record` is the validated provider
-	 *        record (used here for `signupUrl` and `apiKey` engagement).
+	 * @param array{provider_id:string,record:array<string,mixed>} $args Arguments forwarded by `add_settings_field()`.
+	 *        `provider_id` is the registry key; `record` is the validated
+	 *        provider record (used here for `signupUrl` and `apiKey`
+	 *        engagement).
 	 */
 	public function render_provider_field( array $args ): void {
 
@@ -537,11 +537,10 @@ final class Settings_Page {
 	 *
 	 * @since 1.0.0
 	 *
-	 * @param array{provider_id: string, record: array<string, mixed>} $args
-	 *        Arguments forwarded by `add_settings_field()`. `provider_id`
-	 *        is the registry key; `record` is the validated overlay-
-	 *        provider record (used here for `signupUrl` and `apiKey`
-	 *        engagement).
+	 * @param array{provider_id:string,record:array<string,mixed>} $args Arguments forwarded by `add_settings_field()`.
+	 *        `provider_id` is the registry key; `record` is the validated
+	 *        overlay-provider record (used here for `signupUrl` and
+	 *        `apiKey` engagement).
 	 */
 	public function render_overlay_provider_field( array $args ): void {
 

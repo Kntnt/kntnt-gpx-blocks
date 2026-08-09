@@ -95,7 +95,7 @@ function tlr_style_record( array $overrides = [] ): array {
  * Builds a minimal valid provider record with optional overrides and a
  * default single-style sub-map.
  *
- * @param array<string, mixed> $overrides Provider-level overrides.
+ * @param array<string, mixed>                     $overrides Provider-level overrides.
  * @param array<string, array<string, mixed>>|null $styles Optional explicit
  *                                                          styles map; when
  *                                                          omitted, a single
@@ -163,8 +163,8 @@ function tlr_overlay_provider_record( array $overrides = [], ?array $layers = nu
  * Stubs apply_filters so the named filter returns the supplied set; every
  * other filter passes through untouched.
  *
- * @param string                                    $filter_name Filter name to override.
- * @param array<int|string, array<string, mixed>>   $set         Replacement set.
+ * @param string                                  $filter_name Filter name to override.
+ * @param array<int|string, array<string, mixed>> $set         Replacement set.
  */
 function tlr_filter_returns( string $filter_name, array $set ): void {
 	Functions\when( 'apply_filters' )->alias(
@@ -384,7 +384,7 @@ test( 'resolve_provider leaves {KEY} unsubstituted when the option-layer key is 
 	// rather than substituting whitespace into the URL.
 	expect( $resolved['url'] )->toContain( '{KEY}' );
 	expect( $resolved['url'] )->not->toContain( 'apikey=%20' );
-	expect( $resolved['url'] )->not->toContain( "apikey= " );
+	expect( $resolved['url'] )->not->toContain( 'apikey= ' );
 
 } );
 
@@ -540,8 +540,8 @@ test( 'validator drops a {s}-using style when its provider declares no subdomain
 			'no-subs' => tlr_provider_record(
 				[ 'default' => 'plain' ],
 				[
-					'plain'    => tlr_style_record(),
-					'with-s'   => tlr_style_record( [ 'url' => 'https://{s}.tiles.example.com/{z}/{x}/{y}.png' ] ),
+					'plain'  => tlr_style_record(),
+					'with-s' => tlr_style_record( [ 'url' => 'https://{s}.tiles.example.com/{z}/{x}/{y}.png' ] ),
 				]
 			),
 		]
@@ -765,7 +765,7 @@ test( 'validator drops style with malformed style id (uppercase)', function (): 
 			'provider' => tlr_provider_record(
 				[ 'default' => 'good' ],
 				[
-					'good'    => tlr_style_record(),
+					'good'  => tlr_style_record(),
 					'BadId' => tlr_style_record(),
 				]
 			),
@@ -911,7 +911,12 @@ test( 'resolve_overlays returns the requested (provider, layer) record for known
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ]
+		[
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -926,9 +931,18 @@ test( 'resolve_overlays preserves editor-configured pair order', function (): vo
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
 		[
-			[ 'provider' => 'waymarked-trails', 'layer' => 'cycling' ],
-			[ 'provider' => 'opensnowmap', 'layer' => 'pistes' ],
-			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'cycling',
+			],
+			[
+				'provider' => 'opensnowmap',
+				'layer'    => 'pistes',
+			],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
 		]
 	);
 
@@ -944,8 +958,14 @@ test( 'resolve_overlays drops a pair when the provider is unknown', function ():
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
 		[
-			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
-			[ 'provider' => 'does-not-exist', 'layer' => 'whatever' ],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
+			[
+				'provider' => 'does-not-exist',
+				'layer'    => 'whatever',
+			],
 		]
 	);
 
@@ -959,8 +979,14 @@ test( 'resolve_overlays drops a pair when the layer is unknown within a known pr
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
 		[
-			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
-			[ 'provider' => 'waymarked-trails', 'layer' => 'no-such-layer' ],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'no-such-layer',
+			],
 		]
 	);
 
@@ -975,7 +1001,12 @@ test( 'resolve_overlays substitutes the option-layer key into {KEY} for key-requ
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
+		[
+			[
+				'provider' => 'openweathermap',
+				'layer'    => 'clouds',
+			],
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -989,8 +1020,14 @@ test( 'resolve_overlays drops the pair when a key-required overlay provider has 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
 		[
-			[ 'provider' => 'openweathermap', 'layer' => 'clouds' ],
-			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+			[
+				'provider' => 'openweathermap',
+				'layer'    => 'clouds',
+			],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
 		]
 	);
 
@@ -1007,7 +1044,12 @@ test( 'resolve_overlays drops the pair when the option-layer key is whitespace-o
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
+		[
+			[
+				'provider' => 'openweathermap',
+				'layer'    => 'clouds',
+			],
+		]
 	);
 
 	expect( $resolved )->toBe( [] );
@@ -1020,7 +1062,12 @@ test( 'resolve_overlays trims surrounding whitespace before substituting the opt
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
+		[
+			[
+				'provider' => 'openweathermap',
+				'layer'    => 'clouds',
+			],
+		]
 	);
 
 	// The trim must apply to the substitution itself, not just the
@@ -1041,7 +1088,12 @@ test( 'resolve_overlays does not substitute the key for a key-less overlay provi
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'waymarked-trails', 'layer' => 'mtb' ] ]
+		[
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'mtb',
+			],
+		]
 	);
 
 	expect( $resolved[0]['url'] )->not->toContain( 'spurious-key' );
@@ -1052,7 +1104,12 @@ test( 'resolve_overlays returns slim records (no id, no label, no requiresKey)',
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'opensnowmap', 'layer' => 'pistes' ] ]
+		[
+			[
+				'provider' => 'opensnowmap',
+				'layer'    => 'pistes',
+			],
+		]
 	);
 
 	expect( $resolved[0] )->toHaveKey( 'url' );
@@ -1069,15 +1126,28 @@ test( 'resolve_overlays returns slim records (no id, no label, no requiresKey)',
 test( 'resolve_overlays drops malformed pair entries (non-array, missing keys, non-string keys)', function (): void {
 
 	$registry = new Tile_Layer_Registry();
-	/** @phpstan-ignore-next-line — deliberate misuse to test defensive coercion. */
+	/**
+	 * Feeds the resolver malformed input on purpose.
+	 *
+	 * @phpstan-ignore-next-line — deliberate misuse to test defensive coercion.
+	 */
 	$resolved = $registry->resolve_overlays(
 		[
-			[ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
 			'not-an-array',
 			[ 'provider' => 'waymarked-trails' ],
 			[ 'layer' => 'hiking' ],
-			[ 'provider' => 12345, 'layer' => 'hiking' ],
-			[ 'provider' => 'waymarked-trails', 'layer' => '' ],
+			[
+				'provider' => 12345,
+				'layer'    => 'hiking',
+			],
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => '',
+			],
 			null,
 			0,
 		]
@@ -1117,7 +1187,12 @@ test( 'resolve_overlays inherits provider-level subdomains into the resolved rec
 	);
 
 	$resolved = ( new Tile_Layer_Registry() )->resolve_overlays(
-		[ [ 'provider' => 'with-subs', 'layer' => 'main' ] ]
+		[
+			[
+				'provider' => 'with-subs',
+				'layer'    => 'main',
+			],
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -1130,7 +1205,12 @@ test( 'resolve_overlays omits subdomains when the overlay provider has none', fu
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'waymarked-trails', 'layer' => 'hiking' ] ]
+		[
+			[
+				'provider' => 'waymarked-trails',
+				'layer'    => 'hiking',
+			],
+		]
 	);
 
 	expect( $resolved[0] )->not->toHaveKey( 'subdomains' );
@@ -1577,6 +1657,8 @@ test( 'get_providers caches the validated set within a single instance', functio
  * @param callable $callback Block of code to run with log capture engaged.
  *
  * @return string Concatenated contents the test code wrote to error_log().
+ *
+ * @throws RuntimeException When tempnam() cannot create the capture file.
  */
 function tlr_capture_warning_log( callable $callback ): string {
 
@@ -2098,7 +2180,12 @@ test( 'resolve_overlays uses the PHP-supplied apiKey and ignores the option-laye
 
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+		[
+			[
+				'provider' => 'paid-overlay',
+				'layer'    => 'main',
+			],
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -2117,7 +2204,12 @@ test( 'resolve_overlays falls through to the option-layer map when the PHP path 
 
 	$registry = ( new Tile_Layer_Registry() );
 	$resolved = $registry->resolve_overlays(
-		[ [ 'provider' => 'openweathermap', 'layer' => 'clouds' ] ]
+		[
+			[
+				'provider' => 'openweathermap',
+				'layer'    => 'clouds',
+			],
+		]
 	);
 
 	expect( $resolved )->toHaveCount( 1 );
@@ -2131,7 +2223,7 @@ test( 'resolve_overlays drops the layer when the PHP-supplied apiKey is empty (f
 	tlr_filter_returns(
 		'kntnt_gpx_blocks_tile_overlays',
 		[
-			'paid-overlay'        => tlr_overlay_provider_record(
+			'paid-overlay'          => tlr_overlay_provider_record(
 				[
 					'requiresKey' => true,
 					'apiKey'      => '',
@@ -2158,8 +2250,14 @@ test( 'resolve_overlays drops the layer when the PHP-supplied apiKey is empty (f
 	$registry = new Tile_Layer_Registry();
 	$resolved = $registry->resolve_overlays(
 		[
-			[ 'provider' => 'paid-overlay', 'layer' => 'main' ],
-			[ 'provider' => 'free-overlay-survives', 'layer' => 'free' ],
+			[
+				'provider' => 'paid-overlay',
+				'layer'    => 'main',
+			],
+			[
+				'provider' => 'free-overlay-survives',
+				'layer'    => 'free',
+			],
 		]
 	);
 
@@ -2193,7 +2291,12 @@ test( 'resolve_overlays logs a warning naming the (provider, layer) ids on empty
 	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
 		$registry->resolve_overlays(
-			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+			[
+				[
+					'provider' => 'paid-overlay',
+					'layer'    => 'main',
+				],
+			]
 		);
 	} );
 
@@ -2234,7 +2337,12 @@ test( 'no PHP-supplied overlay apiKey value ever appears in the warning log (no-
 	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
 		$registry->resolve_overlays(
-			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+			[
+				[
+					'provider' => 'paid-overlay',
+					'layer'    => 'main',
+				],
+			]
 		);
 	} );
 
@@ -2271,7 +2379,12 @@ test( 'overlay fail-closed warning log never contains the attempted PHP-supplied
 	$logged = tlr_capture_warning_log( static function (): void {
 		$registry = new Tile_Layer_Registry();
 		$registry->resolve_overlays(
-			[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+			[
+				[
+					'provider' => 'paid-overlay',
+					'layer'    => 'main',
+				],
+			]
 		);
 	} );
 
@@ -2306,15 +2419,30 @@ test( 'overlay option-bypass: PHP path engagement makes the option-layer map irr
 	// Three different option-layer values, identical resolved URL.
 	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [];
 	$a = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+		[
+			[
+				'provider' => 'paid-overlay',
+				'layer'    => 'main',
+			],
+		]
 	);
 	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'something-else' ];
 	$b = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+		[
+			[
+				'provider' => 'paid-overlay',
+				'layer'    => 'main',
+			],
+		]
 	);
 	$GLOBALS['kntnt_tlr_test_tile_overlay_keys'] = [ 'paid-overlay' => 'yet-another' ];
 	$c = $registry->resolve_overlays(
-		[ [ 'provider' => 'paid-overlay', 'layer' => 'main' ] ]
+		[
+			[
+				'provider' => 'paid-overlay',
+				'layer'    => 'main',
+			],
+		]
 	);
 
 	expect( $a[0]['url'] )->toBe( $b[0]['url'] );

@@ -52,8 +52,8 @@
 	// semi-transparent value renders consistently. Per-line aspects fall back
 	// to `inherit` / `normal` so an unset attribute reads through to the
 	// surrounding theme rather than locking the tooltip to a fixed look.
-	--kntnt-gpx-blocks-tooltip-bg: #000000cc;
-	--kntnt-gpx-blocks-tooltip-name-color: #ffffff;
+	--kntnt-gpx-blocks-tooltip-bg: #000c;
+	--kntnt-gpx-blocks-tooltip-name-color: #fff;
 	--kntnt-gpx-blocks-tooltip-name-font-family: inherit;
 	--kntnt-gpx-blocks-tooltip-name-font-size: inherit;
 	--kntnt-gpx-blocks-tooltip-name-font-weight: 700;
@@ -62,7 +62,7 @@
 	--kntnt-gpx-blocks-tooltip-name-letter-spacing: normal;
 	--kntnt-gpx-blocks-tooltip-name-text-decoration: none;
 	--kntnt-gpx-blocks-tooltip-name-text-transform: none;
-	--kntnt-gpx-blocks-tooltip-desc-color: #dddddd;
+	--kntnt-gpx-blocks-tooltip-desc-color: #ddd;
 	--kntnt-gpx-blocks-tooltip-desc-font-family: inherit;
 	--kntnt-gpx-blocks-tooltip-desc-font-size: inherit;
 	--kntnt-gpx-blocks-tooltip-desc-font-weight: normal;
@@ -193,10 +193,10 @@
 // block above so SCSS does not split the compound selector across the
 // descendant combinator wrong; the explicit
 // `.kntnt-gpx-blocks-map .leaflet-tooltip-*` form makes intent unambiguous.)
-.kntnt-gpx-blocks-map .leaflet-tooltip-top:before,
-.kntnt-gpx-blocks-map .leaflet-tooltip-bottom:before,
-.kntnt-gpx-blocks-map .leaflet-tooltip-left:before,
-.kntnt-gpx-blocks-map .leaflet-tooltip-right:before {
+.kntnt-gpx-blocks-map .leaflet-tooltip-top::before,
+.kntnt-gpx-blocks-map .leaflet-tooltip-bottom::before,
+.kntnt-gpx-blocks-map .leaflet-tooltip-left::before,
+.kntnt-gpx-blocks-map .leaflet-tooltip-right::before {
 	display: none;
 }
 

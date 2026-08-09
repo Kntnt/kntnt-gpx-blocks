@@ -51,7 +51,7 @@ test( 'font_family: rejects a CSS-injection probe with a semicolon', function ()
 	// style is rejected by the character allow-list. (An arbitrary
 	// `var(--whatever)` happens to satisfy the regex because it uses only
 	// letters/hyphens/parens, but an undefined custom property resolves
-	// to the property's initial value — no CSS-injection surface there.)
+	// to the property's initial value — no CSS-injection surface there).
 	expect( Typography_Sanitizer::font_family( 'Arial; background: red' ) )->toBe( '' );
 } );
 
