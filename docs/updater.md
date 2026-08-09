@@ -56,12 +56,12 @@ The bound array callable `[$updater, 'check_for_updates']` is stored in WordPres
 
 ## Cutting a release
 
-The release process — once `build-release-zip.sh` is in place:
+The release runs on CI, triggered by the tag. See [Cutting a release](../AGENTS.md#cutting-a-release) for the authoritative sequence; the mechanism it drives is:
 
-1. Bump the `Version` header in `kntnt-gpx-blocks.php` to the new version (semantic versioning).
-2. Tag the commit: `git tag v1.2.3 && git push --tags`.
-3. Run `./build-release-zip.sh`, which assembles the production ZIP into `kntnt-gpx-blocks.zip`. The filename has no version segment so the asset URL stays stable across releases — the per-release tag in the URL already encodes the version.
-4. Create a GitHub release for the tag using `gh release create v1.2.3 ./kntnt-gpx-blocks.zip --title "v1.2.3" --notes "..."`.
+1. Bump the `Version` header in `kntnt-gpx-blocks.php` and `"version"` in `package.json` to the new version (semantic versioning). The `release` job fails the build if the tag disagrees with either.
+2. Commit, push, then tag the commit: `git tag v1.2.3 && git push origin v1.2.3`.
+3. CI runs `./build-release-zip.sh`, which assembles the production ZIP into `kntnt-gpx-blocks.zip`. The filename has no version segment so the asset URL stays stable across releases — the per-release tag in the URL already encodes the version.
+4. CI creates the GitHub release for the tag with that ZIP attached. Nothing is uploaded from a local machine, so a release can never exist without its asset.
 5. The release notes are visible from the Plugins → "View version 1.2.3 details" link, but only if a `plugins_api` callback is added later. Without that, only the Update button surfaces.
 
 The release ZIP must:

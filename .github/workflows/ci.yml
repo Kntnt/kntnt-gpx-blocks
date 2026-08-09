@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [ main ]
+    # A version tag runs the same gates, and only then the release job.
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -67,3 +69,62 @@ jobs:
 
       - name: Block JS unit tests (Jest via wp-scripts)
         run: npm run test:js
+
+  release:
+    name: Release — build the ZIP and publish the GitHub Release
+    runs-on: ubuntu-latest
+    # Only on a version tag, and only once every gate is green: a failing gate
+    # leaves no release behind. The ZIP is therefore always built by CI from
+    # the tagged commit, never uploaded from a local machine — which is what
+    # keeps the auto-updater from silently seeing a release with no asset.
+    needs: [ php, node ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      # Guard against a mismatched tag: the version tag, the plugin header and
+      # package.json must agree, so a v1.2.3 release can never ship a plugin
+      # that reports a different version.
+      - name: Verify the tag matches the plugin version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          header="$(grep -E '^[[:space:]]*\*[[:space:]]*Version:' kntnt-gpx-blocks.php | head -n 1 | sed -E 's/.*Version:[[:space:]]*([0-9A-Za-z.+-]+).*/\1/')"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$header" ] || [ "$tag" != "$pkg" ]; then
+            echo "Tag ${GITHUB_REF_NAME} must match the plugin header (${header}) and package.json (${pkg})." >&2
+            exit 1
+          fi
+
+      # build-release-zip.sh runs the production composer install, npm ci and
+      # npm run build itself, then writes kntnt-gpx-blocks.zip to the project
+      # root — the same artefact a local run produces.
+      - name: Build the distribution ZIP
+        run: ./build-release-zip.sh
+
+      # Publish (not draft): a version tag only reaches this job after every
+      # gate is green, so the published release is the deliberate go-live and
+      # the Updater offers it immediately. The notes are GitHub's generated
+      # ones — this repo keeps no CHANGELOG.md to take a section from.
+      - name: Publish the GitHub Release with the ZIP asset
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          files: kntnt-gpx-blocks.zip
+          fail_on_unmatched_files: true
